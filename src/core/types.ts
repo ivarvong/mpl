@@ -107,6 +107,7 @@ export type Orientation = 'vertical' | 'horizontal';
 export type LineArtist = {
   readonly kind: 'line'; readonly x: Float64Array; readonly y: Float64Array;
   readonly stroke: LineStroke; readonly markers: LineMarkers; readonly label: Label;
+  readonly clip: boolean;
 };
 /** Rects in data coords; (x, y) is the corner at the base. The base axis is y for vertical bars (sticky edges). */
 export type BarArtist = {
@@ -114,19 +115,36 @@ export type BarArtist = {
   readonly x: Float64Array; readonly y: Float64Array; readonly w: Float64Array; readonly h: Float64Array;
   /** face is the legend handle's (matplotlib uses the first patch); faces[i] paints bar i */
   readonly face: Paint; readonly faces: readonly Paint[]; readonly edge: BarEdge; readonly label: Label;
+  readonly clip: boolean;
 };
 /** fill_between: the polygon start → (x, y1)… → end → (x, y2) reversed. `color=` paints the edge too (Collection.set_color). */
 export type FillArtist = {
   readonly kind: 'fill'; readonly x: Float64Array; readonly y1: Float64Array; readonly y2: Float64Array;
-  readonly face: Paint; readonly edge: BarEdge; readonly label: Label;
+  readonly face: Paint; readonly edge: BarEdge; readonly label: Label; readonly clip: boolean;
 };
 /** Where a text artist's (x, y) lives: data coordinates or axes fractions (transAxes). */
 export type TextCoords = 'data' | 'axes';
 export type TextArtist = {
   readonly kind: 'text'; readonly x: number; readonly y: number; readonly coords: TextCoords; readonly text: string;
   readonly sizePt: number; readonly weight: number; readonly color: Rgb; readonly ha: HAlign; readonly va: VAlign;
+  readonly clip: boolean;
 };
-export type Artist = LineArtist | BarArtist | FillArtist | TextArtist;
+/** Scatter: a PathCollection of identical markers at (x, y), size in pt^2 (matplotlib semantics). */
+export type ScatterArtist = {
+  readonly kind: 'scatter'; readonly x: Float64Array; readonly y: Float64Array;
+  readonly sizePt2: Float64Array; readonly shape: MarkerName;
+  readonly face: Paint; readonly edge: Paint; readonly edgeWidthPt: number; readonly label: Label; readonly clip: boolean;
+};
+/** axvspan/axhspan bands: oriented spans that may use axes-fraction extents on the non-data axis. */
+export type SpanArtist = {
+  readonly kind: 'span'; readonly orientation: Orientation;
+  /** data coordinates on the data axis (x for vertical, y for horizontal) */
+  readonly a0: number; readonly a1: number;
+  /** [0,1] fractions on the other axis, in axes coordinates */
+  readonly f0: number; readonly f1: number;
+  readonly face: Paint; readonly edge: BarEdge; readonly label: Label; readonly clip: boolean;
+};
+export type Artist = LineArtist | BarArtist | FillArtist | TextArtist | ScatterArtist | SpanArtist;
 
 /** What a legend entry draws. */
 export type Handle =
@@ -163,8 +181,21 @@ export type AxesSpec = {
   readonly role: AxesRole; readonly position: Position; readonly artists: readonly Artist[];
   readonly title: string; readonly titleLoc: HAlign; readonly titleWeight: number; readonly xlabel: string; readonly ylabel: string;
   readonly x: AxisSpec; readonly y: AxisSpec; readonly grid: GridSpec; readonly legend: LegendSpec;
+  readonly spines: {
+    readonly left: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };
+    readonly right: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };
+    readonly top: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };
+    readonly bottom: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };
+  };
+  readonly tick: { readonly x: TickTheme; readonly y: TickTheme };
 };
-export type FigureSpec = { readonly widthIn: number; readonly heightIn: number; readonly dpi: number; readonly theme: Theme; readonly axes: readonly AxesSpec[] };
+export type FigureSpec = {
+  readonly widthIn: number; readonly heightIn: number; readonly dpi: number; readonly theme: Theme; readonly axes: readonly AxesSpec[];
+  readonly figText: readonly { readonly text: string; readonly x: number; readonly y: number; readonly ha: HAlign; readonly va: VAlign; readonly sizePt: number; readonly weight: number; readonly color: Rgb }[];
+  readonly suptitle: Option<{ readonly text: string; readonly x: number; readonly y: number; readonly ha: HAlign; readonly va: VAlign; readonly sizePt: number; readonly weight: number; readonly color: Rgb }>;
+  readonly supx: Option<{ readonly text: string; readonly x: number; readonly y: number; readonly ha: HAlign; readonly va: VAlign; readonly sizePt: number; readonly weight: number; readonly color: Rgb }>;
+  readonly supy: Option<{ readonly text: string; readonly x: number; readonly y: number; readonly ha: HAlign; readonly va: VAlign; readonly sizePt: number; readonly weight: number; readonly color: Rgb }>;
+};
 
 // ---------------------------------------------------------------- theme (parsed rcParams)
 export type TickDirection = 'in' | 'out' | 'inout';
@@ -183,6 +214,8 @@ export type Theme = {
   /** font.family resolved to faces by weight: body text, axes titles, axes labels */
   readonly font: { readonly families: readonly string[]; readonly sizePt: number; readonly weight: number; readonly titleWeight: number; readonly labelWeight: number };
   readonly text: { readonly color: Rgb };
+  /** How SVG text is written: 'text' nodes or glyph 'path's (rc svg.fonttype: 'none' -> 'text', 'path' -> 'glyphs') */
+  readonly svgText: 'text' | 'glyphs';
   readonly axes: {
     readonly face: Paint; readonly edge: Rgb; readonly linewidthPt: number;
     readonly spines: { readonly left: boolean; readonly bottom: boolean; readonly top: boolean; readonly right: boolean };

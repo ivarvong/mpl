@@ -23,7 +23,7 @@ export type Run = { readonly text: string; readonly dx: number; readonly dy: num
 export type LabelLayout = { readonly width: number; readonly ascent: number; readonly descent: number; readonly runs: readonly Run[] };
 
 /** Plain single-line text (Agg path): FT2Font pen positions, 26.6 exact. */
-export function measure(text: string, sizePt: number, dpi: number, face: Face): LabelLayout {
+function measurePlain(text: string, sizePt: number, dpi: number, face: Face): LabelLayout {
   const scale = ftScale(face, sizePt, dpi);
   const gids = shapeGlyphs(face, text), pens = penPositions(face, gids, scale);
   const glyphs = gids.map((gid, i): Glyph => ({ gid, dx: pens[i] / 64 }));
@@ -31,6 +31,36 @@ export function measure(text: string, sizePt: number, dpi: number, face: Face): 
   const h = text === '' ? 0 : ink.yMax - ink.yMin, d = text === '' ? 0 : -ink.yMin;
   return { width: text === '' ? 0 : pens[pens.length - 1] / 64, ascent: Math.max(h - d, min.ascent), descent: Math.max(d, min.descent),
            runs: [{ text, dx: 0, dy: 0, sizePt, face: face.id, glyphs }] };
+}
+
+/** Multi-line: lay out each line and stack vertically with a 1.2× line spacing, aligning by ha and respecting va. */
+function measureMultiline(text: string, sizePt: number, dpi: number, face: Face, lineSpacing = 1.2): LabelLayout {
+  const lines = text.split('\n');
+  if (lines.length === 1) return measurePlain(text, sizePt, dpi, face);
+  const m = lines.map((t) => measurePlain(t, sizePt, dpi, face));
+  const width = Math.max(...m.map((mm) => mm.width));
+  // Line box heights are ascent+descent; stack them with spacing (applied to full height, as in matplotlib).
+  const heights = m.map((mm) => mm.ascent + mm.descent);
+  const H = heights.reduce((s, h, i) => s + (i === 0 ? h : h * lineSpacing), 0);
+  // Baselines: first line baseline at y = m[0].ascent; each next line baseline increments by previous height*lineSpacing
+  const baselines: number[] = [];
+  let y = m.length > 0 ? m[0].ascent : 0;
+  for (let i = 0; i < m.length; i++) { baselines.push(y); y += (heights[i]) * lineSpacing; }
+  const runs: Run[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const mm = m[i];
+    // Align each line's penX at 0; alignment is handled in placeLayout
+    for (const r of mm.runs) runs.push({ ...r, dy: r.dy + (baselines[i] - mm.ascent) });
+  }
+  // The ascent/descent for the block: top is first line baseline, bottom is total - that baseline
+  const ascent = baselines.length > 0 ? baselines[0] : 0;
+  const descent = Math.max(0, H - ascent);
+  return { width, ascent, descent, runs };
+}
+
+/** Plain or multi-line text, with matplotlib-like 1.2× line spacing. */
+export function measure(text: string, sizePt: number, dpi: number, face: Face): LabelLayout {
+  return text.includes('\n') ? measureMultiline(text, sizePt, dpi, face, 1.2) : measurePlain(text, sizePt, dpi, face);
 }
 
 /**

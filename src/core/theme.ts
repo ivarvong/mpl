@@ -146,6 +146,9 @@ export function parseTheme(rc: RcLayer): Result<Theme> {
   const axesEdge = r.rgb('axes.edgecolor', cycle);
   const savefig = r.raw('savefig.facecolor');
   const titleColor = r.raw('axes.titlecolor') === 'auto' ? textColor : r.rgb('axes.titlecolor', cycle);
+  // svg.fonttype: 'none' -> <text>, 'path' -> glyph outlines; default to 'text' for viewer-laid-out text
+  const svgR = lookup(rc, 'svg.fonttype');
+  const svgText = svgR.kind === 'some' && typeof svgR.value === 'string' && svgR.value.toLowerCase() === 'path' ? 'glyphs' as const : 'text';
   const legendFace = r.raw('legend.facecolor') === 'inherit'
     ? (axesFace.kind === 'solid' ? axesFace.color : { hex: '#ffffff', alpha: 0 })
     : r.rgb('legend.facecolor', cycle);
@@ -166,6 +169,7 @@ export function parseTheme(rc: RcLayer): Result<Theme> {
     font: { families: fontFamilies(r.raw('font.family'), r.raw('font.sans-serif')), sizePt: fontPt,
             weight: parseWeight(r.raw('font.weight')), titleWeight: parseWeight(r.raw('axes.titleweight')), labelWeight: parseWeight(r.raw('axes.labelweight')) },
     text: { color: textColor },
+    svgText,
     axes: {
       face: axesFace, edge: axesEdge, linewidthPt: r.num('axes.linewidth'),
       spines: { left: r.bool('axes.spines.left'), bottom: r.bool('axes.spines.bottom'), top: r.bool('axes.spines.top'), right: r.bool('axes.spines.right') },

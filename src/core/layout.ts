@@ -5,7 +5,7 @@ import { dataExtents, unionExtent, viewLimits } from './autoscale.ts';
 import type { AxisDrawn, Sides } from './draw-axis.ts';
 import { drawAxis, labelNodes } from './draw-axis.ts';
 import type { Drawn } from './draw-artists.ts';
-import { drawBar, drawFill, drawLine, drawText } from './draw-artists.ts';
+import { drawBar, drawFill, drawLine, drawText, drawScatter, drawSpan } from './draw-artists.ts';
 import type { Frame } from './frame.ts';
 import { axesBox, frame } from './frame.ts';
 import { layoutLegend } from './legend.ts';
@@ -62,7 +62,10 @@ function roleImplies(role: AxesRole, hasTwin: boolean, theme: Theme): Roles {
 const tagged = (d: Drawn, i: number, kind: string): Drawn =>
   ({ ...d, nodes: d.nodes.map((n): Node => (n.kind === 'group' ? { ...n, tag: `artist/${i}/${kind}` } : n)) });
 function drawArtists(ax: AxesSpec, f: Frame, theme: Theme, k: number, clip: Clip, tracer: Tracer): readonly Drawn[] {
-  return ax.artists.map((a, i) => tagged(drawArtist(a, f, theme, k, clip, tracer), i, a.kind));
+  return ax.artists.map((a, i) => {
+    const c: Clip = a.clip === false ? { kind: 'none' } : clip;
+    return tagged(drawArtist(a, f, theme, k, c, tracer), i, a.kind);
+  });
 }
 function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tracer: Tracer): Drawn {
   {
@@ -71,6 +74,8 @@ function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tr
       case 'bar': return tracer.span('artist.bar', { rects: a.x.length }, (sp) => drawBar(a, f, k, clip, sp));
       case 'fill': return tracer.span('artist.fill', { points: a.x.length }, () => drawFill(a, f, k, clip));
       case 'text': return tracer.span('artist.text', { text: a.text, coords: a.coords }, () => drawText(a, f, k * 72, resolveFace(theme.font.families, a.weight)));
+      case 'scatter': return tracer.span('artist.scatter', { points: a.x.length }, () => drawScatter(a, f, theme, k, clip));
+      case 'span': return tracer.span('artist.span', { orientation: a.orientation }, () => drawSpan(a, f, k, clip));
       default: return assertNever(a);
     }
   }
@@ -85,26 +90,50 @@ function legendEntries(ax: AxesSpec, drawn: readonly Drawn[]): readonly LegendEn
     if (h.kind === 'none') return;
     const e: LegendEntry = { label: a.label.text, handle: h.value };
     switch (a.kind) {
-      case 'line': case 'fill': children.push(e); break;     // collections are Axes children too
-      case 'bar': containers.push(e); break;
+      case 'line': case 'fill': case 'scatter': children.push(e); break;     // collections are Axes children too
+      case 'bar': case 'span': containers.push(e); break;
       default: assertNever(a);
     }
   });
   return [...children, ...containers];
 }
 
-function spines(theme: Theme, f: Frame, k: number): readonly Node[] {
-  const w = theme.axes.linewidthPt * k, b = f.box, s = theme.axes.spines;
-  const x0 = snap(b.x0, w), x1 = snap(b.x1, w), yB = snap(b.yBot, w), yT = snap(b.yTop, w);
-  // One Patch per spine, in Spines' order (left, right, bottom, top); Spine sets capstyle 'projecting'.
-  const lines: (readonly Seg[])[] = [
-    ...(s.left ? [[['M', x0, yB], ['L', x0, yT]] as const] : []),
-    ...(s.right ? [[['M', x1, yB], ['L', x1, yT]] as const] : []),
-    ...(s.bottom ? [[['M', x0, yB], ['L', x1, yB]] as const] : []),
-    ...(s.top ? [[['M', x0, yT], ['L', x1, yT]] as const] : []),
-  ];
-  if (w <= 0) return [];
-  return lines.map((segs) => pathNode(segs, { kind: 'stroke', stroke: { color: theme.axes.edge, width: w, cap: 'square', join: 'miter', dash: { kind: 'solid' } } }));
+function spines(theme: Theme, f: Frame, k: number, ax: AxesSpec): readonly Node[] {
+  const b = f.box;
+  const sides: ('left' | 'right' | 'bottom' | 'top')[] = ['left', 'right', 'bottom', 'top'];
+  const out: Node[] = [];
+  for (const side of sides) {
+    const vis = ax.spines[side].visible && theme.axes.spines[side];
+    if (!vis) continue;
+    const wPt = ax.spines[side].widthPt.kind === 'some' ? ax.spines[side].widthPt.value : theme.axes.linewidthPt;
+    const w = wPt * k;
+    if (w <= 0) continue;
+    const pos = ax.spines[side].position;
+    const outward = pos.kind === 'some' && pos.value.kind === 'outward' ? pos.value.pts * k : 0;
+    let segs: readonly Seg[];
+    switch (side) {
+      case 'left': {
+        const x = snap(b.x0 - outward, w);
+        segs = [['M', x, snap(b.yBot, w)], ['L', x, snap(b.yTop, w)]]; break;
+      }
+      case 'right': {
+        const x = snap(b.x1 + outward, w);
+        segs = [['M', x, snap(b.yBot, w)], ['L', x, snap(b.yTop, w)]]; break;
+      }
+      case 'bottom': {
+        const y = snap(b.yBot + outward, w);
+        segs = [['M', snap(b.x0, w), y], ['L', snap(b.x1, w), y]]; break;
+      }
+      case 'top': {
+        const y = snap(b.yTop - outward, w);
+        segs = [['M', snap(b.x0, w), y], ['L', snap(b.x1, w), y]]; break;
+      }
+      default: assertNever(side);
+    }
+    const color = ax.spines[side].color.kind === 'some' ? ax.spines[side].color.value : theme.axes.edge;
+    out.push(pathNode(segs, { kind: 'stroke', stroke: { color, width: w, cap: 'square', join: 'miter', dash: { kind: 'solid' } } }));
+  }
+  return out;
 }
 
 type AxisOut = { readonly near: readonly TextBox[]; readonly far: readonly TextBox[] };
@@ -167,7 +196,8 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
   const theme = fig.theme, dpi = fig.dpi, k = pxPerPt(dpi);
   const W = fig.widthIn * dpi, H = fig.heightIn * dpi;
   const box = axesBox(ax.position, W, H);
-  const roles = roleImplies(ax.role, inp.hasTwin, theme);
+  const themed: Theme = { ...theme, xtick: ax.tick.x, ytick: ax.tick.y };
+  const roles = roleImplies(ax.role, inp.hasTwin, themed);
   const xs = scaleOf(ax.x), ys = scaleOf(ax.y);
 
   const xlim = inp.x.lim;
@@ -184,13 +214,16 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
   const background: readonly Node[] = face.kind === 'some' ? [rectNode(bx0, by0, bx1 - bx0, by1 - by0, face.value)] : [];
   const drawn = tracer.span('artists', { count: ax.artists.length }, () => drawArtists(ax, f, theme, k, clip, tracer));
   // z-order 1: patches and collections, in the order added; 2: lines; 3: texts (before the titles)
-  const zOf = (i: number): number => { const kd = ax.artists[i].kind; return kd === 'bar' || kd === 'fill' ? 1 : kd === 'line' ? 2 : 3; };
+  const zOf = (i: number): number => {
+    const kd = ax.artists[i].kind;
+    return kd === 'bar' || kd === 'fill' || kd === 'span' ? 1 : kd === 'line' || kd === 'scatter' ? 2 : 3;
+  };
   const patches = drawn.flatMap((d, i) => (zOf(i) === 1 ? d.nodes : []));
   const lines = drawn.flatMap((d, i) => (zOf(i) === 2 ? d.nodes : []));
   const userTexts = drawn.flatMap((d, i) => (zOf(i) === 3 ? d.nodes : []));
-  const xa = shown(roles.x, (sides) => tracer.span('axis.x', { ticks: xt.visible.length }, () => drawAxis('x', xt, theme.xtick, sides, gridOn(ax.grid, 'x'), f, theme, dpi, tracer)));
+  const xa = shown(roles.x, (sides) => tracer.span('axis.x', { ticks: xt.visible.length }, () => drawAxis('x', xt, themed.xtick, sides, gridOn(ax.grid, 'x'), f, theme, dpi, tracer)));
   const ya = shown(roles.y, (sides) => tracer.span('axis.y', { ticks: yt.visible.length, side: roles.yOnRight ? 'right' : 'left' },
-    () => drawAxis('y', yt, theme.ytick, sides, gridOn(ax.grid, 'y'), f, theme, dpi, tracer)));
+    () => drawAxis('y', yt, themed.ytick, sides, gridOn(ax.grid, 'y'), f, theme, dpi, tracer)));
   const texts = tracer.span('decorations', { role: ax.role.kind }, () =>
     decorations(ax, roles, theme, f, k, dpi, xt, yt, { near: xa.nearBoxes, far: xa.farBoxes }, { near: ya.nearBoxes, far: ya.farBoxes }));
 
@@ -209,7 +242,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
   // stable and ties keep matplotlib's get_children order (children, spines, then the axes), which
   // matters for axisbelow=False: the axis (2.5) then draws over the spines (2.5).
   const layers: ReadonlyArray<readonly [number, readonly Node[]]> = [
-    [1, patches], [2, lines], [2.5, spines(theme, f, k)],
+    [1, patches], [2, lines], [2.5, spines(theme, f, k, ax)],
     [axisZ(theme.axes.axisBelow), [...clipped(xa.grid), ...xa.marks, ...clipped(ya.grid), ...ya.marks]],
     [3, [...userTexts, ...texts]], [5, legend.kind === 'some' ? legend.value.out.nodes : []],
   ];
@@ -250,8 +283,30 @@ export function layoutFigure(fig: FigureSpec, tracer: Tracer): { readonly scene:
   };
   const parts = fig.axes.map((ax, i) => tracer.span('axes.layout', { artists: ax.artists.length, role: ax.role.kind }, () =>
     layoutAxes({ ax, x: sharedX(i), yExtent: ext[i].y, hasTwin: ax.role.kind === 'primary' && xGroup(fig.axes, i).length > 1 }, fig, tracer)));
+  const W = fig.widthIn * fig.dpi, H = fig.heightIn * fig.dpi, k = pxPerPt(fig.dpi);
+  const figTexts: Node[] = [];
+  // generic fig.text
+  for (const t of fig.figText) {
+    const x = t.x * W, y = H - t.y * H;
+    figTexts.push(...labelNodes(placeText(t.text, t.sizePt, fig.dpi, resolveFace(fig.theme.font.families, t.weight), x, y, { kind: 'horizontal', ha: t.ha, va: t.va }), k, t.color));
+  }
+  // suptitle and supx/supylabel
+  if (fig.suptitle.kind === 'some') {
+    const s = fig.suptitle.value, x = s.x * W, y = s.y * H;
+    figTexts.push(...labelNodes(placeText(s.text, s.sizePt, fig.dpi, resolveFace(fig.theme.font.families, s.weight), x, y, { kind: 'horizontal', ha: s.ha, va: s.va }), k, s.color));
+  }
+  if (fig.supx.kind === 'some') {
+    const s = fig.supx.value, x = s.x * W, y = s.y * H;
+    figTexts.push(...labelNodes(placeText(s.text, s.sizePt, fig.dpi, resolveFace(fig.theme.font.families, s.weight), x, y, { kind: 'horizontal', ha: s.ha, va: s.va }), k, s.color));
+  }
+  if (fig.supy.kind === 'some') {
+    const s = fig.supy.value, x = s.x * W, y = s.y * H;
+    // draw vertical like ylabel
+    const b = placeText(s.text, s.sizePt, fig.dpi, resolveFace(fig.theme.font.families, s.weight), x, y, { kind: 'ylabel' });
+    figTexts.push(...labelNodes(b, k, s.color));
+  }
   return {
-    scene: { width: fig.widthIn * fig.dpi, height: fig.heightIn * fig.dpi, dpi: fig.dpi, background: fig.theme.figure.background, nodes: parts.flatMap((p) => p.nodes) },
+    scene: { width: W, height: H, dpi: fig.dpi, background: fig.theme.figure.background, nodes: [...parts.flatMap((p) => p.nodes), ...figTexts] },
     meta: parts.map((p) => p.meta),
   };
 }

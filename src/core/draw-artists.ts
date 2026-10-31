@@ -9,7 +9,7 @@ import { isRectilinear, simplifyPolyline } from './path.ts';
 import { inkOf, rectNode, snap, snapOffset } from './scene.ts';
 import { lookup } from './std.ts';
 import { forwardAll } from './scale.ts';
-import type { BarArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme } from './types.ts';
+import type { BarArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist } from './types.ts';
 import { labelNodes } from './draw-axis.ts';
 import { placeText, pxPerPt } from './text.ts';
 import type { Face } from './fonts.ts';
@@ -146,4 +146,38 @@ export function drawText(a: TextArtist, f: Frame, dpi: number, face: Face): Draw
   const y = a.coords === 'data' ? ty(f, a.y) : f.H - (a.y * f.box.h + (f.H - f.box.yBot));
   const nodes = a.text === '' ? [] : labelNodes(placeText(a.text, a.sizePt, dpi, face, x, y, { kind: 'horizontal', ha: a.ha, va: a.va }), k, a.color);
   return { nodes, lines: [], boxes: [], handle: none };
+}
+
+/** ax.scatter: markers-only collection with sizes in pt^2. */
+export function drawScatter(a: ScatterArtist, f: Frame, theme: Theme, k: number, clip: Clip): Drawn {
+  const n = Math.min(a.x.length, a.y.length, a.sizePt2.length);
+  if (n === 0) return { nodes: [], lines: [], boxes: [], handle: some({ kind: 'line', stroke: { kind: 'none' }, markers: { kind: 'none' } }) };
+  const xs = new Float64Array(n), ys = new Float64Array(n);
+  for (let i = 0; i < n; i++) { xs[i] = tx(f, a.x[i]); ys[i] = ty(f, a.y[i]); }
+  // Size in points^2: approximate with a single average size in px for now
+  const avgPx = n > 0 ? Math.sqrt(a.sizePt2.reduce((s, v) => s + Math.max(0, v), 0) / n) * k : 0;
+  const stroke: Option<Stroke> = a.edge.kind === 'solid' && a.edgeWidthPt > 0 ? some({ color: a.edge.color, width: a.edgeWidthPt * k, cap: theme.lines.solidCap, join: theme.lines.solidJoin, dash: { kind: 'solid' } }) : none;
+  const ink = inkOf(a.face, stroke);
+  if (ink.kind === 'none') return { nodes: [], lines: [], boxes: [], handle: some({ kind: 'line', stroke: { kind: 'none' }, markers: { kind: 'none' } }) };
+  const m = markersNode({ kind: 'on', shape: a.shape, sizePt: avgPx / k, edgeWidthPt: a.edgeWidthPt, face: a.face, edge: a.edge }, xs, ys, k);
+  const nodes: readonly Node[] = m.kind === 'some' ? [{ kind: 'group', clip, nodes: [m.value], tag: '' }] : [];
+  return { nodes, lines: [], boxes: [], handle: some({ kind: 'line', stroke: { kind: 'none' }, markers: { kind: 'on', shape: a.shape, sizePt: avgPx / k, edgeWidthPt: a.edgeWidthPt, face: a.face, edge: a.edge } }) };
+}
+
+/** axvspan / axhspan: spans in data × axes-fraction coordinates. */
+export function drawSpan(a: SpanArtist, f: Frame, k: number, clip: Clip): Drawn {
+  const stroke: Option<Stroke> = a.edge.kind === 'on' && a.edge.widthPt > 0 ? some({ color: a.edge.color, width: a.edge.widthPt * k, cap: 'butt', join: 'miter', dash: { kind: 'solid' } }) : none;
+  const ink = inkOf(a.face, stroke);
+  if (ink.kind === 'none') return { nodes: [], lines: [], boxes: [], handle: some({ kind: 'patch', face: a.face, edge: a.edge }) };
+  if (a.orientation === 'vertical') {
+    const x0 = tx(f, a.a0), x1 = tx(f, a.a1);
+    const y0 = f.H - (a.f0 * f.box.h + (f.H - f.box.yBot)), y1 = f.H - (a.f1 * f.box.h + (f.H - f.box.yBot));
+    const rect = rectNode(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0), ink.value);
+    return { nodes: [{ kind: 'group', clip, nodes: [rect], tag: '' }], lines: [], boxes: [], handle: some({ kind: 'patch', face: a.face, edge: a.edge }) };
+  } else {
+    const y0 = ty(f, a.a0), y1 = ty(f, a.a1);
+    const x0 = a.f0 * f.box.w + f.box.x0, x1 = a.f1 * f.box.w + f.box.x0;
+    const rect = rectNode(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0), ink.value);
+    return { nodes: [{ kind: 'group', clip, nodes: [rect], tag: '' }], lines: [], boxes: [], handle: some({ kind: 'patch', face: a.face, edge: a.edge }) };
+  }
 }
