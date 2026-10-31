@@ -1,0 +1,4 @@
+# Python environment for regenerating the oracle (fixtures/*.py, tools/gen_*.py). Not needed to run the tests.
+matplotlib==3.11.2
+numpy==2.5.4
+fonttools==4.68.0

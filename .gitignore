@@ -1,0 +1,7 @@
+node_modules/
+fixtures/out/
+test/scratch/
+dist/
+tools/live/lib/
+*.tmp.mjs
+.DS_Store

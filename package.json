@@ -1,0 +1,62 @@
+{
+  "name": "mpljs",
+  "version": "0.1.0",
+  "description": "Pure-JavaScript, zero-dependency reproduction of matplotlib's output (SVG and PNG), verified against matplotlib itself",
+  "keywords": [
+    "matplotlib",
+    "plotting",
+    "charts",
+    "svg",
+    "png",
+    "visualization",
+    "typescript",
+    "zero-dependency"
+  ],
+  "homepage": "https://github.com/ivarvong/mpl#readme",
+  "bugs": {
+    "url": "https://github.com/ivarvong/mpl/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ivarvong/mpl.git"
+  },
+  "license": "ISC",
+  "author": "Ivar Vong <ivar@ivarvong.com>",
+  "type": "module",
+  "types": "./dist/browser/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/browser/index.d.ts",
+      "default": "./dist/browser/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/browser",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "npm run check && node test/compare.mjs && node test/fonts.test.mjs && node test/png.test.mjs && node test/glyphcache.test.mjs && node test/view.test.mjs && node test/fuzz-ticker.mjs && node test/fuzz-dates.mjs && node test/trace.test.mjs",
+    "fixtures": "python3 fixtures/generate.py",
+    "lint": "oxlint src test tools --ignore-pattern tools/live/lib/**",
+    "fuzz": "python3 fixtures/fuzz_ticker.py && python3 fixtures/fuzz_dates.py && node test/fuzz-ticker.mjs && node test/fuzz-dates.mjs",
+    "typecheck": "tsc -p .",
+    "strict": "node tools/check_strict.mjs",
+    "check": "npm run typecheck && npm run strict && npm run lint",
+    "tables": "python3 tools/gen_tables.py",
+    "oracle": "node test/png-oracle.mjs",
+    "build": "node tools/build_package.mjs",
+    "prepack": "npm run build",
+    "live:build": "node tools/build_browser.mjs tools/live/lib"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "oxlint": "^1.89.0",
+    "typescript": "^7.0.2"
+  }
+}

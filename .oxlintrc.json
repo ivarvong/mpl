@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "eslint",
+    "unicorn",
+    "import",
+    "promise",
+    "typescript"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "warn",
+    "style": "off"
+  },
+  "rules": {
+    "no-unused-vars": "error",
+    "no-var": "error",
+    "prefer-const": "error",
+    "eqeqeq": "error",
+    "no-param-reassign": "off",
+    "unicorn/prefer-string-starts-ends-with": "error",
+    "import/no-cycle": "error",
+    "no-underscore-dangle": "off",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error"
+  },
+  "ignorePatterns": [
+    "node_modules",
+    "fixtures",
+    "src/core/data"
+  ]
+}

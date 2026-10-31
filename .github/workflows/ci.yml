@@ -1,0 +1,32 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Oracle comparison and unit suites (committed fixtures; no Python regeneration)
+        run: |
+          node test/compare.mjs
+          node test/fonts.test.mjs
+          node test/png.test.mjs
+          node test/glyphcache.test.mjs
+          node test/view.test.mjs
+          node test/fuzz-ticker.mjs
+          node test/fuzz-dates.mjs
+          node test/trace.test.mjs
+      - name: Package builds and imports
+        run: |
+          npm run build
+          node --input-type=module -e "const m = await import('./dist/browser/index.js'); const [f, ax] = m.subplots(); ax.plot([1,2,3],[1,4,9]); if (!f.toSVG().startsWith('<?xml') && !f.toSVG().includes('<svg')) throw new Error('no svg'); if (f.toPNGSync().length < 100) throw new Error('no png')"
