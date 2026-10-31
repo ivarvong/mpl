@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs';
-import { subplots } from '../src/index.ts';
+import { subplots, type Axes } from '../src/index.ts';
 
 function buildBefore() {
   const [fig, ax] = subplots({ rc: { 'svg.fonttype': 'path' } });
@@ -11,7 +11,9 @@ function buildBefore() {
 }
 function buildAfter() {
   const fig = buildBefore();
-  const ax = (fig as any).axes[0];
+  const first = (fig as { axes: Axes[] }).axes[0];
+  if (!first) throw new Error('no axes');
+  const ax: Axes = first;
   ax.annotate('peak', [1.5, Math.sin(1.5)], { xytext: [2.5, 1.2], arrowprops: { color: 'red', linewidth: 2, headlength: 8, headwidth: 6 } });
   return fig;
 }
