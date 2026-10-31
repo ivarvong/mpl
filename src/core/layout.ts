@@ -18,7 +18,7 @@ import { placeText, pxPerPt } from './text.ts';
 import { resolveFace } from './fonts.ts';
 import type { TickSet } from './ticks.ts';
 import { computeTicks, scaleOf, tickSpace } from './ticks.ts';
-import type { Artist, AxesMeta, AxesRole, AxesSpec, AxisBelow, AxisMeta, Clip, FigureSpec, GridSpec, LegendEntry, Node, Placement, Rgb, Scene, Seg, Theme, TickTheme } from './types.ts';
+import type { Artist, AxesMeta, AxesRole, AxesSpec, AxisBelow, AxisMeta, Clip, FigureSpec, GridSpec, LegendEntry, Node, Placement, Rgb, Scene, Stroke, Theme, TickTheme } from './types.ts';
 import { assertNever, none, some } from './types.ts';
 import type { Tracer } from '../trace.ts';
 
@@ -100,17 +100,50 @@ function legendEntries(ax: AxesSpec, drawn: readonly Drawn[]): readonly LegendEn
   return [...children, ...containers];
 }
 
-function spines(theme: Theme, f: Frame, k: number): readonly Node[] {
-  const w = theme.axes.linewidthPt * k, b = f.box, s = theme.axes.spines;
-  const x0 = snap(b.x0, w), x1 = snap(b.x1, w), yB = snap(b.yBot, w), yT = snap(b.yTop, w);
-  const lines: (readonly Seg[])[] = [
-    ...(s.left ? [[['M', x0, yB], ['L', x0, yT]] as const] : []),
-    ...(s.right ? [[['M', x1, yB], ['L', x1, yT]] as const] : []),
-    ...(s.bottom ? [[['M', x0, yB], ['L', x1, yB]] as const] : []),
-    ...(s.top ? [[['M', x0, yT], ['L', x1, yT]] as const] : []),
-  ];
-  if (w <= 0) return [];
-  return lines.map((segs) => pathNode(segs, { kind: 'stroke', stroke: { color: theme.axes.edge, width: w, cap: 'square', join: 'miter', dash: { kind: 'solid' } } }));
+function spinesForAxes(ax: AxesSpec, theme: Theme, f: Frame, k: number): readonly Node[] {
+  const baseW = theme.axes.linewidthPt * k, b = f.box;
+  const sides: Array<{ side: 'left' | 'right' | 'top' | 'bottom'; x0: number; y0: number; x1: number; y1: number }> = [];
+  const ov = ax.spines;
+  const has = theme.axes.spines;
+  const sideOn = (side: 'left' | 'right' | 'top' | 'bottom'): boolean => (has[side] && ov[side].visible);
+  const outwardPx = (side: 'left' | 'right' | 'top' | 'bottom'): number => {
+    const p = ov[side].position;
+    return p.kind === 'some' && p.value.kind === 'outward' ? p.value.pts * k : 0;
+  };
+  const wOf = (side: 'left' | 'right' | 'top' | 'bottom'): number => {
+    const wPt = ov[side].widthPt.kind === 'some' ? ov[side].widthPt.value : theme.axes.linewidthPt;
+    return wPt * k;
+  };
+  const colorOf = (side: 'left' | 'right' | 'top' | 'bottom'): Rgb => (ov[side].color.kind === 'some' ? ov[side].color.value : theme.axes.edge);
+  // Compute snapped positions per side, with optional outward offsets
+  if (sideOn('left')) {
+    const w = wOf('left'); const off = outwardPx('left');
+    const x = snap(b.x0 - off, w), y0 = snap(b.yBot, w), y1 = snap(b.yTop, w);
+    sides.push({ side: 'left', x0: x, y0, x1: x, y1 });
+  }
+  if (sideOn('right')) {
+    const w = wOf('right'); const off = outwardPx('right');
+    const x = snap(b.x1 + off, w), y0 = snap(b.yBot, w), y1 = snap(b.yTop, w);
+    sides.push({ side: 'right', x0: x, y0, x1: x, y1 });
+  }
+  if (sideOn('bottom')) {
+    const w = wOf('bottom'); const off = outwardPx('bottom');
+    const y = snap(b.yBot + off, w), x0 = snap(b.x0, w), x1 = snap(b.x1, w);
+    sides.push({ side: 'bottom', x0, y0: y, x1, y1: y });
+  }
+  if (sideOn('top')) {
+    const w = wOf('top'); const off = outwardPx('top');
+    const y = snap(b.yTop - off, w), x0 = snap(b.x0, w), x1 = snap(b.x1, w);
+    sides.push({ side: 'top', x0, y0: y, x1, y1: y });
+  }
+  const nodes: Node[] = [];
+  for (const s of sides) {
+    const w = Math.max(baseW, wOf(s.side));   // at least theme width; overrides can widen
+    if (w <= 0) continue;
+    const stroke: Stroke = { color: colorOf(s.side), width: w, cap: 'square', join: 'miter', dash: { kind: 'solid' } };
+    nodes.push(pathNode([[ 'M', s.x0, s.y0 ], [ 'L', s.x1, s.y1 ]], { kind: 'stroke', stroke }));
+  }
+  return nodes;
 }
 
 type AxisOut = { readonly near: readonly TextBox[]; readonly far: readonly TextBox[] };
@@ -219,7 +252,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
   // stable and ties keep matplotlib's get_children order (children, spines, then the axes), which
   // matters for axisbelow=False: the axis (2.5) then draws over the spines (2.5).
   const layers: ReadonlyArray<readonly [number, readonly Node[]]> = [
-    [1, patches], [2, lines], [2.5, spines(theme, f, k)],
+    [1, patches], [2, lines], [2.5, spinesForAxes(ax, theme, f, k)],
     [axisZ(theme.axes.axisBelow), [...clipped(xa.grid), ...xa.marks, ...clipped(ya.grid), ...ya.marks]],
     [3, [...userTexts, ...texts]], [5, legend.kind === 'some' ? legend.value.out.nodes : []],
   ];

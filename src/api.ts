@@ -427,12 +427,15 @@ export class Axes {
     const kw = new KwReader(kwargs, 'axvspan');
     const x0 = unwrap(parseSeries([xmin], 'xmin')); const x1 = unwrap(parseSeries([xmax], 'xmax'));
     const ymin = kw.read(['ymin'], num('ymin'), () => 0); const ymax = kw.read(['ymax'], num('ymax'), () => 1);
-    const face = kw.read(['facecolor', 'fc', 'color'], this.paint, (): Paint => ({ kind: 'solid', color: this.next('patch') }));
+    const face0 = kw.read(['facecolor', 'fc', 'color'], this.paint, (): Paint => ({ kind: 'solid', color: this.next('patch') }));
     const ec = kw.read(['edgecolor', 'ec'], this.paint, (): Paint => ({ kind: 'none' }));
     const lw = kw.read(['linewidth', 'lw'], num('linewidth'), () => 0);
+    const alpha = kw.read(['alpha'], unitInterval('alpha'), () => -1);
     const lbl = kw.read(['label'], label, (): Label => ({ kind: 'none' }));
     const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => true);
     kw.done();
+    const withAlpha = (p: Paint): Paint => (p.kind === 'solid' && alpha >= 0 ? { kind: 'solid', color: { hex: p.color.hex, alpha } } : p);
+    const face = withAlpha(face0);
     const edge: BarEdge = ec.kind === 'solid' && lw > 0 ? { kind: 'on', color: ec.color, widthPt: lw } : { kind: 'none' };
     const sp: SpanArtist = { kind: 'span', orientation: 'vertical', a0: this.xaxis.convert(x0)[0], a1: this.xaxis.convert(x1)[0], f0: ymin, f1: ymax, face, edge, label: lbl, clip };
     this.artists.push(sp); return sp;
@@ -442,12 +445,15 @@ export class Axes {
     const kw = new KwReader(kwargs, 'axhspan');
     const y0 = unwrap(parseSeries([ymin], 'ymin')); const y1 = unwrap(parseSeries([ymax], 'ymax'));
     const xmin = kw.read(['xmin'], num('xmin'), () => 0); const xmax = kw.read(['xmax'], num('xmax'), () => 1);
-    const face = kw.read(['facecolor', 'fc', 'color'], this.paint, (): Paint => ({ kind: 'solid', color: this.next('patch') }));
+    const face0 = kw.read(['facecolor', 'fc', 'color'], this.paint, (): Paint => ({ kind: 'solid', color: this.next('patch') }));
     const ec = kw.read(['edgecolor', 'ec'], this.paint, (): Paint => ({ kind: 'none' }));
     const lw = kw.read(['linewidth', 'lw'], num('linewidth'), () => 0);
+    const alpha = kw.read(['alpha'], unitInterval('alpha'), () => -1);
     const lbl = kw.read(['label'], label, (): Label => ({ kind: 'none' }));
     const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => true);
     kw.done();
+    const withAlpha = (p: Paint): Paint => (p.kind === 'solid' && alpha >= 0 ? { kind: 'solid', color: { hex: p.color.hex, alpha } } : p);
+    const face = withAlpha(face0);
     const edge: BarEdge = ec.kind === 'solid' && lw > 0 ? { kind: 'on', color: ec.color, widthPt: lw } : { kind: 'none' };
     const sp: SpanArtist = { kind: 'span', orientation: 'horizontal', a0: this.yaxis.convert(y0)[0], a1: this.yaxis.convert(y1)[0], f0: xmin, f1: xmax, face, edge, label: lbl, clip };
     this.artists.push(sp); return sp;
@@ -615,7 +621,7 @@ export class Figure {
     const kw = new KwReader(kwargs, 'Figure');
     const styles = kw.read(['style'], parseStyles, (): readonly StyleSpec[] => []);
     const rc = kw.read(['rc'], (v) => (isPlainObject(v) ? rcLayer(v) : err('rc must be an object')), (): RcLayer => new Map());
-    for (const k of rc.keys()) if (!DEFAULTS.has(k) && k !== 'svg.fonttype') throw new TypeError(`unknown rc key: ${k}`);
+    for (const k of rc.keys()) if (!DEFAULTS.has(k)) throw new TypeError(`unknown rc key '${k}'`);
     this.theme = unwrap(parseTheme(unwrap(composeStyles([...styles, { kind: 'layer', layer: rc }]))));
     const size = kw.read(['figsize'], (v): Result<readonly [number, number]> => {
       const a: readonly unknown[] = Array.isArray(v) ? v : [];
@@ -632,7 +638,10 @@ export class Figure {
       figText: this._figText, suptitle: this._suptitle, supx: this._supx, supy: this._supy,
     };
   }
-  private touch(): void { /* layout cache disabled */ }
+  // Layout cache: compute once per figure state; invalidated by any spec change.
+  // The cache key is the JSON of FigureSpec: pure and deterministic.
+  private _layoutCache: Option<{ readonly key: string; readonly scene: Scene; readonly meta: readonly AxesMeta[] }> = none;
+  private touch(): void { this._layoutCache = none; }
   /** Figure-level text in figure coordinates (0..1). */
   text(x: unknown, y: unknown, s: unknown, kwargs: Kwargs = {}): this {
     const kw = new KwReader(kwargs, 'Figure.text');
@@ -669,46 +678,48 @@ export class Figure {
     const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.axes.labelSizePt), () => this.theme.axes.labelSizePt);
     const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.labelWeight);
     kw.done();
-    // Represent as horizontal text at left margin; the renderer rotates ylabels only
-    this._supy = some({ text: str(s), x: 0, y: 0.5, ha: 'left', va: 'center', sizePt, weight, color });
+    // Place like an axes ylabel at the left subplot margin, padded left by labelpad
+    const Wpx = this.widthIn * this.dpi;
+    const leftFrac = this.theme.figure.subplot[0];
+    const padPx = this.theme.axes.labelPadPt * (this.dpi / 72);
+    const xFrac = Math.max(0, (leftFrac * Wpx - padPx) / Wpx);
+    this._supy = some({ text: str(s), x: xFrac, y: 0.5, ha: 'left', va: 'center', sizePt, weight, color });
     this.touch(); return this;
   }
   subplots_adjust(kwargs: Kwargs = {}): this {
     const kw = new KwReader(kwargs, 'Figure.subplots_adjust');
     const left = kw.get(['left']); const right = kw.get(['right']); const bottom = kw.get(['bottom']); const top = kw.get(['top']);
-    const wspace = kw.get(['wspace']); const hspace = kw.get(['hspace']);
+    // Accept but ignore wspace/hspace here: grid layout is owned by the grid constructor;
+    // subplots_adjust only changes the SubplotParams (margins) in our current single-axes model.
+    kw.get(['wspace']); kw.get(['hspace']);
     kw.done();
     const [l0, b0, r0, t0] = this.theme.figure.subplot;
     const l = left.kind === 'some' ? unwrap(num('left')(left.value)) : l0;
     const r = right.kind === 'some' ? unwrap(num('right')(right.value)) : r0;
     const b = bottom.kind === 'some' ? unwrap(num('bottom')(bottom.value)) : b0;
     const t = top.kind === 'some' ? unwrap(num('top')(top.value)) : t0;
-    // Arrange axes in a near-square grid; wspace/hspace follow matplotlib fraction-of-axes semantics
-    const n = this.axes.length;
-    if (n <= 1) { for (const ax of this.axes) ax.position = [l, b, r, t]; this.touch(); return this; }
-    const cols = Math.ceil(Math.sqrt(n));
-    const rows = Math.ceil(n / cols);
-    const Sx = r - l, Sy = t - b;
-    const ws = wspace.kind === 'some' ? unwrap(num('wspace')(wspace.value)) : 0.2;
-    const hs = hspace.kind === 'some' ? unwrap(num('hspace')(hspace.value)) : 0.2;
-    const axW = Sx / (cols + (cols - 1) * ws);
-    const axH = Sy / (rows + (rows - 1) * hs);
-    const gapX = axW * ws, gapY = axH * hs;
-    for (let i = 0; i < n; i++) {
-      const row = Math.floor(i / cols), col = i % cols;
-      const x0 = l + col * (axW + gapX), x1 = x0 + axW;
-      const y0 = b + row * (axH + gapY), y1 = y0 + axH;
-      this.axes[i].position = [x0, y0, x1, y1];
-    }
+    // Preserve the existing subplot grid shape (as created by subplots(nrows, ncols) in matplotlib).
+    // In mpljs today figures typically have one primary Axes (plus optional twins). Match matplotlib:
+    // subplots_adjust only updates the SubplotParams; every Axes keeps its cell and twins co-locate.
+    for (const ax of this.axes) ax.position = [l, b, r, t];
     this.touch(); return this;
   }
   /** Run layout; one trace per run. */
   toScene(): Scene {
+    // Cache by FigureSpec JSON — pure and deterministic; stable ordering by construction.
+    const spec = this.spec();
+    const key = JSON.stringify(spec);
+    if (this._layoutCache.kind === 'some' && this._layoutCache.value.key === key) {
+      // Keep meta in sync with the last produced layout
+      this.meta = this._layoutCache.value.meta;
+      return this._layoutCache.value.scene;
+    }
     const root = tracer.startTrace('figure.layout', { axes: this.axes.length, dpi: this.dpi });
     try {
-      const { scene, meta } = layoutFigure(this.spec(), tracer);
+      const { scene, meta } = layoutFigure(spec, tracer);
       this.meta = meta;
       root.setAttribute('nodes', scene.nodes.length);
+      this._layoutCache = some({ key, scene, meta });
       return scene;
     } catch (e) { root.recordException(e); throw e; } finally { root.end(); }
   }

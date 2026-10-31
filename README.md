@@ -35,6 +35,8 @@ More runnable examples are in [`examples/`](examples) (`npm run examples` runs t
 dates, and `twinx` with a theme. Each writes SVG and PNG into the gitignored `examples/out/`. A test checks that the two
 pictures above are byte-for-byte what `examples/quickstart.ts` and `examples/twinx_theme.ts` produce today.
 
+Guides: see [`docs/guides/annotated-charts.md`](docs/guides/annotated-charts.md) for adding annotations and emitting SVG with glyph outlines (`svg.fonttype='path'`).
+
 mpljs is distributed from this repository (it is not on the npm registry). Inside the repo, import from `./src/index.ts`.
 `npm run build` emits plain ES modules plus `.d.ts` into `dist/browser` for use from a browser, a Cloudflare Worker, or any
 project that cannot run `.ts` files (Node refuses to strip types inside `node_modules`).
