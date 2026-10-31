@@ -5,7 +5,7 @@ import { dataExtents, unionExtent, viewLimits } from './autoscale.ts';
 import type { AxisDrawn, Sides } from './draw-axis.ts';
 import { drawAxis, labelNodes } from './draw-axis.ts';
 import type { Drawn } from './draw-artists.ts';
-import { drawBar, drawFill, drawLine, drawText, drawScatter, drawSpan } from './draw-artists.ts';
+import { drawBar, drawFill, drawLine, drawText, drawScatter, drawSpan, drawAnnotation } from './draw-artists.ts';
 import type { Frame } from './frame.ts';
 import { axesBox, frame } from './frame.ts';
 import { layoutLegend } from './legend.ts';
@@ -75,6 +75,7 @@ function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tr
       case 'fill': return tracer.span('artist.fill', { points: a.x.length }, () => drawFill(a, f, k, clip));
       case 'text': return tracer.span('artist.text', { text: a.text, coords: a.coords }, () => drawText(a, f, k * 72, resolveFace(theme.font.families, a.weight)));
       case 'scatter': return tracer.span('artist.scatter', { points: a.x.length }, () => drawScatter(a, f, theme, k, clip));
+      case 'annotation': return tracer.span('artist.annotation', { }, () => drawAnnotation(a, f, theme.figure.dpi, theme, k, clip));
       case 'span': return tracer.span('artist.span', { orientation: a.orientation }, () => drawSpan(a, f, k, clip));
       default: return assertNever(a);
     }
@@ -85,7 +86,8 @@ function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tr
 function legendEntries(ax: AxesSpec, drawn: readonly Drawn[]): readonly LegendEntry[] {
   const children: LegendEntry[] = [], containers: LegendEntry[] = [];
   ax.artists.forEach((a, i) => {
-    if (a.kind === 'text' || a.label.kind === 'none') return;
+    if (a.kind === 'text' || a.kind === 'annotation') return;
+    if (a.label.kind === 'none') return;
     const h = drawn[i].handle;
     if (h.kind === 'none') return;
     const e: LegendEntry = { label: a.label.text, handle: h.value };

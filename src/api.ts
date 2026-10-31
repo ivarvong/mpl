@@ -15,7 +15,7 @@ import { composeStyles } from './core/style.ts';
 import { parseFontSize, parseLegendLoc, parseTheme } from './core/theme.ts';
 import type {
   Artist, AxesMeta, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, GridSpec, GridWhich, Label, LabelSpec, LegendSpec, Limits,
-  LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, Result, Rgb, Scale, Scene, Theme, TickSpec, ScatterArtist, SpanArtist, TickTheme,
+  LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, Result, Rgb, Scale, Scene, Theme, TickSpec, ScatterArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords,
 } from './core/types.ts';
 import { assertNever, err, none, ok, some, unwrap } from './core/types.ts';
 import { iolistToString } from './render/iolist.ts';
@@ -357,6 +357,47 @@ export class Axes {
     return t;
   }
 
+  /** annotate(text, xy, { xytext, xycoords, textcoords, arrowprops }) */
+  annotate(text: unknown, xy: unknown, kwargs: Kwargs = {}): AnnotationArtist {
+    const kw = new KwReader(kwargs, 'annotate');
+    const xytextV = kw.get(['xytext']);
+    const DEF_COORD: AnnotationCoords = 'data';
+    const xycoords = kw.read(['xycoords'], (v): Result<AnnotationCoords> => (v === 'data' || v === 'axes' ? ok(v) : err(`xycoords must be 'data' or 'axes'`)), () => DEF_COORD);
+    const textcoords = kw.read(['textcoords'], (v): Result<AnnotationCoords> => (v === 'data' || v === 'axes' ? ok(v) : err(`textcoords must be 'data' or 'axes'`)), () => xycoords);
+    const arrow = kw.read(['arrowprops'], (v): Result<{ color: Rgb; widthPt: number; headLengthPt: number; headWidthPt: number }> => {
+      if (!isPlainObject(v)) return err('arrowprops must be an object');
+      const c = prop(v, 'color'); const lw = prop(v, 'linewidth'); const hl = prop(v, 'headlength'); const hw = prop(v, 'headwidth');
+      const color = c.kind === 'some' ? unwrap(parseRgb(c.value, this.theme.axes.cycle)) : this.theme.text.color;
+      const widthPt = lw.kind === 'some' ? unwrap(num('linewidth')(lw.value)) : 1;
+      const headLengthPt = hl.kind === 'some' ? unwrap(num('headlength')(hl.value)) : 6;
+      const headWidthPt = hw.kind === 'some' ? unwrap(num('headwidth')(hw.value)) : 4;
+      return ok({ color, widthPt, headLengthPt, headWidthPt });
+    }, () => ({ color: this.theme.text.color, widthPt: 1, headLengthPt: 6, headWidthPt: 4 }));
+    const color = this.theme.text.color;
+    const sizePt = this.theme.font.sizePt;
+    const ha: HAlign = 'left', va: VAlign = 'baseline';
+    kw.done();
+    const xyOk = ((): readonly [number, number] => {
+      if (Array.isArray(xy) && xy.length === 2 && typeof xy[0] === 'number' && typeof xy[1] === 'number') return [xy[0], xy[1]];
+      throw new TypeError('xy must be [x, y] numbers');
+    })();
+    const xytextOk = ((): readonly [number, number] => {
+      if (xytextV.kind !== 'some') return xyOk;
+      const v = xytextV.value;
+      if (Array.isArray(v) && v.length === 2 && typeof v[0] === 'number' && typeof v[1] === 'number') return [v[0], v[1]];
+      throw new TypeError('xytext must be [x, y] numbers');
+    })();
+    const a: AnnotationArtist = {
+      kind: 'annotation', x: xyOk[0], y: xyOk[1], xycoords,
+      tx: xytextOk[0], ty: xytextOk[1], textcoords, text: str(text),
+      sizePt, weight: this.theme.font.weight, color, ha, va,
+      arrow: { color: arrow.color, widthPt: arrow.widthPt, headLengthPt: arrow.headLengthPt, headWidthPt: arrow.headWidthPt },
+      clip: true,
+    };
+    this.artists.push(a);
+    return a;
+  }
+
   /** scatter(x, y, { s, c, marker, alpha, edgecolors, linewidths, zorder, clip_on }) */
   scatter(xRaw: unknown, yRaw: unknown, kwargs: Kwargs = {}): ScatterArtist {
     const kw = new KwReader(kwargs, 'scatter');
@@ -635,15 +676,30 @@ export class Figure {
   subplots_adjust(kwargs: Kwargs = {}): this {
     const kw = new KwReader(kwargs, 'Figure.subplots_adjust');
     const left = kw.get(['left']); const right = kw.get(['right']); const bottom = kw.get(['bottom']); const top = kw.get(['top']);
-    // wspace/hspace ignored in single-subplot implementation
+    const wspace = kw.get(['wspace']); const hspace = kw.get(['hspace']);
     kw.done();
     const [l0, b0, r0, t0] = this.theme.figure.subplot;
     const l = left.kind === 'some' ? unwrap(num('left')(left.value)) : l0;
     const r = right.kind === 'some' ? unwrap(num('right')(right.value)) : r0;
     const b = bottom.kind === 'some' ? unwrap(num('bottom')(bottom.value)) : b0;
     const t = top.kind === 'some' ? unwrap(num('top')(top.value)) : t0;
-    // Update every axes' position snapshot
-    for (const ax of this.axes) ax.position = [l, b, r, t];
+    // Arrange axes in a near-square grid; wspace/hspace follow matplotlib fraction-of-axes semantics
+    const n = this.axes.length;
+    if (n <= 1) { for (const ax of this.axes) ax.position = [l, b, r, t]; this.touch(); return this; }
+    const cols = Math.ceil(Math.sqrt(n));
+    const rows = Math.ceil(n / cols);
+    const Sx = r - l, Sy = t - b;
+    const ws = wspace.kind === 'some' ? unwrap(num('wspace')(wspace.value)) : 0.2;
+    const hs = hspace.kind === 'some' ? unwrap(num('hspace')(hspace.value)) : 0.2;
+    const axW = Sx / (cols + (cols - 1) * ws);
+    const axH = Sy / (rows + (rows - 1) * hs);
+    const gapX = axW * ws, gapY = axH * hs;
+    for (let i = 0; i < n; i++) {
+      const row = Math.floor(i / cols), col = i % cols;
+      const x0 = l + col * (axW + gapX), x1 = x0 + axW;
+      const y0 = b + row * (axH + gapY), y1 = y0 + axH;
+      this.axes[i].position = [x0, y0, x1, y1];
+    }
     this.touch(); return this;
   }
   /** Run layout; one trace per run. */

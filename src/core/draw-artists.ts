@@ -9,10 +9,11 @@ import { isRectilinear, simplifyPolyline } from './path.ts';
 import { inkOf, rectNode, snap, snapOffset } from './scene.ts';
 import { lookup } from './std.ts';
 import { forwardAll } from './scale.ts';
-import type { BarArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist } from './types.ts';
+import type { BarArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist } from './types.ts';
 import { labelNodes } from './draw-axis.ts';
 import { placeText, pxPerPt } from './text.ts';
 import type { Face } from './fonts.ts';
+import { resolveFace } from './fonts.ts';
 import { none, some } from './types.ts';
 import type { SpanHandle } from '../trace.ts';
 
@@ -145,6 +146,33 @@ export function drawText(a: TextArtist, f: Frame, dpi: number, face: Face): Draw
   const x = a.coords === 'data' ? tx(f, a.x) : a.x * f.box.w + f.box.x0;
   const y = a.coords === 'data' ? ty(f, a.y) : f.H - (a.y * f.box.h + (f.H - f.box.yBot));
   const nodes = a.text === '' ? [] : labelNodes(placeText(a.text, a.sizePt, dpi, face, x, y, { kind: 'horizontal', ha: a.ha, va: a.va }), k, a.color);
+  return { nodes, lines: [], boxes: [], handle: none };
+}
+
+/** ax.annotate: straight leader line with triangular head into (x, y), plus text at (tx, ty). */
+export function drawAnnotation(a: AnnotationArtist, f: Frame, dpi: number, theme: Theme, k: number, clip: Clip): Drawn {
+  const toPx = (cx: 'data' | 'axes', x: number, y: number): readonly [number, number] =>
+    (cx === 'data' ? [tx(f, x), ty(f, y)] as const : [f.box.x0 + x * f.box.w, f.H - (f.box.yBot + y * f.box.h)] as const);
+  const [x0, y0] = toPx(a.xycoords, a.x, a.y);
+  const [x1, y1] = toPx(a.textcoords, a.tx, a.ty);
+  const dx = x0 - x1, dy = y0 - y1;
+  const L = Math.hypot(dx, dy) || 1;
+  const ux = dx / L, uy = dy / L;
+  const shaftEndX = x0 - ux * (a.arrow.headLengthPt * k);
+  const shaftEndY = y0 - uy * (a.arrow.headLengthPt * k);
+  const halfW = (a.arrow.headWidthPt * k) / 2;
+  const nx = -uy, ny = ux;
+  const headP1x = x0, headP1y = y0;
+  const headP2x = shaftEndX + nx * halfW, headP2y = shaftEndY + ny * halfW;
+  const headP3x = shaftEndX - nx * halfW, headP3y = shaftEndY - ny * halfW;
+  const stroke: Stroke = { color: a.arrow.color, width: a.arrow.widthPt * k, cap: 'butt', join: 'miter', dash: { kind: 'solid' } };
+  const segs: Seg[] = [['M', x1, y1], ['L', shaftEndX, shaftEndY]];
+  const head: Seg[] = [['M', headP1x, headP1y], ['L', headP2x, headP2y], ['L', headP3x, headP3y], ['Z']];
+  const lineNode: Node = { kind: 'path', segs, ink: { kind: 'stroke', stroke } };
+  const headNode: Node = { kind: 'path', segs: head, ink: { kind: 'fill', fill: a.arrow.color } };
+  const face = resolveFace(theme.font.families, a.weight);
+  const textNodes = a.text === '' ? [] : labelNodes(placeText(a.text, a.sizePt, dpi, face, x1, y1, { kind: 'horizontal', ha: a.ha, va: a.va }), k, a.color);
+  const nodes: readonly Node[] = [{ kind: 'group', clip, nodes: [lineNode, headNode, ...textNodes], tag: '' }];
   return { nodes, lines: [], boxes: [], handle: none };
 }
 

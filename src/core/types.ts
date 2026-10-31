@@ -135,6 +135,15 @@ export type ScatterArtist = {
   readonly sizePt2: Float64Array; readonly shape: MarkerName;
   readonly face: Paint; readonly edge: Paint; readonly edgeWidthPt: number; readonly label: Label; readonly clip: boolean;
 };
+export type AnnotationCoords = 'data' | 'axes';
+export type AnnotationArtist = {
+  readonly kind: 'annotation';
+  readonly x: number; readonly y: number; readonly xycoords: AnnotationCoords;
+  readonly tx: number; readonly ty: number; readonly textcoords: AnnotationCoords;
+  readonly text: string; readonly sizePt: number; readonly weight: number; readonly color: Rgb; readonly ha: HAlign; readonly va: VAlign;
+  readonly arrow: { readonly color: Rgb; readonly widthPt: number; readonly headLengthPt: number; readonly headWidthPt: number };
+  readonly clip: boolean;
+};
 /** axvspan/axhspan bands: oriented spans that may use axes-fraction extents on the non-data axis. */
 export type SpanArtist = {
   readonly kind: 'span'; readonly orientation: Orientation;
@@ -144,7 +153,7 @@ export type SpanArtist = {
   readonly f0: number; readonly f1: number;
   readonly face: Paint; readonly edge: BarEdge; readonly label: Label; readonly clip: boolean;
 };
-export type Artist = LineArtist | BarArtist | FillArtist | TextArtist | ScatterArtist | SpanArtist;
+export type Artist = LineArtist | BarArtist | FillArtist | TextArtist | ScatterArtist | AnnotationArtist | SpanArtist;
 
 /** What a legend entry draws. */
 export type Handle =
