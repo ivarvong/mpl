@@ -1,123 +1,89 @@
-## Publication- and Twitter-ready charts with mpljs
+## Pro charts with mpljs (how‑to)
 
-This guide shows how to produce polished, phone-legible images for social media or publications, and how to observe a render with the built-in tracer.
+Images first; each is rendered by a tiny example under `examples/` and committed here under `docs/images/`. Every speed claim names its baseline — “vs mpljs before the perf rewrite (bench/sweep.ts)”.
 
-- Files:
-  - `examples/twitter_pro.ts` — two Twitter-ready designs (speedup bars and a dumbbell).
-  - `examples/trace_render.ts` — traces a warm render and draws a span waterfall.
-  - `examples/starter_charts.ts` — four small, copy‑pastable starters.
-- Images in this doc are rendered from those scripts and committed under `docs/images/`.
+### Twitter‑ready hero (speedup bars)
 
-### Canvas sizing for X/Twitter
+<img src="../images/twitter_speedup.png" width="860" alt="speedup bars (vs earlier mpljs)">
 
-- Use a 16:9 figure at `dpi=150` → 2400×1350 px, which posts cleanly without platform resampling.
-- Example:
-
-```ts
-const [fig, ax] = subplots({ figsize: [16, 9], dpi: 150 });
+Render it yourself:
+```bash
+node examples/twitter_pro.ts
 ```
 
-### Phone‑legible typography and minimal ink
+### Dumbbell (before → after, ms)
 
-For a single chart image that will be read on a phone, dial up type and strip non‑data ink. mpljs reads matplotlib rc keys, so you can do it in `rc`:
+<img src="../images/twitter_dumbbell.png" width="860" alt="dumbbell chart (before vs after)">
 
+```bash
+node examples/twitter_pro.ts
+```
+
+### Trace the render and see where time goes
+
+<img src="../images/twitter_trace.png" width="860" alt="trace waterfall">
+
+```bash
+node examples/trace_render.ts
+```
+
+### Four starter charts
+
+<p>
+  <img src="../images/starter_grouped_bars.png" width="420" alt="grouped bars">
+  <img src="../images/starter_stacked_barh.png" width="420" alt="stacked barh">
+  <img src="../images/starter_temps_line.png" width="420" alt="line with band">
+  <img src="../images/starter_signups_dates.png" width="420" alt="date axis + twinx">
+</p>
+
+```bash
+node examples/starter_charts.ts
+```
+
+### How to make charts like this
+
+Size for X/Twitter and use rc overrides for phone‑legible type and minimal ink:
 ```ts
 const [fig, ax] = subplots({
   figsize: [16, 9], dpi: 150,
   rc: {
-    'font.size': 24, 'figure.facecolor': 'white', 'axes.facecolor': 'white',
+    'font.size': 24,
     'axes.spines.left': false, 'axes.spines.right': false,
     'axes.spines.top': false,  'axes.spines.bottom': false,
     'axes.grid': false, 'xtick.bottom': false, 'xtick.labelbottom': false,
     'ytick.left': false, 'ytick.labelleft': false,
-    // Tight margins around a left‑aligned headline
     'figure.subplot.left': 0.30, 'figure.subplot.right': 0.86,
     'figure.subplot.bottom': 0.11, 'figure.subplot.top': 0.75,
   },
 });
 ```
-
-Notes:
-- There are no spine/tick mutator methods yet; set them via `rc` as above.
-- Use `plot('o')` for dots — there is no separate `scatter` API today.
-- Prefer direct labeling over a legend when space is tight.
-
-### Headline, subtitle, and footer
-
-mpljs does not yet have figure‑level text (`fig.text`/`suptitle`). Place text in axes coordinates after converting from figure coordinates so it sits in the outer margin:
+There is no figure‑level text yet; place headline/subtitle/footer using `ax.text` in axes coords mapped from figure coords.
 
 ```ts
-const fx = (x: number) => (x - L) / (R - L);  // figure x -> axes x
-const fy = (y: number) => (y - B) / (T - B);  // figure y -> axes y
-const at = { transform: ax.transAxes };
-ax.text(fx(0.045), fy(0.915), 'Bold headline', { ...at, fontsize: 38, fontweight: 'bold' });
-ax.text(fx(0.045), fy(0.855), 'Grey subtitle naming the baseline', { ...at, fontsize: 24 });
-ax.text(fx(0.045), fy(0.040), 'source or script', { ...at, fontsize: 17 });
+const fx = (x: number) => (x - L) / (R - L), fy = (y: number) => (y - B) / (T - B);
+ax.text(fx(0.045), fy(0.915), 'Bold headline', { transform: ax.transAxes, fontsize: 38, fontweight: 'bold' });
 ```
+Use `plot('o')` for dots (no `scatter` yet). Prefer direct labels over a legend for single‑figure images.
 
-### Design principles used
+### How this was made (with Grok Bot)
 
-- Title = takeaway; say what changed and by how much.
-- Always name the baseline (e.g. “vs earlier mpljs before the perf rewrite” or “vs matplotlib 3.x”).
-- Sort rows, use a single accent color, keep ink minimal, and cite the source/script.
+Wrote four starters, a 2400×1350 “Twitter” chart, traced a warm render, then refined layout/labels. Iteration fixes spotted in images:
+- Fixed date ticks to avoid overlap.
+- Moved legend and widened the axis when it covered a bar.
+- Increased font sizes for phone readability.
+- Raised the y range when a label intersected the legend.
+- In the dumbbell, started x at −30 so a 5 ms dot isn’t clipped.
+- Nudged the right‑side ratio column to avoid a collision.
+- Increased right margin after a clipped edge.
+- Reworked the takeaway to always name the baseline (“vs mpljs before the perf rewrite”, from `bench/sweep.ts`).
 
-### Example outputs
+### API gaps
 
-<p>
-  <img src="../images/twitter_speedup.png" width="560" alt="speedup bars">
-  <img src="../images/twitter_dumbbell.png" width="560" alt="dumbbell with ms before/after">
-</p>
-
----
-
-## Tracing a render
-
-Enable the tracer, warm up, collect spans, and summarize. `examples/trace_render.ts` shows the full flow and also draws a span waterfall with mpljs itself.
-
-```ts
-import { tracer, renderTree } from '../src/index.ts';
-// Warm (untraced) runs
-for (let i = 0; i < 6; i++) fig.toSVG(), fig.toPNGSync();
-// Aggregate 40 traced runs by span name and print p50/p95
-tracer.enable();
-for (let i = 0; i < 40; i++) { tracer.clear(); fig.toSVG(); fig.toPNGSync(); }
-console.log(renderTree(tracer.spans(), 150));   // pretty tree
-await tracer.flush('examples/out/twitter_trace.spans.jsonl'); // OTLP JSONL
-```
-
-Observed on this VM (Node 24, warm, 2400×1350, the “Twitter dumbbell” figure), per render:
-
-- png.encode p50 ≈ 5.9 ms (~70% of total), p95 ≈ 7.0 ms
-- render.raster p50 ≈ 2.4 ms
-- figure.layout p50 ≈ 0.6 ms; render.svg p50 ≈ 0.14 ms
-- 177 total spans
-- Calling both `toSVG()` and `toPNGSync()` re‑runs layout once per format by design.
-
-The script also groups depth‑1 spans by name and renders a simple waterfall chart:
-
-<p>
-  <img src="../images/twitter_trace.png" width="700" alt="span waterfall">
-</p>
-
----
-
-## Baseline and story
-
-These charts explicitly name their baseline: the speedups are vs earlier mpljs before the performance rewrite (numbers from `bench/sweep.ts`, layout before → after, best‑of‑N, warm). If you measure vs matplotlib on your machine, be explicit about:
-
-- Matplotlib version and backend (`Agg` for PNG), device size, and warm vs cold
-- Output format (SVG/PNG) and the iteration policy (best‑of‑N, median‑of‑N)
-- Machine details (CPU class at least)
-
----
-
-## API gaps encountered
-
-- No figure‑level text (`fig.text`/`suptitle`) — used `ax.text` in axes coords instead.
-- No spine/tick mutator methods — set via rc (`axes.spines.*`, `xtick.bottom`, …).
-- No `subplots_adjust` — margins set via `figure.subplot.*` rc.
+- No figure‑level text (`fig.text`/`suptitle`) — use `ax.text` in axes coords.
+- No spine/tick mutators — use rc (`axes.spines.*`, `xtick.*`, `ytick.*`).
+- No `subplots_adjust` — use `figure.subplot.*` rc keys.
 - No two‑line tick labels.
 - No `scatter`; use `plot('o')`.
 - Markers clip at the axes edge.
-- Tracer: `tracer.flush()` exists and writes OTLP/JSON lines; layout runs once per output format.
+- Tracer: `tracer.flush()` exists (OTLP JSON lines). Layout is recomputed per output format.
 
