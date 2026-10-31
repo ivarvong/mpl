@@ -7,10 +7,10 @@ import { join, relative } from 'node:path';
 
 const ROOT = new URL('../src/', import.meta.url).pathname;
 const EXEMPT = new Set(['core/std.ts']);
-const walk = (d) => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : [join(d, f)]));
+const walk = (d: string): string[] => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : [join(d, f)]));
 
 // Blank out comments and string/template/regex contents so rules see only code.
-function codeOnly(src) {
+function codeOnly(src: string): string {
   let out = '', i = 0;
   const n = src.length;
   while (i < n) {
@@ -41,7 +41,7 @@ function codeOnly(src) {
   return out;
 }
 
-const RULES = [
+const RULES: [RegExp, string][] = [
   [/\bundefined\b/, 'undefined: model absence as a variant (Option / { kind: none })'],
   [/\bnull\b/, 'null: model absence as a variant'],
   [/\?\./, 'optional chaining ?.: the value should not be nullable'],
@@ -53,7 +53,7 @@ const RULES = [
 ];
 
 let failures = 0;
-for (const file of walk(ROOT).filter((f) => f.endsWith('.ts'))) {
+for (const file of walk(ROOT).filter((f: string) => f.endsWith('.ts'))) {
   const rel = relative(ROOT, file);
   if (EXEMPT.has(rel) || rel.startsWith('core/data/')) continue;
   const lines = codeOnly(readFileSync(file, 'utf8')).split('\n');

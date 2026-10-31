@@ -1,5 +1,5 @@
 // End-to-end benchmark of the live page in headless Chromium, read from its own traces.
-//   node tools/build_browser.mjs tools/live/lib && node tools/bench_live.mjs [--runs 15] [--out file.json]
+//   node scripts/build_browser.ts tools/live/lib && node bench/bench_live.ts [--runs 15] [--out file.json]
 // 1. Cold start: N fresh browser contexts (empty cache); the page's startup trace per load.
 // 2. Input → rendered: real wheel input (CDP-dispatched, so event.timeStamp is the browser's), in
 //    three configurations; every frame's trace from the input event to the end of browser.render.
@@ -19,7 +19,7 @@ const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? proces
 const FLAGS = arg('--flags', '--disable-gpu').split(' ').filter(Boolean);
 const RTT = Number(arg('--rtt', '0'));             // emulated round-trip latency per request (CDP), ms
 const RUNS = Number(arg('--runs', '15')), OUT = arg('--out', ''), PHASE = arg('--phase', 'all'), STEPS = Number(arg('--steps', '40'));
-const ROOT = new URL('./live/', import.meta.url).pathname;
+const ROOT = new URL('../tools/live/', import.meta.url).pathname;
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
 const server = createServer((req, res) => {
   const p = normalize(join(ROOT, decodeURIComponent(new URL(req.url, 'http://x').pathname)));

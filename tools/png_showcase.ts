@@ -1,11 +1,12 @@
 // Side-by-side: matplotlib Agg | mpljs | difference (white = identical, red = |Δ|·32).
-//   node tools/png_showcase.mjs <outdir> <fixture...>
+//   node tools/png_showcase.ts <outdir> <fixture...>
 import { readFileSync, writeFileSync } from 'node:fs';
-import { build, loadFixture } from './replay.mjs';
+import { build, loadFixture } from './replay.ts';
 import { renderRGBA } from '../src/render/agg.ts';
+import { canvasOf } from '../src/render/agg/canvas.ts';
 import { encodePNGSync } from '../src/render/png.ts';
 import { Tracer } from '../src/trace.ts';
-import { compare, readPNG } from '../test/png-oracle.mjs';
+import { compare, readPNG } from '../test/png-oracle.ts';
 
 const [out, ...names] = process.argv.slice(2);
 for (const name of names) {
@@ -19,7 +20,7 @@ for (const name of names) {
     const o = (y * S + 2 * (W + G) + x) * 4, v = d === 0 ? 255 : Math.max(0, 255 - 32 * d);
     px[o] = 255; px[o + 1] = v; px[o + 2] = v; px[o + 3] = 255;
   }
-  writeFileSync(`${out}/${name}.sxs.png`, encodePNGSync({ w: S, h: H, px, u32: new Uint32Array(px.buffer) }));
+  writeFileSync(`${out}/${name}.sxs.png`, encodePNGSync(canvasOf(S, H, 0, px)));
   writeFileSync(`${out}/${name}.mpljs.png`, encodePNGSync(ours));
   const r = compare(ref, ours);
   console.log(`${name}: ${r.diff === 0 ? 'byte-identical' : `${r.diff} px differ, max |Δ| ${r.maxd}`}`);

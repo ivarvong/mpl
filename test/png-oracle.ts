@@ -1,10 +1,11 @@
 // PNG oracle: rasterize every fixture with mpljs' own Agg/FreeType port and compare
 // byte-for-byte with matplotlib's Agg PNG. Reports exact-pixel % and RMS (0..255).
-//   node test/png-oracle.mjs [name] [--strict]
+//   node test/png-oracle.ts [name] [--strict]
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
-import { build, fixtureNames, loadFixture } from '../tools/replay.mjs';
+import { build, fixtureNames, loadFixture } from '../tools/replay.ts';
 import { renderRGBA } from '../src/render/agg.ts';
+import { canvasOf } from '../src/render/agg/canvas.ts';
 import { encodePNGSync } from '../src/render/png.ts';
 import { Tracer } from '../src/trace.ts';
 
@@ -13,8 +14,9 @@ const OUT = new URL('../fixtures/out/', import.meta.url).pathname;
 mkdirSync(OUT, { recursive: true });
 
 /** Minimal PNG reader for the 8-bit RGBA, non-interlaced files Agg writes (node:zlib is test-only). */
-export function readPNG(buf) {
-  let o = 8, w = 0, h = 0; const idat = [];
+export type Pixels = { readonly w: number; readonly h: number; readonly px: Uint8Array };
+export function readPNG(buf: Buffer): Pixels {
+  let o = 8, w = 0, h = 0; const idat: Buffer[] = [];
   while (o < buf.length) {
     const len = buf.readUInt32BE(o), type = buf.toString('latin1', o + 4, o + 8), data = buf.subarray(o + 8, o + 8 + len);
     if (type === 'IHDR') { w = data.readUInt32BE(0); h = data.readUInt32BE(4); if (data[8] !== 8 || data[9] !== 6 || data[12] !== 0) throw new Error('need 8-bit RGBA non-interlaced'); }
@@ -34,7 +36,7 @@ export function readPNG(buf) {
   return { w, h, px };
 }
 
-export function compare(ref, ours) {
+export function compare(ref: Pixels, ours: Pixels) {
   let s = 0, n = 0, exact = 0, maxd = 0;
   for (let i = 0; i < ref.px.length; i += 4) {
     let same = true;
@@ -49,7 +51,7 @@ export function compare(ref, ours) {
   return { rms: Math.sqrt(s / n), exact: exact / (ref.px.length / 4), diff: ref.px.length / 4 - exact, maxd };
 }
 
-function sideBySide(ref, ours) {
+function sideBySide(ref: Pixels, ours: Pixels) {
   const W = ref.w, H = ref.h, px = new Uint8Array(W * 3 * H * 4);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = (y * W + x) * 4, row = y * W * 3;
@@ -58,7 +60,7 @@ function sideBySide(ref, ours) {
     const o = (row + 2 * W + x) * 4, v = d === 0 ? 255 : Math.max(0, 200 - d * 8);
     px[o] = 255; px[o + 1] = v; px[o + 2] = v; px[o + 3] = 255;
   }
-  return { w: W * 3, h: H, px };
+  return canvasOf(W * 3, H, 0, px);
 }
 
 const isMain = import.meta.url === `file://${process.argv[1]}`;

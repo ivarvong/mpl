@@ -10,4 +10,4 @@ const build = () => {
 };
 for (let i = 0; i < 10; i++) build().toSVG();
 tracer.enable(); build().toSVG();
-console.log(renderTree(tracer.spans(), Number(process.env.W || 150)));
+console.log(renderTree(tracer.spans(), Number(process.env['W'] || 150)));

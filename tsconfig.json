@@ -1,9 +1,8 @@
 {
   "compilerOptions": {
-    "target": "es2023",
+    "target": "esnext",
+    "lib": ["esnext", "dom"],
     "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "lib": ["es2023", "dom"],
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "erasableSyntaxOnly": true,
@@ -14,9 +13,12 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
     "noPropertyAccessFromIndexSignature": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "useUnknownInCatchVariables": true,
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src", "test", "tools", "scripts", "bench"],
+  "exclude": ["bench/bench_live.ts", "tools/live", "**/scratch"]
 }

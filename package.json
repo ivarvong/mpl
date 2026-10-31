@@ -31,32 +31,31 @@
     },
     "./package.json": "./package.json"
   },
-  "files": [
-    "dist/browser",
-    "LICENSE",
-    "THIRD_PARTY_NOTICES.md",
-    "README.md"
-  ],
   "engines": {
     "node": ">=24"
   },
   "scripts": {
-    "test": "npm run check && node test/compare.mjs && node test/fonts.test.mjs && node test/png.test.mjs && node test/glyphcache.test.mjs && node test/view.test.mjs && node test/fuzz-ticker.mjs && node test/fuzz-dates.mjs && node test/trace.test.mjs",
-    "fixtures": "python3 fixtures/generate.py",
-    "lint": "oxlint src test tools --ignore-pattern tools/live/lib/**",
-    "fuzz": "python3 fixtures/fuzz_ticker.py && python3 fixtures/fuzz_dates.py && node test/fuzz-ticker.mjs && node test/fuzz-dates.mjs",
-    "typecheck": "tsc -p .",
-    "strict": "node tools/check_strict.mjs",
+    "dev": "npm run live:build && node scripts/serve.ts",
+    "example": "node examples/quickstart.ts",
+    "examples": "for f in examples/[a-z]*.ts; do node $f || exit 1; done",
+    "test": "npm run check && npm run test:oracle",
+    "test:oracle": "node test/compare.ts && node test/fonts.test.ts && node test/png.test.ts && node test/glyphcache.test.ts && node test/view.test.ts && node test/fuzz-ticker.ts && node test/fuzz-dates.ts && node test/trace.test.ts && node test/examples.test.ts",
     "check": "npm run typecheck && npm run strict && npm run lint",
-    "tables": "python3 tools/gen_tables.py",
-    "oracle": "node test/png-oracle.mjs",
-    "build": "node tools/build_package.mjs",
-    "prepack": "npm run build",
-    "live:build": "node tools/build_browser.mjs tools/live/lib"
+    "typecheck": "tsc -p .",
+    "strict": "node scripts/check_strict.ts",
+    "lint": "oxlint src test tools scripts bench examples --ignore-pattern tools/live/lib/**",
+    "build": "node scripts/build_package.ts",
+    "live:build": "node scripts/build_browser.ts tools/live/lib",
+    "fixtures": "python3 fixtures/generate.py",
+    "fuzz": "python3 fixtures/fuzz_ticker.py && python3 fixtures/fuzz_dates.py && node test/fuzz-ticker.ts && node test/fuzz-dates.ts",
+    "tables": "python3 scripts/gen_tables.py",
+    "oracle": "node test/png-oracle.ts",
+    "bench": "node bench/bench.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
     "oxlint": "^1.89.0",
     "typescript": "^7.0.2"
-  }
+  },
+  "private": true
 }

@@ -2,7 +2,7 @@
 // and every PNG path (sync, CompressionStream, streamed) decodes to the same pixels.
 import { inflateSync } from 'node:zlib';
 import { encodePNG, encodePNGSync, pngStream, zlibSync } from '../src/render/png.ts';
-import { readPNG } from './png-oracle.mjs';
+import { readPNG, type Pixels } from './png-oracle.ts';
 import { canvasOf, invalidateBlocks } from '../src/render/agg/canvas.ts';
 
 let seed = 12345;
@@ -26,7 +26,7 @@ for (const d of cases) {
 // PNG paths agree with each other and with the source pixels
 const w = 97, h = 61, px = new Uint8Array(w * h * 4).map((_, i) => (i * 31 + ((i / 388) | 0) * 7) & 255);
 const canvas = canvasOf(w, h, 0, px);
-const parts = []; const r = pngStream(canvas).getReader();
+const parts: Uint8Array[] = []; const r = pngStream(canvas).getReader();
 // oxlint-disable-next-line no-await-in-loop
 for (;;) { const x = await r.read(); if (x.done) break; parts.push(x.value); }
 for (const [name, bytes] of [['sync', encodePNGSync(canvas)], ['async', await encodePNG(canvas)], ['stream', Buffer.concat(parts)]]) {
@@ -35,7 +35,7 @@ for (const [name, bytes] of [['sync', encodePNGSync(canvas)], ['async', await en
 }
 // encodePNGSync tokenizes the canvas itself, trusting its block state for flat regions: adversarial
 // canvases, each encoded with exact block state (scanned) and with every block marked mixed
-const blocky = (cw, ch) => {                         // rectangles of a few colors, some rows copied from above
+const blocky = (cw: number, ch: number) => {                         // rectangles of a few colors, some rows copied from above
   const a = new Uint32Array(cw * ch), pal = [0xff102030, 0xff102031, 0x00000000, 0x80ffffff, 0xff000000];
   for (let k = 0; k < 12; k++) {
     const x0 = (rnd() * cw) | 0, y0 = (rnd() * ch) | 0, x1 = Math.min(cw, x0 + ((rnd() * 90) | 0)), y1 = Math.min(ch, y0 + ((rnd() * 9) | 0)), v = pal[(rnd() * pal.length) | 0];
@@ -56,8 +56,8 @@ const canvases = [[1, 1], [1, 300], [300, 1], [3, 7], [31, 9], [32, 9], [33, 9],
   });
 });
 for (const cv of canvases) {
-  let got = { w: -1, h: -1, px: [] };
-  try { got = readPNG(Buffer.from(encodePNGSync(cv))); } catch (e) { console.log(`${cv.w}×${cv.h}: ${e.message}`); }
+  let got: Pixels = { w: -1, h: -1, px: new Uint8Array(0) };
+  try { got = readPNG(Buffer.from(encodePNGSync(cv))); } catch (e) { console.log(`${cv.w}×${cv.h}: ${(e as Error).message}`); }
   if (got.w !== cv.w || got.h !== cv.h || got.px.some((v, i) => v !== cv.px[i])) { bad++; console.log(`encodePNGSync mismatch ${cv.w}×${cv.h}`); }
 }
 console.log(`png: ${cases.length} zlib round-trips, ${canvases.length} sync canvases, 3 PNG paths — ${bad === 0 ? 'ok' : `${bad} FAILED`}`);

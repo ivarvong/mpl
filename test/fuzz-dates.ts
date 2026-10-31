@@ -3,15 +3,15 @@ import { readFileSync } from 'node:fs';
 import { autoDateFormat, autoDateTicks } from '../src/core/dates.ts';
 
 const data = JSON.parse(readFileSync(new URL('../fixtures/ref/_dates_fuzz.json', import.meta.url), 'utf8'));
-const close = (a, b) => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
+const close = (a: number, b: number): boolean => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
 let fail = 0;
-const byKind = new Map();
+const byKind = new Map<string, number>();
 for (const c of data.cases) {
-  let ticks, labels, kind;
+  let ticks: readonly number[], labels: readonly string[], kind: string;
   try {
     const r = autoDateTicks([c.lo, c.hi]);
     ticks = r.locs; labels = autoDateFormat(ticks, r.locator); kind = r.locator.kind;
-  } catch (e) { fail++; console.log('THREW', c.lo, c.hi, e.message); continue; }
+  } catch (e) { fail++; console.log('THREW', c.lo, c.hi, (e as Error).message); continue; }
   byKind.set(kind, (byKind.get(kind) || 0) + 1);
   const ok = ticks.length === c.ticks.length && ticks.every((t, i) => close(t, c.ticks[i])) && labels.every((l, i) => l === c.labels[i]);
   if (!ok) {

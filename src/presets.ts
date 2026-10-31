@@ -47,7 +47,10 @@ export const paperModern = {
 // roles (C0…C7, axes.labelcolor for secondary text) and the preset decides the look.
 // Marks: hairline solid grid, recessive baseline, round-capped 1.6 pt lines, markers with a ring
 // in the surface colour, a surface-coloured gap between touching patches, no tick marks.
-const modernBase = (t: { surface: string; ink: string; ink2: string; muted: string; grid: string; base: string; cycle: readonly string[] }) => ({
+/** An rc object: matplotlib rc keys to plain values (pass it as `rc` or inside `style: [...]`). */
+export type Preset = Readonly<Record<string, string | number | boolean | readonly (string | number)[]>>;
+
+const modernBase = (t: { surface: string; ink: string; ink2: string; muted: string; grid: string; base: string; cycle: readonly string[] }): Preset => ({
   'font.family': 'Inter', 'font.size': 9.5,
   'figure.figsize': [6.4, 4], 'figure.dpi': 200,
   'figure.subplot.left': 0.1, 'figure.subplot.right': 0.95, 'figure.subplot.bottom': 0.15, 'figure.subplot.top': 0.78,
@@ -71,13 +74,13 @@ const modernBase = (t: { surface: string; ink: string; ink2: string; muted: stri
 });
 
 /** Modern product chart on a light surface. */
-export const modern = modernBase({
+export const modern: Preset = modernBase({
   surface: '#FCFCFB', ink: '#0B0B0B', ink2: '#52514E', muted: '#898781', grid: '#E1E0D9', base: '#C3C2B7',
   cycle: ['#2A78D6', '#EB6834', '#1BAF7A', '#EDA100', '#E87BA4', '#008300', '#6250D6', '#E34948'],
 });
 
 /** The same chart on a dark surface: the palette's dark steps, not an inversion. */
-export const modernDark = modernBase({
+export const modernDark: Preset = modernBase({
   surface: '#1A1A19', ink: '#F0EFEC', ink2: '#C3C2B7', muted: '#898781', grid: '#2C2C2A', base: '#383835',
   cycle: ['#3987E5', '#D95926', '#199E70', '#C98500', '#D55181', '#008300', '#9085E9', '#E66767'],
 });

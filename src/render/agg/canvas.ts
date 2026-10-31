@@ -26,7 +26,8 @@ const LITTLE = new Uint8Array(new Uint32Array([0x01020304]).buffer)[0] === 4;
 export const pack = (r: number, g: number, b: number, a: number): number =>
   (LITTLE ? ((a << 24) | (b << 16) | (g << 8) | r) : ((r << 24) | (g << 16) | (b << 8) | a)) >>> 0;
 
-export const BLOCK_SHIFT = 5, BLOCK = 1 << BLOCK_SHIFT;
+export const BLOCK_SHIFT: number = 5;
+export const BLOCK: number = 1 << BLOCK_SHIFT;
 
 /** RendererAgg::clear fills with _fill_color = rgba(1, 1, 1, 0). */
 export function newCanvas(w: number, h: number, dpi: number): Canvas {

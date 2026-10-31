@@ -137,7 +137,7 @@ function otlpSpan(s: FinishedSpan): object {
   };
 }
 
-export const tracer = new Tracer();
+export const tracer: Tracer = new Tracer();
 
 const kv = ([k, v]: readonly [string, AttrValue]): string => `${k}=${String(v)}`;
 

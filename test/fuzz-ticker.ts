@@ -4,17 +4,17 @@ import { autoTicks, scalarFormat } from '../src/core/ticker.ts';
 import { tracer } from '../src/trace.ts';
 
 const data = JSON.parse(readFileSync(new URL('../fixtures/ref/_ticker_fuzz.json', import.meta.url), 'utf8'));
-if (process.env.TRACE) tracer.enable();
-const close = (a, b) => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
+if (process.env['TRACE']) tracer.enable();
+const close = (a: number, b: number): boolean => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
 let fail = 0;
 const root = tracer.startTrace('fuzz.ticker', { n: data.cases.length, seed: data.seed });
 for (const c of data.cases) {
   const span = tracer.startSpan('case', { axis: c.axis, lo: c.lo, hi: c.hi, kind: c.kind });
-  let ticks, labels, offset;
+  let ticks: readonly number[], labels: readonly string[], offset: string;
   try {
     ticks = autoTicks(c.lo, c.hi, c.tickspace);
     ({ labels, offset } = scalarFormat(ticks, [c.lo, c.hi], { useOffset: true, offsetThreshold: 4, powerlimits: [-5, 6], unicodeMinus: true }));
-  } catch (e) { span.recordException(e); span.end(); fail++; console.log('THREW', c, e.message); continue; }
+  } catch (e) { span.recordException(e); span.end(); fail++; console.log('THREW', c, (e as Error).message); continue; }
   const ok = ticks.length === c.ticks.length && ticks.every((t, i) => close(t, c.ticks[i]))
     && labels.every((l, i) => l === c.labels[i]) && offset === c.offset;
   if (!ok) {
@@ -26,5 +26,6 @@ for (const c of data.cases) {
 }
 root.setAttribute('failures', fail).end();
 console.log(`${data.cases.length - fail}/${data.cases.length} ticker fuzz cases match matplotlib (seed ${data.seed})`);
-if (process.env.TRACE) console.log(`flushed ${await tracer.flush(process.env.TRACE)} spans to ${process.env.TRACE}`);
+const traceOut = process.env['TRACE'];
+if (traceOut) console.log(`flushed ${await tracer.flush(traceOut)} spans to ${traceOut}`);
 process.exit(fail ? 1 : 0);

@@ -1,6 +1,6 @@
 """Oracle fuzz corpus for MaxNLocator/ScalarFormatter: seeded random view
 intervals across 20 orders of magnitude, with matplotlib's ticks, labels and
-offset text. Consumed by test/fuzz-ticker.mjs."""
+offset text. Consumed by test/fuzz-ticker.ts."""
 import json, os, random, math
 import matplotlib; matplotlib.use("Agg"); matplotlib.rcdefaults(); matplotlib.rcParams["font.family"] = "DejaVu Sans"
 import matplotlib.pyplot as plt

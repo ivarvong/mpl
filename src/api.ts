@@ -175,7 +175,7 @@ export class Axes {
   readonly position: Position;
   readonly artists: Artist[] = [];
   readonly xaxis: Axis;
-  readonly yaxis = new Axis();
+  readonly yaxis: Axis = new Axis();
   title = ''; titleLoc: HAlign = 'center'; titleWeight = 400; xlabel = ''; ylabel = '';
   gridSpec: GridSpec;
   legendSpec: LegendSpec = { kind: 'off' };

@@ -3,51 +3,43 @@
 //  2. pixels: our own Agg/FreeType rasterization vs matplotlib's Agg PNG, byte for byte.
 //     Allowed residual: max |Δ| ≤ 2 (libm ulp differences in log10 under log scales).
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { subplots } from '../src/index.ts';
 import { renderRGBA } from '../src/render/agg.ts';
+import type { Scene } from '../src/index.ts';
 import { checkBlocks } from '../src/render/agg/canvas.ts';
 import { encodePNGSync } from '../src/render/png.ts';
 import { Tracer } from '../src/trace.ts';
-import { compare, readPNG } from './png-oracle.mjs';
+import { build, loadFixture, type Fixture } from '../tools/replay.ts';
+import { compare, readPNG } from './png-oracle.ts';
 
 const REF = new URL('../fixtures/ref/', import.meta.url).pathname;
 const OUT = new URL('../fixtures/out/', import.meta.url).pathname;
 mkdirSync(OUT, { recursive: true });
 
-const names = JSON.parse(readFileSync(REF + '_index.json', 'utf8'));
+const names: string[] = JSON.parse(readFileSync(REF + '_index.json', 'utf8'));
 const only = process.argv[2];
-const close = (a, b) => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
-const arrEq = (a, b, f = close) => a.length === b.length && a.every((v, i) => f(v, b[i]));
+const close = (a: number, b: number): boolean => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
+const arrEq = <T>(a: readonly T[], b: readonly T[], f: (p: T, q: T) => boolean = close as unknown as (p: T, q: T) => boolean): boolean =>
+  a.length === b.length && a.every((v, i) => f(v, b[i] as T));
 
-// Replay the fixture's spec: [method, args, kwargs] -> ax[method](...args, kwargs)
-const decode = (a) => (a && typeof a === 'object' && !Array.isArray(a) && '$dates' in a ? a.$dates.map((s) => new Date(s + 'Z')) : a);
-function render(fx) {
-  const [fig, first] = subplots({ style: fx.style, rc: fx.rc || {} });
-  const axes = [first];
-  let ax = first;
-  for (const [fn, args0, kwargs] of fx.spec) {
-    const args = args0.map(decode);
-    if (fn === 'twinx') { ax = ax.twinx(); axes.push(ax); continue; }
-    if (fn === 'sca') { ax = axes[args[0]]; continue; }
-    if (typeof ax[fn] !== 'function') throw new Error(`no Axes.${fn}`);
-    const kw = Object.fromEntries(Object.entries(kwargs).map(([k, v]) => [k, v && typeof v === 'object' && '$transform' in v ? (v.$transform === 'axes' ? ax.transAxes : ax.transData) : v]));
-    ax[fn](...args, ...(Object.keys(kw).length ? [kw] : []));
-  }
+// oxlint-disable-next-line typescript/no-explicit-any -- compared key by key against fixture JSON
+type Got = any;
+function render(fx: Fixture) {
+  const fig = build(fx);
   const scene = fig.toScene();
   const svg = fig.toSVG();
   const all = fig.meta;
   const m = fig.meta[0];
   const meta = { xlim: m.x.lim, ylim: m.y.lim, xticks: m.x.ticks, yticks: m.y.ticks, xticklabels: m.x.labels, yticklabels: m.y.labels,
                  xoffset: m.x.offset, yoffset: m.y.offset, legend: m.legend.kind === 'some' ? m.legend.value : null };   // fixture JSON encodes absence as null
-  return { meta: { ...meta, axes: all }, svg, scene };
+  return { meta: { ...meta, axes: all } as Got, svg, scene };
 }
 
-let pass = 0, fail = 0; const rows = [];
+let pass = 0, fail = 0; const rows: { name: string; ok: boolean; rms: number; exact: boolean; diff: number }[] = [];
 for (const name of names) {
   if (only && name !== only) continue;
-  const fx = JSON.parse(readFileSync(REF + name + '.json', 'utf8'));
-  let got, svg, scene;
-  try { ({ meta: got, svg, scene } = render(fx)); } catch (e) { console.log(`FAIL ${name.padEnd(20)} threw: ${e.stack.split('\n').slice(0, 3).join(' | ')}`); fail++; continue; }
+  const fx = loadFixture(name);
+  let got: Got, svg: string, scene: Scene;
+  try { ({ meta: got, svg, scene } = render(fx)); } catch (e) { console.log(`FAIL ${name.padEnd(20)} threw: ${(e as Error).stack?.split('\n').slice(0, 3).join(' | ')}`); fail++; continue; }
   writeFileSync(OUT + name + '.svg', svg);
   const problems = [];
   if ((fx.legend === null) !== (got.legend === null)) problems.push(`legend presence: got ${JSON.stringify(got.legend)} want ${JSON.stringify(fx.legend)}`);
@@ -56,19 +48,19 @@ for (const name of names) {
     for (const k of ['x0', 'x1', 'top', 'bottom']) if (Math.abs(got.legend[k] - fx.legend[k]) > 0.05) problems.push(`legend ${k}: got ${got.legend[k].toFixed(3)} want ${fx.legend[k].toFixed(3)}`);
   }
   for (const k of ['xlim', 'ylim', 'xticks', 'yticks']) if (!arrEq(got[k], fx[k])) problems.push(`${k}: got ${JSON.stringify(got[k])} want ${JSON.stringify(fx[k])}`);
-  for (const k of ['xticklabels', 'yticklabels']) if (!arrEq(got[k], fx[k], (a, b) => a === b)) problems.push(`${k}: got ${JSON.stringify(got[k])} want ${JSON.stringify(fx[k])}`);
+  for (const k of ['xticklabels', 'yticklabels']) if (!arrEq(got[k], fx[k], (a: string, b: string) => a === b)) problems.push(`${k}: got ${JSON.stringify(got[k])} want ${JSON.stringify(fx[k])}`);
   for (const k of ['xoffset', 'yoffset']) if (got[k] !== fx[k]) problems.push(`${k}: got ${JSON.stringify(got[k])} want ${JSON.stringify(fx[k])}`);
   // every axes (twins too), including minor ticks and labels
-  (fx.axes || []).forEach((want, i) => {
+  (fx.axes || []).forEach((want: Got, i: number) => {
     const g = got.axes[i];
     if (!g) { problems.push(`axes[${i}] missing`); return; }
     for (const a of ['x', 'y']) {
       const W = want[a], G = g[a];
       if (!arrEq(G.lim, W.lim)) problems.push(`axes[${i}].${a}.lim: got ${JSON.stringify(G.lim)} want ${JSON.stringify(W.lim)}`);
       if (!arrEq(G.ticks, W.ticks)) problems.push(`axes[${i}].${a}.ticks: got ${JSON.stringify(G.ticks)} want ${JSON.stringify(W.ticks)}`);
-      if (!arrEq(G.labels, W.labels, (p, q) => p === q)) problems.push(`axes[${i}].${a}.labels: got ${JSON.stringify(G.labels)} want ${JSON.stringify(W.labels)}`);
+      if (!arrEq(G.labels, W.labels, (p: string, q: string) => p === q)) problems.push(`axes[${i}].${a}.labels: got ${JSON.stringify(G.labels)} want ${JSON.stringify(W.labels)}`);
       if (!arrEq(G.minor, W.minor)) problems.push(`axes[${i}].${a}.minor: got ${JSON.stringify(G.minor)} want ${JSON.stringify(W.minor)}`);
-      if (!arrEq(G.minorLabels, W.minorlabels, (p, q) => p === q)) problems.push(`axes[${i}].${a}.minorlabels: got ${JSON.stringify(G.minorLabels)} want ${JSON.stringify(W.minorlabels)}`);
+      if (!arrEq(G.minorLabels, W.minorlabels, (p: string, q: string) => p === q)) problems.push(`axes[${i}].${a}.minorlabels: got ${JSON.stringify(G.minorLabels)} want ${JSON.stringify(W.minorlabels)}`);
       if (G.offset !== W.offset) problems.push(`axes[${i}].${a}.offset: got ${JSON.stringify(G.offset)} want ${JSON.stringify(W.offset)}`);
     }
   });

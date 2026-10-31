@@ -143,7 +143,7 @@ const hoverChanged = () => { hoverDirty = true; kick(); };
 //   figure.build … gl.draw, hover.draw    the page's and mpljs's JS work
 //   browser.render  end of our JS → the first task after the frame: an upper bound on main-thread
 //                   style, layout, paint and commit. Checked against Chromium's timeline
-//                   (tools/bench_live.mjs): it contains 92 % of that work, which is about half its
+//                   (bench/bench_live.ts): it contains 92 % of that work, which is about half its
 //                   length. GPU raster and display are not in it; when they back up, it shows as
 //                   input.wait on the next input.
 // The library's spans nest under 'frame' because startTrace joins an open span.

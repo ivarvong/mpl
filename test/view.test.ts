@@ -4,17 +4,18 @@
 //  - zoom in then out by the same delta returns the interval
 //  - the interval never leaves home and its width stays within [minW, home width]
 //  - easing preserves the anchor fraction at every step and converges exactly
+import type { Interval } from '../tools/live/view.js';
 import { ease, inside, nearest, pan, wheelFactor, zoomAbout } from '../tools/live/view.js';
 
 let seed = 7;
 const rnd = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };
 let fail = 0, checks = 0;
-const ok = (c, msg) => { checks++; if (!c) { fail++; if (fail < 10) console.error('FAIL', msg); } };
-const near = (a, b, tol) => Math.abs(a - b) <= tol;
+const ok = (c: boolean, msg: string): void => { checks++; if (!c) { fail++; if (fail < 10) console.error('FAIL', msg); } };
+const near = (a: number, b: number, tol: number) => Math.abs(a - b) <= tol;
 
-const home = [19650, 20745], minW = 3, HW = home[1] - home[0];
+const home: Interval = [19650, 20745], minW = 3, HW = home[1] - home[0];
 for (let trial = 0; trial < 2000; trial++) {
-  let v = [home[0], home[1]];
+  let v: Interval = [home[0], home[1]];
   for (let s = 0; s < 30; s++) {
     const r = rnd();
     if (r < 0.6) {
@@ -35,15 +36,15 @@ for (let trial = 0; trial < 2000; trial++) {
 
 // burst accumulation, round trip, easing
 for (let trial = 0; trial < 500; trial++) {
-  const v = [20000 + rnd() * 100, 20300 + rnd() * 100], x = v[0] + rnd() * (v[1] - v[0]), d = (rnd() - 0.5) * 30, n = 1 + Math.floor(rnd() * 12);
-  let a = v;
+  const v: Interval = [20000 + rnd() * 100, 20300 + rnd() * 100], x = v[0] + rnd() * (v[1] - v[0]), d = (rnd() - 0.5) * 30, n = 1 + Math.floor(rnd() * 12);
+  let a: Interval = v;
   for (let i = 0; i < n; i++) a = zoomAbout(a, x, wheelFactor(d, 0, false), [0, 1e6], 1e-6);
   const b = zoomAbout(v, x, wheelFactor(d * n, 0, false), [0, 1e6], 1e-6);
   ok(near(a[0], b[0], 1e-6) && near(a[1], b[1], 1e-6), `burst ${a} vs ${b}`);
   const back = zoomAbout(zoomAbout(v, x, wheelFactor(d, 0, true), [0, 1e6], 1e-6), x, wheelFactor(-d, 0, true), [0, 1e6], 1e-6);
   ok(near(back[0], v[0], 1e-6) && near(back[1], v[1], 1e-6), 'round trip');
   const t = zoomAbout(v, x, 0.3, [0, 1e6], 1e-6), frac = (x - v[0]) / (v[1] - v[0]);
-  let s = v, steps = 0;
+  let s: Interval = v, steps = 0;
   while ((s[0] !== t[0] || s[1] !== t[1]) && steps < 1000) { s = ease(s, t, 16.7, 60); steps++; ok(near((x - s[0]) / (s[1] - s[0]), frac, 1e-9), 'ease anchor'); }
   ok(steps < 60, `ease converges (${steps} frames)`);
 }
