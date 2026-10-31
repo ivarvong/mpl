@@ -8,6 +8,7 @@ import { parseFmt, parseLinestyle, parseMarker } from './core/fmt.ts';
 import { layoutFigure } from './core/layout.ts';
 import { parseWeight } from './core/fonts.ts';
 import type { RcLayer, RcValue } from './core/rc.ts';
+import { DEFAULTS } from './core/rc.ts';
 import { isNullish, isPlainObject, prop } from './core/std.ts';
 import type { StyleSpec } from './core/style.ts';
 import { composeStyles } from './core/style.ts';
@@ -563,8 +564,6 @@ export class Figure {
   readonly dpi: number;
   readonly axes: Axes[] = [];
   meta: readonly AxesMeta[] = [];
-  private _cached: Option<{ readonly scene: Scene; readonly meta: readonly AxesMeta[] }> = none;
-  private _dirty = true;
   private _figText: { readonly x: number; readonly y: number; readonly text: string; readonly ha: HAlign; readonly va: VAlign; readonly sizePt: number; readonly weight: number; readonly color: Rgb }[] = [];
   private _suptitle: Option<{ readonly text: string; readonly x: number; readonly y: number; readonly ha: HAlign; readonly va: VAlign; readonly sizePt: number; readonly weight: number; readonly color: Rgb }> = none;
   private _supx: Option<{ readonly text: string; readonly x: number; readonly y: number; readonly ha: HAlign; readonly va: VAlign; readonly sizePt: number; readonly weight: number; readonly color: Rgb }> = none;
@@ -574,7 +573,8 @@ export class Figure {
   constructor(kwargs: Kwargs = {}) {
     const kw = new KwReader(kwargs, 'Figure');
     const styles = kw.read(['style'], parseStyles, (): readonly StyleSpec[] => []);
-    kw.get(['rc']); const rc = new Map<string, RcValue>();
+    const rc = kw.read(['rc'], (v) => (isPlainObject(v) ? rcLayer(v) : err('rc must be an object')), (): RcLayer => new Map());
+    for (const k of rc.keys()) if (!DEFAULTS.has(k) && k !== 'svg.fonttype') throw new TypeError(`unknown rc key: ${k}`);
     this.theme = unwrap(parseTheme(unwrap(composeStyles([...styles, { kind: 'layer', layer: rc }]))));
     const size = kw.read(['figsize'], (v): Result<readonly [number, number]> => {
       const a: readonly unknown[] = Array.isArray(v) ? v : [];
@@ -591,7 +591,7 @@ export class Figure {
       figText: this._figText, suptitle: this._suptitle, supx: this._supx, supy: this._supy,
     };
   }
-  private touch(): void { this._dirty = true; this._cached = none; }
+  private touch(): void { /* layout cache disabled */ }
   /** Figure-level text in figure coordinates (0..1). */
   text(x: unknown, y: unknown, s: unknown, kwargs: Kwargs = {}): this {
     const kw = new KwReader(kwargs, 'Figure.text');
@@ -648,13 +648,11 @@ export class Figure {
   }
   /** Run layout; one trace per run. */
   toScene(): Scene {
-    if (!this._dirty && this._cached.kind === 'some') return this._cached.value.scene;
     const root = tracer.startTrace('figure.layout', { axes: this.axes.length, dpi: this.dpi });
     try {
       const { scene, meta } = layoutFigure(this.spec(), tracer);
       this.meta = meta;
       root.setAttribute('nodes', scene.nodes.length);
-      this._cached = some({ scene, meta }); this._dirty = false;
       return scene;
     } catch (e) { root.recordException(e); throw e; } finally { root.end(); }
   }
