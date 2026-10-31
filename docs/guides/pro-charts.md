@@ -4,7 +4,7 @@ Images first; each is rendered by a tiny example under `examples/` and committed
 
 ### Twitter‑ready hero (speedup bars)
 
-<img src="../images/twitter_speedup.png" width="860" alt="speedup bars (vs earlier mpljs)">
+<img src="../images/twitter_speedup.svg" width="860" alt="speedup bars (vs earlier mpljs)">
 
 Render it yourself:
 ```bash
@@ -13,7 +13,7 @@ node examples/twitter_pro.ts
 
 ### Dumbbell (before → after, ms)
 
-<img src="../images/twitter_dumbbell.png" width="860" alt="dumbbell chart (before vs after)">
+<img src="../images/twitter_dumbbell.svg" width="860" alt="dumbbell chart (before vs after)">
 
 ```bash
 node examples/twitter_pro.ts
@@ -21,7 +21,7 @@ node examples/twitter_pro.ts
 
 ### Trace the render and see where time goes
 
-<img src="../images/twitter_trace.png" width="860" alt="trace waterfall">
+<img src="../images/twitter_trace.svg" width="860" alt="trace waterfall">
 
 ```bash
 node examples/trace_render.ts
@@ -30,10 +30,10 @@ node examples/trace_render.ts
 ### Four starter charts
 
 <p>
-  <img src="../images/starter_grouped_bars.png" width="420" alt="grouped bars">
-  <img src="../images/starter_stacked_barh.png" width="420" alt="stacked barh">
-  <img src="../images/starter_temps_line.png" width="420" alt="line with band">
-  <img src="../images/starter_signups_dates.png" width="420" alt="date axis + twinx">
+  <img src="../images/starter_grouped_bars.svg" width="420" alt="grouped bars">
+  <img src="../images/starter_stacked_barh.svg" width="420" alt="stacked barh">
+  <img src="../images/starter_temps_line.svg" width="420" alt="line with band">
+  <img src="../images/starter_signups_dates.svg" width="420" alt="date axis + twinx">
 </p>
 
 ```bash
@@ -57,7 +57,7 @@ const [fig, ax] = subplots({
   },
 });
 ```
-There is no figure‑level text yet; place headline/subtitle/footer using `ax.text` in axes coords mapped from figure coords.
+There is no figure‑level text yet; place headline/subtitle/footer using `ax.text` in axes coords mapped from figure coords. The images above are exactly what `fig.toSVG()` returns (rendered here with glyph outlines so they are self‑contained).
 
 ```ts
 const fx = (x: number) => (x - L) / (R - L), fy = (y: number) => (y - B) / (T - B);

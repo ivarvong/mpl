@@ -2,6 +2,7 @@
 // Produces: examples/out/twitter_trace.png and examples/out/twitter_trace.spans.jsonl
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { subplots, tracer, renderTree } from '../src/index.ts';
+import { toSVG } from '../src/render/svg.ts';
 import type { FinishedSpan, Option } from '../src/index.ts';
 
 // The same grouped speedup-dumbbell figure as twitter_pro.ts Variant B, without saving.
@@ -135,6 +136,8 @@ ax.set_yticks(ys); ax.set_yticklabels(labels);
 ax.set_xlim(0, end * 1.12);
 ax.set_xlabel('time since first span (ms)');
 ax.set_title('mpljs trace: Twitter chart render (warm, SVG + PNG)', { fontweight: 'bold' });
+// Save both formats; SVG uses glyph outlines to be self-contained on GitHub.
+writeFileSync(new URL('twitter_trace.svg', OUT), toSVG(fig.toScene(), tracer, 'glyphs'));
 writeFileSync(new URL('twitter_trace.png', OUT), fig.toPNGSync());
-console.log('wrote examples/out/twitter_trace.png and twitter_trace.spans.jsonl');
+console.log('wrote examples/out/twitter_trace.{svg,png} and twitter_trace.spans.jsonl');
 
