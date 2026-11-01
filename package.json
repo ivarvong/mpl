@@ -57,11 +57,17 @@
     "fuzz": "python3 fixtures/fuzz_ticker.py && python3 fixtures/fuzz_dates.py && node test/fuzz-ticker.ts && node test/fuzz-dates.ts",
     "tables": "python3 scripts/gen_tables.py",
     "oracle": "node test/png-oracle.ts",
-    "bench": "node bench/bench.ts"
+    "bench": "node bench/bench.ts",
+    "test:browser": "node test/browser.test.ts",
+    "test:workers": "node test/workers.test.ts",
+    "test:size": "node test/size.test.ts",
+    "size": "node scripts/bundle_size.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
     "oxlint": "^1.90.0",
+    "playwright": "^1.64.1",
     "typescript": "^7.0.2"
   },
   "private": true
