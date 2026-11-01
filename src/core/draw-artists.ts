@@ -9,7 +9,7 @@ import { isRectilinear, simplifyPolyline } from './path.ts';
 import { inkOf, rectNode, snap, snapOffset } from './scene.ts';
 import { lookup } from './std.ts';
 import { forwardAll } from './scale.ts';
-import type { BarArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist } from './types.ts';
+import type { BarArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, Paint } from './types.ts';
 import { labelNodes } from './draw-axis.ts';
 import { placeText, pxPerPt } from './text.ts';
 import type { Face } from './fonts.ts';
@@ -182,14 +182,40 @@ export function drawScatter(a: ScatterArtist, f: Frame, theme: Theme, k: number,
   if (n === 0) return { nodes: [], lines: [], boxes: [], handle: some({ kind: 'line', stroke: { kind: 'none' }, markers: { kind: 'none' } }) };
   const xs = new Float64Array(n), ys = new Float64Array(n);
   for (let i = 0; i < n; i++) { xs[i] = tx(f, a.x[i]); ys[i] = ty(f, a.y[i]); }
-  // Size in points^2: approximate with a single average size in px for now
-  const avgPx = n > 0 ? Math.sqrt(a.sizePt2.reduce((s, v) => s + Math.max(0, v), 0) / n) * k : 0;
-  const stroke: Option<Stroke> = a.edge.kind === 'solid' && a.edgeWidthPt > 0 ? some({ color: a.edge.color, width: a.edgeWidthPt * k, cap: theme.lines.solidCap, join: theme.lines.solidJoin, dash: { kind: 'solid' } }) : none;
-  const ink = inkOf(a.face, stroke);
-  if (ink.kind === 'none') return { nodes: [], lines: [], boxes: [], handle: some({ kind: 'line', stroke: { kind: 'none' }, markers: { kind: 'none' } }) };
-  const m = markersNode({ kind: 'on', shape: a.shape, sizePt: avgPx / k, edgeWidthPt: a.edgeWidthPt, face: a.face, edge: a.edge }, xs, ys, k);
-  const nodes: readonly Node[] = m.kind === 'some' ? [{ kind: 'group', clip, nodes: [m.value], tag: '' }] : [];
-  return { nodes, lines: [], boxes: [], handle: some({ kind: 'line', stroke: { kind: 'none' }, markers: { kind: 'on', shape: a.shape, sizePt: avgPx / k, edgeWidthPt: a.edgeWidthPt, face: a.face, edge: a.edge } }) };
+  // Group by (size, face, edge) to support per-point sizes and colours
+  type Key = string;
+  const keyOf = (i: number): Key => {
+    const sPt = Math.max(0, a.sizePt2[i]);
+    const size = Math.sqrt(sPt);
+    const face = a.faces[i];
+    const edge = a.edges[i];
+    const fc = face.kind === 'solid' ? `${face.color.hex}/${face.color.alpha}` : 'none';
+    const ec = edge.kind === 'solid' ? `${edge.color.hex}/${edge.color.alpha}` : 'none';
+    return `${size.toFixed(4)}|${fc}|${ec}`;
+  };
+  const groups = new Map<Key, { sizePt: number; face: Paint; edge: Paint; xs: number[]; ys: number[] }>();
+  for (let i = 0; i < n; i++) {
+    const sPt2 = Math.max(0, a.sizePt2[i]);
+    const sizePt = Math.sqrt(sPt2);
+    const kkey = keyOf(i);
+    const g = groups.get(kkey);
+    if (!g) {
+      groups.set(kkey, { sizePt, face: a.faces[i], edge: a.edges[i], xs: [xs[i]], ys: [ys[i]] });
+    } else {
+      g.xs.push(xs[i]); g.ys.push(ys[i]);
+    }
+  }
+  const nodes: Node[] = [];
+  for (const g of groups.values()) {
+    const stroke: Option<Stroke> = g.edge.kind === 'solid' && a.edgeWidthPt > 0 ? some({ color: g.edge.color, width: a.edgeWidthPt * k, cap: theme.lines.solidCap, join: theme.lines.solidJoin, dash: { kind: 'solid' } }) : none;
+    const ink = inkOf(g.face, stroke);
+    if (ink.kind === 'none') continue;
+    const m = markersNode({ kind: 'on', shape: a.shape, sizePt: g.sizePt, edgeWidthPt: a.edgeWidthPt, face: g.face, edge: g.edge },
+                          Float64Array.from(g.xs), Float64Array.from(g.ys), k);
+    if (m.kind === 'some') nodes.push(m.value);
+  }
+  const out: readonly Node[] = nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [];
+  return { nodes: out, lines: [], boxes: [], handle: some({ kind: 'line', stroke: { kind: 'none' }, markers: { kind: 'none' } }) };
 }
 
 /** axvspan / axhspan: spans in data × axes-fraction coordinates. */

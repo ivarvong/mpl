@@ -376,6 +376,7 @@ export class Axes {
     const color = this.theme.text.color;
     const sizePt = this.theme.font.sizePt;
     const ha: HAlign = 'left', va: VAlign = 'baseline';
+    const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => false);   // matplotlib default: annotations are not clipped
     kw.done();
     const xyOk = ((): readonly [number, number] => {
       if (Array.isArray(xy) && xy.length === 2 && typeof xy[0] === 'number' && typeof xy[1] === 'number') return [xy[0], xy[1]];
@@ -392,7 +393,7 @@ export class Axes {
       tx: xytextOk[0], ty: xytextOk[1], textcoords, text: str(text),
       sizePt, weight: this.theme.font.weight, color, ha, va,
       arrow: { color: arrow.color, widthPt: arrow.widthPt, headLengthPt: arrow.headLengthPt, headWidthPt: arrow.headWidthPt },
-      clip: true,
+      clip,
     };
     this.artists.push(a);
     return a;
@@ -408,16 +409,24 @@ export class Axes {
     const s = kw.read(['s'], (v) => broadcast(v, n, 's'), () => new Float64Array(n).fill(36)); // matplotlib default 36 pt^2
     const marker = kw.read(['marker'], parseMarker, () => unwrap(parseMarker('o')));
     const alpha = kw.read(['alpha'], (v): Result<Option<number>> => (typeof v === 'number' && v >= 0 && v <= 1 ? ok(some(v)) : err('alpha must be in [0, 1]')), (): Option<number> => none);
-    const color0 = kw.read(['c', 'color'], this.paint, (): Paint => ({ kind: 'solid', color: this.next('patch') }));
-    const edgecolors = kw.read(['edgecolors', 'edgecolor'], this.paint, (): Paint => ({ kind: 'none' }));
+    const parsePaintOrList = (v: unknown): Result<readonly Paint[]> => {
+      const one = this.paint(v);
+      if (one.ok) return ok([one.value]);
+      if (!Array.isArray(v) || v.length === 0) return one;
+      const out: Paint[] = [];
+      for (const c of v) { const p = this.paint(c); if (!p.ok) return p; out.push(p.value); }
+      return ok(out);
+    };
+    const colorList0 = kw.read(['c', 'color'], (v) => parsePaintOrList(v), (): readonly Paint[] => [{ kind: 'solid', color: this.next('patch') }]);
+    const edgecolorsList = kw.read(['edgecolors', 'edgecolor'], (v) => parsePaintOrList(v), (): readonly Paint[] => [{ kind: 'none' }]);
     const linewidths = kw.read(['linewidths', 'linewidth'], num('linewidths'), () => 0.5);
     const lbl = kw.read(['label'], label, (): Label => ({ kind: 'none' }));
     const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => true);
     kw.done();
     const withAlpha = (p: Paint): Paint => (p.kind === 'solid' && alpha.kind === 'some' ? { kind: 'solid', color: { hex: p.color.hex, alpha: alpha.value } } : p);
-    const face = withAlpha(color0);
-    const edge = withAlpha(edgecolors);
-    const sc: ScatterArtist = { kind: 'scatter', x: xs, y: ys, sizePt2: s, shape: marker.kind === 'some' ? marker.value : 'o', face, edge, edgeWidthPt: linewidths, label: lbl, clip };
+    const faces = Array.from({ length: n }, (_, i) => withAlpha(colorList0[(i) % colorList0.length]));
+    const edges = Array.from({ length: n }, (_, i) => withAlpha(edgecolorsList[(i) % edgecolorsList.length]));
+    const sc: ScatterArtist = { kind: 'scatter', x: xs, y: ys, sizePt2: s, shape: marker.kind === 'some' ? marker.value : 'o', faces, edges, edgeWidthPt: linewidths, label: lbl, clip };
     this.artists.push(sc);
     return sc;
   }

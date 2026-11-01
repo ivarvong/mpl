@@ -230,9 +230,18 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
   const patches = drawn.flatMap((d, i) => (zOf(i) === 1 ? d.nodes : []));
   const lines = drawn.flatMap((d, i) => (zOf(i) === 2 ? d.nodes : []));
   const userTexts = drawn.flatMap((d, i) => (zOf(i) === 3 ? d.nodes : []));
-  const xa = shown(roles.x, (sides) => tracer.span('axis.x', { ticks: xt.visible.length }, () => drawAxis('x', xt, ax.tick.x, sides, gridOn(ax.grid, 'x'), f, theme, dpi, tracer)));
-  const ya = shown(roles.y, (sides) => tracer.span('axis.y', { ticks: yt.visible.length, side: roles.yOnRight ? 'right' : 'left' },
-    () => drawAxis('y', yt, ax.tick.y, sides, gridOn(ax.grid, 'y'), f, theme, dpi, tracer)));
+  // Spine outward offsets move the axis baseline (ticks and labels follow)
+  const offPx = (side: 'left' | 'right' | 'top' | 'bottom'): number => {
+    const p = ax.spines[side].position;
+    return p.kind === 'some' && p.value.kind === 'outward' ? p.value.pts * k : 0;
+  };
+  const baseX = { xLeft: box.x0 - offPx('left'), xRight: box.x1 + offPx('right') };
+  const baseY = { yBottom: box.yBot + offPx('bottom'), yTop: box.yTop - offPx('top') };
+  const bases = { ...baseX, ...baseY };
+  const xa = shown(roles.x, (sides) => tracer.span('axis.x', { ticks: xt.visible.length }, () =>
+    drawAxis('x', xt, ax.tick.x, sides, gridOn(ax.grid, 'x'), f, theme, dpi, tracer, bases)));
+  const ya = shown(roles.y, (sides) => tracer.span('axis.y', { ticks: yt.visible.length, side: roles.yOnRight ? 'right' : 'left' }, () =>
+    drawAxis('y', yt, ax.tick.y, sides, gridOn(ax.grid, 'y'), f, theme, dpi, tracer, bases)));
   const decTheme: Theme = { ...theme, xtick: ax.tick.x, ytick: ax.tick.y };
   const texts = tracer.span('decorations', { role: ax.role.kind }, () =>
     decorations(ax, roles, decTheme, f, k, dpi, xt, yt, { near: xa.nearBoxes, far: xa.farBoxes }, { near: ya.nearBoxes, far: ya.farBoxes }));

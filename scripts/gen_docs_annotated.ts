@@ -1,4 +1,5 @@
 import { writeFileSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
 import { subplots, type Axes } from '../src/index.ts';
 
 function buildBefore() {
@@ -17,9 +18,15 @@ function buildAfter() {
   ax.annotate('peak', [1.5, Math.sin(1.5)], { xytext: [2.5, 1.2], arrowprops: { color: 'red', linewidth: 2, headlength: 8, headwidth: 6 } });
   return fig;
 }
-const before = buildBefore().toSVG();
-const after = buildAfter().toSVG();
+const figBefore = buildBefore();
+const figAfter = buildAfter();
+const before = figBefore.toSVG();
+const after = figAfter.toSVG();
 writeFileSync('docs/images/annotated-before.svg', before);
 writeFileSync('docs/images/annotated-after.svg', after);
-console.log('wrote docs/images/annotated-before.svg and annotated-after.svg');
+const pngBefore = figBefore.toPNGSync();
+const pngAfter = figAfter.toPNGSync();
+await writeFile('docs/images/annotated-before.png', pngBefore);
+await writeFile('docs/images/annotated-after.png', pngAfter);
+console.log('wrote docs/images/annotated-before/after.{svg,png}');
 

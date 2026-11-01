@@ -133,7 +133,7 @@ export type TextArtist = {
 export type ScatterArtist = {
   readonly kind: 'scatter'; readonly x: Float64Array; readonly y: Float64Array;
   readonly sizePt2: Float64Array; readonly shape: MarkerName;
-  readonly face: Paint; readonly edge: Paint; readonly edgeWidthPt: number; readonly label: Label; readonly clip: boolean;
+  readonly faces: readonly Paint[]; readonly edges: readonly Paint[]; readonly edgeWidthPt: number; readonly label: Label; readonly clip: boolean;
 };
 export type AnnotationCoords = 'data' | 'axes';
 export type AnnotationArtist = {
