@@ -94,6 +94,7 @@ fig.tight_layout();
 [`examples/small_multiples.ts`](examples/small_multiples.ts) is also an oracle case (`fixtures/ref/example_small_multiples`):
 
 <img src="docs/images/small_multiples.svg" width="640" alt="A 2x3 grid of line charts of monthly temperature for six cities, sharing x and y axes, with a figure title and shared axis labels">
+
 `npm run build` emits plain ES modules plus `.d.ts` into `dist/browser` for use from a browser, a Cloudflare Worker, or any
 project that cannot run `.ts` files (Node refuses to strip types inside `node_modules`).
 
