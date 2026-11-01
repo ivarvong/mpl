@@ -1,0 +1,12 @@
+{
+  "tolerance": 0.02,
+  "note": "bytes; esbuild --minify then gzip -9; see scripts/bundle_size.ts",
+  "typical": {
+    "min": 2170239,
+    "gzip": 506831
+  },
+  "full": {
+    "min": 2173705,
+    "gzip": 507729
+  }
+}
