@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 matplotlib.rcdefaults()                      # ignore any local matplotlibrc
 matplotlib.rcParams["font.family"] = "DejaVu Sans"   # ignore any locally patched matplotlibrc
+matplotlib.rcParams["text.hinting"] = "none"         # reproduce oracle PNGs (stock FT 2.14.3, no hinting)
 import matplotlib.pyplot as plt
 
 OUT = os.path.join(os.path.dirname(__file__), "ref")
