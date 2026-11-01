@@ -6,7 +6,7 @@ import { buildObstacleIndex } from './legend-index.ts';
 import { lineStroke, markersNode } from './marks.ts';
 import type { XY } from './path.ts';
 import { inkOf, pathNode, rectNode, snap } from './scene.ts';
-import { lpAscent, measure, pxPerPt } from './text.ts';
+import { lpAscent, measure, pxPerPt, strokePx } from './text.ts';
 import { resolveFace } from './fonts.ts';
 import type { AnchorCode, Handle, LegendEntry, LegendLoc, Node, Option, Seg, Stroke, Theme } from './types.ts';
 import { assertNever, none, some } from './types.ts';
@@ -183,7 +183,7 @@ function handleNodes(h: Handle, ox: number, oy: number, wPx: number, hPx: number
   switch (h.kind) {
     case 'patch': {
       const stroke: Option<Stroke> = h.edge.kind === 'on' && h.edge.widthPt > 0
-        ? some({ color: h.edge.color, width: h.edge.widthPt * k, cap: 'butt', join: 'miter', dash: { kind: 'solid' } })
+        ? some({ color: h.edge.color, width: strokePx(h.edge.widthPt, k), cap: 'butt', join: 'miter', dash: { kind: 'solid' } })
         : none;
       const lw = stroke.kind === 'some' ? stroke.value.width : 0;
       const ink = inkOf(h.face, stroke);

@@ -13,7 +13,7 @@ import { lookup } from './std.ts';
 import { forwardAll } from './scale.ts';
 import type { BarArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, Paint } from './types.ts';
 import { labelNodes } from './draw-axis.ts';
-import { placeText, pxPerPt } from './text.ts';
+import { placeText, pxPerPt, strokePx } from './text.ts';
 import type { Face } from './fonts.ts';
 import { resolveFace } from './fonts.ts';
 import { assertNever, none, some } from './types.ts';
@@ -64,7 +64,7 @@ type Pending = { readonly x: number; readonly w: number; y: number; h: number; r
 
 export function drawBar(a: BarArtist, f: Frame, k: number, clip: Clip, span: SpanHandle): Drawn {
   const stroke: Option<Stroke> = a.edge.kind === 'on'
-    ? some({ color: a.edge.color, width: a.edge.widthPt * k, cap: 'butt', join: 'miter', dash: { kind: 'solid' } })
+    ? some({ color: a.edge.color, width: strokePx(a.edge.widthPt, k), cap: 'butt', join: 'miter', dash: { kind: 'solid' } })
     : none;
   const lw = stroke.kind === 'some' ? stroke.value.width : 0;
   // Exact culling for opaque, unstroked bars of one colour: zero-area rects draw nothing; a rect
@@ -108,7 +108,7 @@ export function drawFill(a: FillArtist, f: Frame, k: number, clip: Clip): Drawn 
   const n = Math.min(a.x.length, a.y1.length, a.y2.length);
   const handle = some<Handle>({ kind: 'patch', face: a.face, edge: a.edge });
   // GraphicsContext defaults for collections: butt caps, round joins
-  const stroke: Option<Stroke> = a.edge.kind === 'on' && a.edge.widthPt > 0 ? some({ color: a.edge.color, width: a.edge.widthPt * k, cap: 'butt', join: 'round', dash: { kind: 'solid' } }) : none;
+  const stroke: Option<Stroke> = a.edge.kind === 'on' && a.edge.widthPt > 0 ? some({ color: a.edge.color, width: strokePx(a.edge.widthPt, k), cap: 'butt', join: 'round', dash: { kind: 'solid' } }) : none;
   const ink = inkOf(a.face, stroke);
   if (n === 0 || ink.kind === 'none') return { nodes: [], lines: [], boxes: [], handle };
   // Two code paths in Collection.draw. With edges (a single edge color), the single-path
@@ -130,7 +130,7 @@ export function drawFill(a: FillArtist, f: Frame, k: number, clip: Clip): Drawn 
   // unsnapped path through draw_markers takes the plain +0.5 shift.
   let rectilinear = ptsX.length + 1 <= 1024;
   for (let i = 1; i < ptsX.length && rectilinear; i++) rectilinear = Math.abs(ptsX[i] - ptsX[i - 1]) < 1e-4 || Math.abs(ptsY[i] - ptsY[i - 1]) < 1e-4;
-  const off = a.edge.kind === 'on' ? snapOffset(a.edge.widthPt * k) : 0;
+  const off = a.edge.kind === 'on' ? snapOffset(strokePx(a.edge.widthPt, k)) : 0;
   const fix = (v: number): number => (rectilinear ? Math.floor(v + 0.5) + off : asMarker ? v + 0.5 : v);
   const segs: Seg[] = ptsX.map((x, i): Seg => [i === 0 ? 'M' : 'L', fix(x), fix(ptsY[i])]);
   segs.push(['Z']);
@@ -146,7 +146,7 @@ export function drawFill(a: FillArtist, f: Frame, k: number, clip: Clip): Drawn 
 export function drawText(a: TextArtist, f: Frame, dpi: number, face: Face): Drawn {
   const k = pxPerPt(dpi);
   const x = a.coords === 'data' ? tx(f, a.x) : a.x * f.box.w + f.box.x0;
-  const y = a.coords === 'data' ? ty(f, a.y) : f.H - (a.y * f.box.h + (f.H - f.box.yBot));
+  const y = a.coords === 'data' ? ty(f, a.y) : f.H - (a.y * f.box.h + f.box.b);
   const nodes = a.text === '' ? [] : labelNodes(placeText(a.text, a.sizePt, dpi, face, x, y, { kind: 'horizontal', ha: a.ha, va: a.va }), k, a.color);
   return { nodes, lines: [], boxes: [], handle: none };
 }
@@ -178,7 +178,7 @@ export function drawAnnotation(a: AnnotationArtist, f: Frame, dpi: number, theme
       }
     });
     // FancyArrowPatch: round join and cap; a curved path is never snapped
-    const stroke: Option<Stroke> = ar.linewidthPt > 0 ? some({ color: ar.edge, width: ar.linewidthPt * k, cap: 'round', join: 'round', dash: { kind: 'solid' } }) : none;
+    const stroke: Option<Stroke> = ar.linewidthPt > 0 ? some({ color: ar.edge, width: strokePx(ar.linewidthPt, k), cap: 'round', join: 'round', dash: { kind: 'solid' } }) : none;
     const ink = inkOf({ kind: 'solid', color: ar.face }, stroke);
     return ink.kind === 'some' ? [pathNode(segs, ink.value)] : [];
   })();
@@ -216,7 +216,7 @@ export function drawScatter(a: ScatterArtist, f: Frame, _theme: Theme, k: number
     }
   }
   const strokeOf = (edge: Paint): Option<Stroke> =>
-    edge.kind === 'solid' && a.edgeWidthPt > 0 ? some({ color: edge.color, width: a.edgeWidthPt * k, cap: 'butt', join: 'round', dash: { kind: 'solid' } }) : none;
+    edge.kind === 'solid' && a.edgeWidthPt > 0 ? some({ color: edge.color, width: strokePx(a.edgeWidthPt, k), cap: 'butt', join: 'round', dash: { kind: 'solid' } }) : none;
   const nodes: Node[] = [];
   if (groups.size === 1) {
     // Collection.draw: one path, one size, one face and edge colour -> renderer.draw_markers
@@ -245,22 +245,41 @@ export function drawScatter(a: ScatterArtist, f: Frame, _theme: Theme, k: number
           default: return assertNever(sg);
         }
       });
-      nodes.push(pathNode(segs, ink.value));
+      nodes.push(pathNode(snapRectilinear(segs, snapOffset(strokePx(a.edgeWidthPt, k))), ink.value));
     }
   }
   const out: readonly Node[] = nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [];
   return { nodes: out, lines: [], boxes: [], handle: some({ kind: 'line', stroke: { kind: 'none' }, markers: { kind: 'none' } }) };
 }
 
+/**
+ * _draw_path_collection_generic runs every member path through PathSnapper (check_snap, SNAP_AUTO):
+ * a straight-segment path of ≤ 1024 vertices whose segments are all axis-aligned within 1e-4 px
+ * lands on floor(v + 0.5) + off, off = 0.5 for an odd rounded gc linewidth, else 0. Anything else
+ * (curves, diagonals) passes through untouched. Fixture scatter_sizes (square markers, lw 1).
+ */
+function snapRectilinear(segs: readonly Seg[], off: number): readonly Seg[] {
+  const pts: (readonly [number, number])[] = [];
+  for (const sg of segs) {
+    if (sg[0] === 'M' || sg[0] === 'L') pts.push([sg[1], sg[2]]);
+    else if (sg[0] !== 'Z') return segs;
+  }
+  if (segs.length > 1024) return segs;
+  const axisAligned = pts.every((p, i) => i === 0 || Math.abs(p[0] - pts[i - 1][0]) < 1e-4 || Math.abs(p[1] - pts[i - 1][1]) < 1e-4);
+  if (!axisAligned) return segs;
+  const fix = (v: number): number => Math.floor(v + 0.5) + off;
+  return segs.map((sg): Seg => (sg[0] === 'M' || sg[0] === 'L' ? [sg[0], fix(sg[1]), fix(sg[2])] : sg));
+}
+
 /** axvspan / axhspan: spans in data × axes-fraction coordinates. */
 export function drawSpan(a: SpanArtist, f: Frame, k: number, clip: Clip): Drawn {
-  const stroke: Option<Stroke> = a.edge.kind === 'on' && a.edge.widthPt > 0 ? some({ color: a.edge.color, width: a.edge.widthPt * k, cap: 'butt', join: 'miter', dash: { kind: 'solid' } }) : none;
+  const stroke: Option<Stroke> = a.edge.kind === 'on' && a.edge.widthPt > 0 ? some({ color: a.edge.color, width: strokePx(a.edge.widthPt, k), cap: 'butt', join: 'miter', dash: { kind: 'solid' } }) : none;
   const ink = inkOf(a.face, stroke);
   if (ink.kind === 'none') return { nodes: [], lines: [], boxes: [], handle: some({ kind: 'patch', face: a.face, edge: a.edge }) };
   const off = stroke.kind === 'some' ? snapOffset(stroke.value.width) : 0;
   if (a.orientation === 'vertical') {
     const x0 = tx(f, a.a0), x1 = tx(f, a.a1);
-    const y0 = f.H - (a.f0 * f.box.h + (f.H - f.box.yBot)), y1 = f.H - (a.f1 * f.box.h + (f.H - f.box.yBot));
+    const y0 = f.H - (a.f0 * f.box.h + f.box.b), y1 = f.H - (a.f1 * f.box.h + f.box.b);
     const X0 = Math.floor(Math.min(x0, x1) + 0.5) + off, X1 = Math.floor(Math.max(x0, x1) + 0.5) + off;
     const Y0 = Math.floor(Math.min(y0, y1) + 0.5) + off, Y1 = Math.floor(Math.max(y0, y1) + 0.5) + off;
     const rect = rectNode(X0, Y0, X1 - X0, Y1 - Y0, ink.value);

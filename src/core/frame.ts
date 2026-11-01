@@ -2,7 +2,11 @@
 import { forward } from './scale.ts';
 import type { Position, Scale } from './types.ts';
 
-export type AxesBox = { readonly x0: number; readonly x1: number; readonly yTop: number; readonly yBot: number; readonly w: number; readonly h: number };
+export type AxesBox = {
+  readonly x0: number; readonly x1: number; readonly yTop: number; readonly yBot: number; readonly w: number; readonly h: number;
+  /** bottom and top edges in display (y-up) coordinates, b·H and t·H exactly as matplotlib holds them; H − yBot can be 1 ulp off */
+  readonly b: number; readonly t: number;
+};
 export type Frame = {
   readonly box: AxesBox; readonly H: number;
   readonly xlim: readonly [number, number]; readonly ylim: readonly [number, number];
@@ -19,7 +23,7 @@ export type Frame = {
 export function axesBox(p: Position, W: number, H: number): AxesBox {
   const [l, b, r, t] = p;
   const x0 = l * W, x1 = r * W, y0 = b * H, y1 = t * H;
-  return { x0, x1, yTop: H - y1, yBot: H - y0, w: x1 - x0, h: y1 - y0 };
+  return { x0, x1, yTop: H - y1, yBot: H - y0, w: x1 - x0, h: y1 - y0, b: y0, t: y1 };
 }
 
 /**
@@ -29,7 +33,7 @@ export function axesBox(p: Position, W: number, H: number): AxesBox {
 export function frame(box: AxesBox, H: number, xlim: readonly [number, number], ylim: readonly [number, number], xscale: Scale, yscale: Scale): Frame {
   const vx0 = forward(xscale, xlim[0]), vx1 = forward(xscale, xlim[1]), vy0 = forward(yscale, ylim[0]), vy1 = forward(yscale, ylim[1]);
   const kx = 1.0 / (vx1 - vx0), ky = 1.0 / (vy1 - vy0);
-  const outb = H - box.yBot;
+  const outb = box.b;
   return { box, H, xlim, ylim, xscale, yscale,
            ax: box.w * kx, cx: box.w * (-vx0 * kx) + box.x0,
            ay: box.h * ky, cy: box.h * (-vy0 * ky) + outb };

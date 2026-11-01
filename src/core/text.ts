@@ -15,6 +15,13 @@ import { ftScale, glyphOf, inkExtent, mathMetrics, minMetrics, penPositions, sha
 import type { Glyph, HAlign, Placement, Rotation, TickLabel } from './types.ts';
 import { assertNever } from './types.ts';
 export const pxPerPt = (dpi: number): number => dpi / 72;
+/**
+ * A gc linewidth in px, as RendererAgg::points_to_pixels computes it: points * dpi / 72.0.
+ * points * (dpi / 72) can be 1 ulp off (1.5 pt at 100 dpi gives 2.083333333333333, not
+ * 2.0833333333333335). That moves every stroke offset, and Agg's 24.8 rounding then shifts AA
+ * coverage. k = dpi / 72 gives (k * 72) === dpi for every integer dpi up to 1000, so dpi is recovered exactly.
+ */
+export const strokePx = (points: number, k: number): number => (points * (k * 72)) / 72;
 
 
 /** A run of glyphs drawn at one size; (dx, dy) from the pen origin, dy < 0 is up. */
@@ -119,9 +126,10 @@ function mathPower(coeff: string, base: string, exponent: number, sizePt: number
   return { width: Math.ceil(acc.x), ascent, descent, runs };
 }
 
-export function measureLabel(l: TickLabel, sizePt: number, dpi: number, face: Face): LabelLayout {
+/** A tick label; `malign` is its horizontal alignment, which also aligns the lines of a multi-line label. */
+export function measureLabel(l: TickLabel, sizePt: number, dpi: number, face: Face, malign: HAlign): LabelLayout {
   switch (l.kind) {
-    case 'plain': return measure(l.text, sizePt, dpi, face);
+    case 'plain': return measure(l.text, sizePt, dpi, face, malign);
     case 'power': return mathPower(l.coeff.kind === 'some' ? l.coeff.value : '', l.base, l.exponent, sizePt, dpi, face);
     default: return assertNever(l);
   }

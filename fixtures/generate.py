@@ -5,7 +5,8 @@ replayed identically here (matplotlib) and in test/compare.ts (mpljs).
 For each case we record autoscaled limits, tick locations/labels, offset
 text, legend window extent, plus the reference SVG and PNG (640x480 @ 100 dpi).
 """
-import contextlib, json, math, os
+import contextlib, json, math, os, sys
+from fixture_guard import check_no_literal_newlines
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -274,11 +275,11 @@ case("clip_off_text",
      ("text", [-0.1, 1.05, "outside"], {"transform": AX, "clip_on": False}))
 case("multi_line_texts",
      ("plot", [x, sx]),
-     ("set_title", ["A title\\nwith two lines"]),
-     ("set_xlabel", ["x\\nunits"]),
-     ("set_ylabel", ["y\\nunits"]),
-     ("text", [0.5, 0.5, "a\\nb\\nc"], {"transform": AX, "ha": "center", "va": "center"}),
-     ("set_xticks", [[0, 5, 10]]), ("set_xticklabels", [["zero\\nfive", "five", "ten\\ndec"]]))
+     ("set_title", ["A title\nwith two lines"]),
+     ("set_xlabel", ["x\nunits"]),
+     ("set_ylabel", ["y\nunits"]),
+     ("text", [0.5, 0.5, "a\nb\nc"], {"transform": AX, "ha": "center", "va": "center"}),
+     ("set_xticks", [[0, 5, 10]]), ("set_xticklabels", [["zero\nfive", "five", "ten\ndec"]]))
 case("subplots_adjust_margins",
      ("plot", [x, sx]),
      fig_adjust(left=0.2, right=0.95, bottom=0.2, top=0.85))
@@ -317,7 +318,19 @@ def decode(a):
         return np.array(a["$dates"], dtype="datetime64[us]")
     return a
 
+check_no_literal_newlines(CASES)
+import matplotlib.ft2font as _ft
+if _ft.__freetype_version__ != "2.14.3":
+    raise SystemExit(f"FreeType mismatch: expected 2.14.3, got {_ft.__freetype_version__}; use the stock matplotlib 3.11.2 wheel")
+# python3 fixtures/generate.py [case ...]: regenerate only the named cases (default: all) and
+# merge them into _index.json, which also lists the generate_additions.py cases
+ONLY = set(sys.argv[1:])
+unknown = ONLY - set(CASES)
+if unknown:
+    raise SystemExit(f"unknown case(s): {sorted(unknown)}")
 for name, calls in CASES.items():
+  if ONLY and name not in ONLY:
+    continue
   style = STYLES.get(name)
   with matplotlib.rc_context(), (plt.style.context(style) if style else contextlib.nullcontext()):
     matplotlib.rcParams["font.family"] = "DejaVu Sans"
@@ -347,6 +360,9 @@ for name, calls in CASES.items():
         json.dump(rec, f, indent=1)
     plt.close(fig)
 
-with open(os.path.join(OUT, "_index.json"), "w") as f:
-    json.dump(sorted(CASES), f)
-print(f"wrote {len(CASES)} cases to {OUT}; matplotlib {matplotlib.__version__}")
+INDEX = os.path.join(OUT, "_index.json")
+done = sorted(ONLY) if ONLY else sorted(CASES)
+existing = json.load(open(INDEX)) if os.path.exists(INDEX) else []
+with open(INDEX, "w") as f:
+    json.dump(sorted(set(existing) | set(done)), f)
+print(f"wrote {len(done)} cases to {OUT}; matplotlib {matplotlib.__version__}")

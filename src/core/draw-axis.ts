@@ -6,7 +6,7 @@ import { lineStroke } from './marks.ts';
 import { resolveFace } from './fonts.ts';
 import { pathNode, snap, snapOffset } from './scene.ts';
 import type { TextBox } from './text.ts';
-import { measureLabel, placeLayout, pxPerPt } from './text.ts';
+import { measureLabel, placeLayout, pxPerPt, strokePx } from './text.ts';
 import type { TickSet } from './ticks.ts';
 import type { TickLabelStyles, AxisGrid, GridLines, Node, Rgb, Seg, Stroke, Theme, TickDirection, TickTheme, TickGrid } from './types.ts';
 import { assertNever, none } from './types.ts';
@@ -83,9 +83,10 @@ export function drawAxis(
       const sizePt = st.kind === 'some' && st.value.sizePt.kind === 'some' ? st.value.sizePt.value : tt.labelSizePt;
       const lface = st.kind === 'some' && st.value.weight.kind === 'some' ? resolveFace(theme.font.families, st.value.weight.value) : face;
       const lcolor = st.kind === 'some' && st.value.color.kind === 'some' ? st.value.color.value : tt.labelColor;
-      const lay = measureLabel(t.label, sizePt, dpi, lface);
+      // Text._get_multialignment: lines of a multi-line label align like the label (x: center, y: right/left)
+      const lay = measureLabel(t.label, sizePt, dpi, lface, axis === 'x' ? 'center' : sides.labels === 'far' ? 'left' : 'right');
       const g = t.minor ? grid.minor : grid.major;
-      const gridOn = gridDrawn(g), gridSegs = t.minor ? minorGrid : majorGrid, glw = g.lines.widthPt * k;
+      const gridOn = gridDrawn(g), gridSegs = t.minor ? minorGrid : majorGrid, glw = strokePx(g.lines.widthPt, k);
       if (axis === 'x') {
         const d = tx(f, t.loc), x = snap(d, width);
         if (gridOn) gridSegs.push(['M', snap(d, glw), snap(bases.yBottom, glw)], ['L', snap(d, glw), snap(bases.yTop, glw)]);
@@ -111,7 +112,7 @@ export function drawAxis(
     return stroke.color.alpha > 0 ? [pathNode(segs, { kind: 'stroke', stroke })] : [];
   };
   const tickPath = (segs: readonly Seg[], widthPt: number): readonly Node[] =>
-    segs.length > 0 && widthPt > 0 ? [pathNode(segs, { kind: 'stroke', stroke: { color: tt.color, width: widthPt * k, cap: 'butt', join: 'miter', dash: { kind: 'solid' } } })] : [];
+    segs.length > 0 && widthPt > 0 ? [pathNode(segs, { kind: 'stroke', stroke: { color: tt.color, width: strokePx(widthPt, k), cap: 'butt', join: 'miter', dash: { kind: 'solid' } } })] : [];
   return {
     grid: [...gridPath(majorGrid, grid.major.lines), ...gridPath(minorGrid, grid.minor.lines)],
     marks: [...labels, ...tickPath(majorSegs, tt.widthPt), ...tickPath(minorSegs, tt.minorWidthPt)],

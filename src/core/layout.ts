@@ -302,7 +302,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
     decorations(ax, roles, decTheme, f, k, dpi, xt, yt, { near: xa.nearBoxes, far: xa.farBoxes }, { near: ya.nearBoxes, far: ya.farBoxes }));
 
   const entries = legendEntries(ax, drawn);
-  const axesUp: Box = { x0: box.x0, x1: box.x1, y0: H - box.yBot, y1: H - box.yTop };
+  const axesUp: Box = { x0: box.x0, x1: box.x1, y0: box.b, y1: box.t };
   const spec = ax.legend;
   const legend = spec.kind === 'on' && entries.length > 0
     ? some({ code: spec.loc, out: tracer.span('legend', { entries: entries.length }, () => layoutLegend({
