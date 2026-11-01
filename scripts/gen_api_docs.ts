@@ -5,6 +5,7 @@
 //   node scripts/gen_api_docs.ts          write docs/api.md
 //   node scripts/gen_api_docs.ts --check  exit 1 if docs/api.md is out of date
 import { readFileSync, writeFileSync } from 'node:fs';
+import { FACE_CATALOG } from '../src/core/fontcodec.ts';
 
 const ROOT = new URL('../', import.meta.url);
 const SRC = readFileSync(new URL('src/api.ts', ROOT), 'utf8');
@@ -71,6 +72,40 @@ function functions(): string {
   return fns.map((f) => `### \`${f[2]}(${f[3].replace(/: [^,=]+(?=[,=]|$)/g, '').replace(/\s*=\s*[^,]+/g, '?').trim()})\`\n\n${f[1].replace(/^\/\*\*\s?|\s*\*\/$/g, '').replace(/\s*\n\s*\*\s?/g, ' ').trim()}\n`).join('\n');
 }
 
+/** The font faces: one module each, generated from FACE_CATALOG. */
+function fonts(): string {
+  return [
+    '## Fonts',
+    '',
+    'Each face is its own module, so a bundle carries only the faces you import. DejaVu Sans (matplotlib\'s',
+    'default) is always registered; register any other face before rendering text that selects it:',
+    '',
+    '```ts',
+    "import { registerFonts, subplots } from 'mpljs';",
+    "import { dejavuSansBold } from 'mpljs/fonts/dejavu-sans-bold';",
+    '',
+    'registerFonts(dejavuSansBold);',
+    "const [fig, ax] = subplots();",
+    "ax.set_title('Bold title', { fontweight: 'bold' });",
+    '```',
+    '',
+    'Font selection is matplotlib\'s (the first family in `font.family` that mpljs ships, then the nearest',
+    'weight), always over every shipped face, so registering faces never changes which face a text gets. If',
+    'the selected face is not registered, rendering throws `FontNotLoadedError` (fields `face`, `family`,',
+    '`weight`, `module`, `binding`; the message names the import to add). It never draws another face instead.',
+    'A family mpljs does not ship falls through to the next family in the list, as in matplotlib.',
+    '',
+    '| face | `font.family` | weight | import |',
+    '|---|---|---|---|',
+    ...FACE_CATALOG.map((e) => `| \`${e.id}\` | ${e.family}${e.family === 'DejaVu Sans' ? ' (`sans-serif`)' : e.family === 'DejaVu Serif' ? ' (`serif`)' : ''} | ${e.weight} | ${e.id === 'DejaVu Sans:400' ? 'built in' : `\`import { ${e.binding} } from 'mpljs/fonts/${e.module}'\``} |`),
+    '',
+    '`import { allFonts } from \'mpljs/fonts/all\'` and `registerFonts(...allFonts)` registers every face, for when',
+    'size does not matter (Node, tests). `registeredFonts()` lists the registered face ids; `FACE_CATALOG` lists',
+    'every shipped face. A face decodes on first use (a `font.decode` span when tracing); `FACE_LOADS` records when.',
+    '',
+  ].join('\n');
+}
+
 export function render(): string {
   return [
     '# API reference',
@@ -84,6 +119,7 @@ export function render(): string {
     '## Functions',
     '',
     functions(),
+    fonts(),
     section('Figure', 'Create one with `subplots()` or `new Figure({ style, rc, figsize, dpi })`.'),
     section('Axes', 'Returned by `subplots()`, `fig.add_subplot()` and `ax.twinx()`.'),
   ].join('\n').replace(/\n{3,}/g, '\n\n');

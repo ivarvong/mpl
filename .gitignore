@@ -8,3 +8,4 @@ tools/live/lib/
 .DS_Store
 out/
 fixtures/__pycache__/
+build/

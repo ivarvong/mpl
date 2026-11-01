@@ -2,13 +2,18 @@
 // Every frame re-runs matplotlib's layout (locators, formatters, legend placement) for the current
 // view and writes SVG with glyph outlines; hover lives on an overlay and never re-renders the chart.
 // Interaction is a pure view model (view.js): input moves a target interval, frames ease toward it.
-import { subplots, modern, modernDark, tracer, FACE_LOADS } from './lib/index.js';
+import { subplots, modern, modernDark, tracer, FACE_LOADS, registerFonts } from './lib/index.js';
+import { interRegular } from './lib/fonts/inter-regular.js';
+import { interMedium } from './lib/fonts/inter-medium.js';
+import { interSemibold } from './lib/fonts/inter-semibold.js';
+import { interBold } from './lib/fonts/inter-bold.js';
 import { TracePanel } from './tracepanel.js';
 import { toSVG } from './lib/render/svg.js';
 import { GLMarks } from './gl.js';
 import { ease, nearest, pan, same, velocity, wheelFactor, zoomAbout } from './view.js';
 
 const T_SCRIPT = performance.now();                 // all imported modules have evaluated by now
+registerFonts(interRegular, interMedium, interSemibold, interBold);   // the modern presets set in Inter
 const host = document.getElementById('chart');
 const under = document.getElementById('under'), above = document.getElementById('above'), glCanvas = document.getElementById('gl');
 let glm = null;
@@ -478,15 +483,16 @@ const win = (rs, name, attrs) => { if (rs.length) tracer.record(name, { files: r
   const fetched = js.length ? Math.max(...js.map((r) => r.responseEnd)) : T_SCRIPT;
   if (js.length) {
     const fe = tracer.startSpanAt('modules.fetch', { files: js.length, bytes: js.reduce((x, r) => x + r.encodedBodySize, 0) }, Math.min(...js.map((r) => r.startTime)));
-    win(js.filter((r) => r.name.includes('/data/fonts/')), 'fetch.font-data', {});
-    win(js.filter((r) => !r.name.includes('/data/fonts/')), 'fetch.code', {});
+    win(js.filter((r) => r.name.includes('/lib/fonts/')), 'fetch.font-data', {});
+    win(js.filter((r) => !r.name.includes('/lib/fonts/')), 'fetch.code', {});
     fe.endAt(fetched);
   }
   // V8 compiles while streaming, so 'compile+evaluate' is measured from the last byte to our first line
-  const ev = tracer.startSpanAt('modules.compile+evaluate', {}, Math.min(fetched, FACE_LOADS.length ? FACE_LOADS[0].startMs : fetched));
-  for (const f of FACE_LOADS) tracer.record('font.build', { face: f.id, glyphs: f.glyphs }, f.startMs, f.endMs);
+  const ev = tracer.startSpanAt('modules.compile+evaluate', {}, fetched);
   ev.endAt(T_SCRIPT);
   const si = tracer.startSpanAt('script.init', { points: data.X.length * series.length, webgl: !!glm }, T_SCRIPT);
+  // faces decode on first use, i.e. during the first render
+  for (const f of FACE_LOADS) tracer.record('font.decode', { face: f.id, glyphs: f.glyphs }, f.startMs, f.endMs);
   for (const [name, a, b] of initMarks) tracer.record(name, {}, a, b);
   si.endAt(performance.now());
 }

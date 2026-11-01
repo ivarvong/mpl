@@ -2,7 +2,9 @@
 // only correct if ftgrays is translation-invariant for the inputs we feed it, so check it: every
 // glyph of every face, several sizes, both rotations, random 26.6 origins (including ones that
 // hang off the canvas edges), cached vs direct, byte for byte.
-import { FACES } from '../src/core/fonts.ts';
+import { FACE_CATALOG } from '../src/core/fontcodec.ts';
+import { getFace, registerFonts } from '../src/core/fonts.ts';
+import { allFonts } from '../src/fonts/all.ts';
 import { ftScale } from '../src/core/fonts.ts';
 import { newCanvas } from '../src/render/agg/canvas.ts';
 import { clearGlyphCache, drawGlyph, drawGlyphDirect } from '../src/render/ft.ts';
@@ -11,7 +13,8 @@ let seed = 99;
 const rnd = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };
 const color = { r: 20, g: 120, b: 220, a: 230 };
 let glyphs = 0, bad = 0;
-for (const face of FACES) {
+registerFonts(...allFonts);
+for (const face of FACE_CATALOG.map(getFace)) {
   const gids = [...face.outlines.keys()];
   for (const [pt, dpi] of [[7.5, 100], [10, 72], [14.5, 240]]) {
     const scale = ftScale(face, pt, dpi);

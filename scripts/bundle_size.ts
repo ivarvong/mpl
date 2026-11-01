@@ -1,6 +1,5 @@
 // Minified + gzipped size of dist/browser as a bundler sees it (esbuild, ESM, browser platform), for a
-// typical import (subplots → plot → toSVG + toPNGSync) and for everything index.js exports, plus what the
-// bytes are made of. `node scripts/bundle_size.ts` prints; `--update` rewrites size-budget.json.
+// few scenarios (ENTRIES), plus what the bytes are made of. `node scripts/bundle_size.ts` prints; `--update` rewrites size-budget.json.
 // test/size.test.ts fails when a bundle grows more than 2% past its budget.
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -11,12 +10,16 @@ const ROOT = new URL('../', import.meta.url).pathname;
 const DIST = join(ROOT, 'dist/browser');
 export const BUDGET_FILE = join(ROOT, 'size-budget.json');
 
-export const ENTRIES: Readonly<Record<string, string>> = {
-  typical: `import { subplots } from './index.js';
+/** What an application imports, and which modules it leaves out. */
+export type Scenario = { readonly what: string; readonly entry: string; readonly external: readonly string[] };
+const TYPICAL = `import { subplots } from './index.js';
 const [fig, ax] = subplots();
 ax.plot([1, 2, 3], [1, 4, 9]);
-export const svg = fig.toSVG(), png = fig.toPNGSync();`,
-  full: `export * from './index.js';`,
+export const svg = fig.toSVG(), png = fig.toPNGSync();`;
+export const ENTRIES: Readonly<Record<string, Scenario>> = {
+  core: { what: 'the typical import without any glyph data (DejaVu Sans left external): code, tables, style sheets', entry: TYPICAL, external: ['*/fonts/dejavu-sans.js'] },
+  'core+dejavu-sans': { what: 'the typical import as shipped: subplots → plot → toSVG + toPNGSync, with the default face', entry: TYPICAL, external: [] },
+  everything: { what: 'every export of mpljs plus every face (mpljs/fonts/all)', entry: "export * from './index.js';\nexport * from './fonts/all.js';", external: [] },
 };
 
 export type Size = { readonly min: number; readonly gzip: number };
@@ -25,18 +28,19 @@ export type Measured = { readonly name: string; readonly size: Size; readonly pa
 
 /** Which slice of the library an input file belongs to. */
 function groupOf(path: string): string {
-  const m = /core\/data\/fonts\/([a-z-]+)\.[jt]s$/.exec(path);
-  if (m !== null) return `font ${m[1]} (glyph outlines + metrics)`;
+  const m = /\/fonts\/([a-z-]+)\.[jt]s$/.exec(path);
+  if (m !== null) return m[1] === 'all' ? 'code: api, layout, axes, text, ...' : `font ${m[1]} (glyph outlines + metrics)`;
   if (path.includes('core/data/')) return 'other data (stylelib, colors, markers)';
+  if (path.endsWith('core/fontcodec.js')) return 'font decoder';
   if (path.includes('/render/')) return 'renderers (agg, svg, png)';
   return 'code: api, layout, axes, text, ...';
 }
 
 export async function measure(name: string): Promise<Measured> {
   const r = await build({
-    stdin: { contents: ENTRIES[name], resolveDir: DIST, sourcefile: `${name}.js`, loader: 'js' },
+    stdin: { contents: ENTRIES[name].entry, resolveDir: DIST, sourcefile: `${name}.js`, loader: 'js' },
     bundle: true, minify: true, format: 'esm', platform: 'browser', target: 'es2022',
-    external: ['node:*'], write: false, metafile: true, logLevel: 'silent',
+    external: ['node:*', ...ENTRIES[name].external], write: false, metafile: true, logLevel: 'silent',
   });
   const code = r.outputFiles[0].contents;
   const meta: Metafile = r.metafile;
@@ -51,7 +55,7 @@ export async function measure(name: string): Promise<Measured> {
 export const kib = (n: number): string => `${(n / 1024).toFixed(1)} KiB`;
 
 export function report(m: Measured): string {
-  const lines = [`${m.name.padEnd(8)} min ${kib(m.size.min).padStart(10)}   gzip ${kib(m.size.gzip).padStart(9)}`];
+  const lines = [`${m.name.padEnd(16)} min ${kib(m.size.min).padStart(10)}   gzip ${kib(m.size.gzip).padStart(9)}`];
   for (const p of m.parts) lines.push(`    ${(100 * p.bytes / m.size.min).toFixed(1).padStart(5)}%  ${kib(p.bytes).padStart(10)}  ${p.group}`);
   return lines.join('\n');
 }

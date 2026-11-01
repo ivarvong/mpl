@@ -69,6 +69,33 @@ fig.tight_layout();
 const svg = fig.toSVG(), png = fig.toPNGSync();
 ```
 
+### Fonts: you pay only for the faces you render
+
+Each font face is its own module. The default import carries DejaVu Sans only, which is matplotlib's default
+face and all that default figures use. To use any other face, import it and register it before rendering:
+
+```ts
+import { registerFonts, subplots } from 'mpljs';
+import { dejavuSansBold } from 'mpljs/fonts/dejavu-sans-bold';
+
+registerFonts(dejavuSansBold);
+const [fig, ax] = subplots();
+ax.set_title('Checkout latency', { fontweight: 'bold' });
+```
+
+| to render | register |
+|---|---|
+| default rc: anything in `sans-serif` at normal weight | nothing (DejaVu Sans is built in) |
+| bold text (`fontweight: 'bold'`, bold tick labels or titles) | `dejavuSansBold` |
+| `font.family: 'serif'`, the `paperClassic` preset | `dejavuSerif` (+ `dejavuSerifBold` for bold) |
+| the `paperModern` preset | `interRegular` |
+| the `modern` and `modernDark` presets | `interRegular`, `interSemibold` |
+| everything, when size does not matter | `import { allFonts } from 'mpljs/fonts/all'`, then `registerFonts(...allFonts)` |
+
+Font selection works as in matplotlib, over every face mpljs ships. Registering a face never changes which face
+a text gets. If the selected face is not registered, rendering throws a `FontNotLoadedError` that names the import
+to add. It never draws a different face instead. The face table and details are in [docs/api.md](docs/api.md#fonts).
+
 ### Example: a Gantt / waterfall chart
 
 [`examples/gantt.ts`](examples/gantt.ts) draws a request trace with `barh(..., { left })`, box-drawing tree labels, a bold
@@ -147,8 +174,16 @@ hist, errorbar, dates, annotate) with the published `dist/browser` build. CI che
 Nothing else (Firefox, Safari, Deno, Bun, deployed Workers) is tested yet.
 
 Bundle size (esbuild minified + gzip -9, checked against `size-budget.json` with a +2% limit by `npm run test:size`):
-about 495 KiB gzipped (2.1 MiB minified) for a typical import and for the full import alike. Embedded
-font data is about 89% of the minified bytes (DejaVu 65%, Inter 24%), so subsetting fonts is the lever.
+
+| scenario | minified | gzipped |
+|---|---|---|
+| core, without glyph data | 244 KiB | 83 KiB |
+| core + DejaVu Sans (the default import: `subplots`, `plot`, `toSVG`, `toPNGSync`) | 395 KiB | 140 KiB |
+| everything (every export and all 8 faces) | 1117 KiB | 348 KiB |
+
+Each further face adds 16–17 KiB gzipped (an Inter weight) or 43–55 KiB (a DejaVu face), measured as a
+standalone minified module. Glyph data is packed losslessly (delta-coded integers as base64 VLQ), 36% smaller
+gzipped than the JSON tables it replaced.
 
 ## Commands
 
@@ -363,7 +398,7 @@ python3 -m venv .venv && . .venv/bin/activate
 pip install -r fixtures/requirements.txt     # matplotlib==3.11.2, numpy, fonttools
 npm run fixtures                             # fixtures/generate.py -> fixtures/ref/*.{json,svg,png}
 npm run tables                               # scripts/gen_tables.py -> src/core/data/{markers,colors,stylelib}.ts
-INTER_DIR=/path/to/Inter-4.0/extras/otf python3 scripts/gen_fonts.py   # src/core/data/fonts/*.ts (or name faces: ... gen_fonts.py dejavu-sans)
+INTER_DIR=/path/to/Inter-4.0/extras/otf python3 scripts/gen_fonts.py   # build/fonts/*.json → src/fonts/*.ts (or name faces: ... gen_fonts.py dejavu-sans)
 python3 fixtures/generate_additions.py      # only the api_* / example_* cases missing from fixtures/ref
 npm run fuzz                                 # python fuzz oracles, then the JS comparison (N=..., SEED=...)
 npm test

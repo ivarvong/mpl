@@ -51,8 +51,20 @@ const st = tracer.startTraceAt('startup', {}, 0); tracer.record('fetch', { n: 3 
 const [f1, s1] = tracer.spans() as [FinishedSpan, FinishedSpan];
 assert.equal(f1.name, 'fetch'); assert.equal(f1.startMs, 1.5); assert.equal(f1.endMs, 4.25); assert.deepEqual(f1.parent, { kind: 'some', value: s1.spanId });
 assert.equal(s1.startMs, 0); assert.equal(s1.durationMs, 10);
-const { FACE_LOADS } = await import('../src/index.ts');
-assert.equal(FACE_LOADS.length, 8); assert.ok(FACE_LOADS.every((l) => l.endMs >= l.startMs && l.glyphs > 0), 'face loads timed');
+// faces decode on first use, each once, under a font.decode span; registering decodes nothing
+const { FACE_LOADS, FACE_CATALOG, registerFonts } = await import('../src/index.ts');
+const { getFace } = await import('../src/core/fonts.ts');
+const { allFonts } = await import('../src/fonts/all.ts');
+assert.deepEqual(FACE_LOADS.map((l) => l.id), ['DejaVu Sans:400'], 'only the default face, decoded by the first draw');
+registerFonts(...allFonts);
+assert.equal(FACE_LOADS.length, 1, 'registering does not decode');
+const decodeTrace = tracer.startTrace('decode-all', {});
+for (const e of FACE_CATALOG) getFace(e);
+for (const e of FACE_CATALOG) getFace(e);
+decodeTrace.end();
+assert.deepEqual(FACE_LOADS.map((l) => l.id), FACE_CATALOG.map((e) => e.id), 'every face decoded exactly once, in first-use order');
+assert.ok(FACE_LOADS.every((l) => l.endMs >= l.startMs && l.glyphs > 0), 'face loads timed');
+assert.deepEqual(tracer.spans().filter((s) => s.name === 'font.decode').map((s) => s.attrs['face']), FACE_CATALOG.slice(1).map((e) => e.id), 'one font.decode span per decode');
 
 const out = join(tmpdir(), 'mpljs-trace-test.jsonl');
 const n = await tracer.flush(out);

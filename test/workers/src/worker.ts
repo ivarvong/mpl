@@ -1,8 +1,11 @@
 // Renders the runtime cases with the published build (dist/browser) inside workerd: GET /render returns
 // [{ name, svg, png64, ms }]. cases.gen.json is written by ../../workers.test.ts from fixtures/ref.
-import { subplots } from '../../../dist/browser/index.js';
+import { registerFonts, subplots } from '../../../dist/browser/index.js';
+import { allFonts } from '../../../dist/browser/fonts/all.js';
 import { buildWith, type Fixture, type Subplots } from '../../../tools/replay-core.ts';
 import cases from './cases.gen.json' with { type: 'json' };
+
+registerFonts(...allFonts);   // the cases use every shipped face
 
 const b64 = (u: Uint8Array): string => {
   let s = '';
