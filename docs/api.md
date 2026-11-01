@@ -8,9 +8,9 @@ go in a trailing plain object (`ax.plot(x, y, { color: "C1", lw: 2 })`). Aliases
 
 ## Functions
 
-### `subplots(kwargs?)`
+### `subplots()`
 
-subplots({ style, rc, figsize, dpi }) -> [fig, ax]
+subplots() / subplots({ style, rc, figsize, dpi }) -> [fig, ax]
 
 ## Figure
 
@@ -18,7 +18,13 @@ Create one with `subplots()` or `new Figure({ style, rc, figsize, dpi })`.
 
 ### `Figure.add_subplot()`
 
-add_subplot() — the figure's Axes, placed by figure.subplot.* (one per figure in mpljs).
+add_subplot() — one Axes filling a 1x1 GridSpec, placed by the subplot parameters.
+
+### `Figure.subplots(nrows, ncols, kwargs?)`
+
+Figure.subplots / GridSpec.subplots: an nrows x ncols grid of Axes, row-major. sharex/sharey join Axes to [0][0] ('all' or true), their row's first ('row') or their column's first ('col'); a shared grid ('col'/'all' for x, 'row'/'all' for y) keeps tick labels on the outer Axes only. Returns every Axes as rows; subplots() applies squeeze.
+
+Keyword arguments (unknown keys throw): `sharex`, `sharey`, `gridspec_kw`
 
 ### `Figure.text(x, y, s, kwargs?)`
 
@@ -46,13 +52,13 @@ Keyword arguments (unknown keys throw): `color | c`, `fontsize | size`, `fontwei
 
 ### `Figure.subplots_adjust(kwargs?)`
 
-subplots_adjust({ left, bottom, right, top }) — the Axes box in figure fractions (wspace/hspace accepted, no effect with one Axes).
+subplots_adjust({ left, bottom, right, top, wspace, hspace }) — SubplotParams.update: unset values are kept; every Axes moves to its SubplotSpec's new position (a gridspec_kw value still wins for its grid).
 
-Keyword arguments (unknown keys throw): `left`, `right`, `bottom`, `top`, `wspace`, `hspace`
+Keyword arguments (unknown keys throw): `left`, `bottom`, `right`, `top`, `wspace`, `hspace`
 
 ### `Figure.tight_layout(kwargs?)`
 
-tight_layout({ pad = 1.08, h_pad, w_pad, rect }) — _tight_layout.get_tight_layout_figure for the one subplot cell mpljs has (an Axes and its twins): lay out now, measure Axes.get_tightbbox, then subplots_adjust so the decorations fit inside the figure with `pad` font sizes to spare. As in matplotlib it runs once, at call time: call it after the plot is complete.
+tight_layout({ pad = 1.08, h_pad, w_pad, rect }) — _tight_layout.get_tight_layout_figure: lay out now, measure each subplot cell's tight bbox (an Axes and its twins), then subplots_adjust margins and wspace/hspace so the decorations fit with `pad` (h_pad/w_pad between cells) font sizes to spare. As in matplotlib it runs once, at call time: call it after the plot is complete.
 
 Keyword arguments (unknown keys throw): `pad`, `h_pad`, `w_pad`, `rect`
 
@@ -95,6 +101,14 @@ Returned by `subplots()`, `fig.add_subplot()` and `ax.twinx()`.
 ### `Axes.twinx()`
 
 A second Axes sharing this one's x axis, with its y axis on the right.
+
+### `Axes.get position()`
+
+The Axes box [left, bottom, right, top] in figure fractions (SubplotSpec.get_position).
+
+### `Axes.labelOuter(axis)`
+
+Axes._label_outer_xaxis / _label_outer_yaxis for a shared grid (subplots(sharex='col'|'all', …)): an Axes off the bottom row loses its x tick labels and offset text, one off the left column its y ones. Tick labels stay on the outer edge only; ticks are kept.
 
 ### `Axes.set_xscale(s)`
 
@@ -144,9 +158,9 @@ Keyword arguments (unknown keys throw): `transform`, `color | c`, `fontsize | si
 
 ### `Axes.annotate(text, xy, kwargs?)`
 
-annotate(text, xy, { xytext, xycoords, textcoords, arrowprops })
+annotate(text, xy, { xytext, xycoords, textcoords, arrowprops, ha, va, color, fontsize, fontweight, clip_on }) — coords are 'data' or '<figure|axes> <fraction|points|pixels|fontsize>', and textcoords may also be 'offset <points|pixels|fontsize>' from xy.
 
-Keyword arguments (unknown keys throw): `xytext`, `xycoords`, `textcoords`, `arrowprops`, `clip_on | clipon | clip`
+Keyword arguments (unknown keys throw): `xytext`, `xycoords`, `textcoords`, `arrowprops`, `color | c`, `fontsize | size`, `fontweight | weight`, `ha | horizontalalignment`, `va | verticalalignment`, `clip_on | clipon | clip`
 
 ### `Axes.scatter(xRaw, yRaw, kwargs?)`
 
