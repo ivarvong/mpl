@@ -38,6 +38,45 @@ pictures above are byte-for-byte what `examples/quickstart.ts` and `examples/twi
 Guides: see [`docs/guides/annotated-charts.md`](docs/guides/annotated-charts.md) for adding annotations and emitting SVG with glyph outlines (`svg.fonttype='path'`).
 
 mpljs is distributed from this repository (it is not on the npm registry). Inside the repo, import from `./src/index.ts`.
+The full API, generated from `src/api.ts` and checked by a test, is in [`docs/api.md`](docs/api.md).
+
+## Using mpljs in another project
+
+The package entry point is the built `dist/browser/` (plain ES modules plus `.d.ts` types), made by `npm run build`.
+It is not committed; npm builds it for you through the `prepare` script.
+
+From GitHub (npm clones the repo, installs the dev dependencies, runs `prepare`, then packs `dist/`):
+
+```sh
+npm install github:ivarvong/mpl          # or pin: github:ivarvong/mpl#<commit-sha>
+```
+
+From a local checkout (a symlink; rebuild after pulling):
+
+```sh
+git clone https://github.com/ivarvong/mpl.git && (cd mpl && npm ci)   # npm ci runs prepare → dist/
+cd your-project && npm install ../mpl                                 # "mpljs": "file:../mpl"
+```
+
+Then, in an ES module (Node 24+, browsers, Workers):
+
+```ts
+import { subplots } from 'mpljs';
+
+const [fig, ax] = subplots();
+ax.barh([0, 1, 2], [3, 2, 4], { left: [0, 3, 5] });
+fig.tight_layout();
+const svg = fig.toSVG(), png = fig.toPNGSync();
+```
+
+### Example: a Gantt / waterfall chart
+
+[`examples/gantt.ts`](examples/gantt.ts) draws a request trace with `barh(..., { left })`, box-drawing tree labels, a bold
+root label (`ax.get_yticklabels()[0].set_fontweight('bold')`), a dashed x grid (`ax.grid(true, { axis: 'x', ls: '--' })`)
+and `fig.tight_layout()`. The same calls are an oracle case (`fixtures/ref/example_gantt_trace`) that matches matplotlib
+pixel for pixel. This is its `fig.toSVG()`:
+
+<img src="docs/images/gantt.svg" width="560" alt="Gantt chart of a checkout request trace: one bold root span and five child spans as horizontal bars, with tree-drawing labels">
 `npm run build` emits plain ES modules plus `.d.ts` into `dist/browser` for use from a browser, a Cloudflare Worker, or any
 project that cannot run `.ts` files (Node refuses to strip types inside `node_modules`).
 
@@ -49,7 +88,8 @@ import { subplots } from './src/index.ts';
 const [fig, ax] = subplots({ style: 'ggplot' });          // any bundled .mplstyle, or your own
 ax.plot(x, y, 'o--', { label: 'observed', color: 'C1' });
 ax.bar(['apples', 'bananas', 'cherries'], [23, 17, 35], { label: 'count' });
-ax.grid(true); ax.legend(); ax.set_title('familiar');
+ax.grid(true, { axis: 'y', color: '0.85', ls: '--' }); ax.legend(); ax.set_title('familiar');
+fig.tight_layout();     // fit labels and titles inside the figure, as matplotlib does
 fig.toSVG();            // string
 fig.svgStream();        // ReadableStream<Uint8Array>, e.g. a Response body in a Worker
 fig.toScene();          // the renderer-independent Scene tree (JSON-able)
@@ -57,8 +97,8 @@ fig.toPNGSync();        // Uint8Array, rasterized by mpljs' own port of Agg
 ```
 
 The API is matplotlib-shaped (`subplots`, `plot`, `bar`/`barh`, `fill_between`, `text`, `legend`, `grid`, `set_xlim`,
-`set_yscale('log')`, `twinx`, date axes, 9+ bundled styles); unknown keyword arguments are errors, as in matplotlib.
-Out of scope so far: scatter, hist, errorbar, subplot grids, colormaps, general mathtext, constrained layout.
+`set_yscale('log')`, `twinx`, `tight_layout`, styled tick labels, date axes, 9+ bundled styles); unknown keyword arguments
+are errors, as in matplotlib. Out of scope so far: hist, errorbar, subplot grids, colormaps, general mathtext, constrained layout.
 
 ## Commands
 
@@ -247,10 +287,15 @@ Things that had to be verified against Agg rather than reasoned about:
 
 ## Out of scope so far
 
-scatter, hist, errorbar, subplots grids (one `Axes`, plus `twinx`, per figure), colormaps, general mathtext (only the
+hist, errorbar, subplots grids (one `Axes`, plus `twinx`, per figure), colormaps, general mathtext (only the
 tick-label forms `10^{n}` / `2×10^{n}`), constrained layout.
-Done and covered by the oracle: `plot`, `bar`/`barh`, `fill_between`, `text`, `legend`, `grid`, log scales, date axes,
-`twinx`, 9+ bundled styles, PNG output (own Agg port), SVG with glyph outlines (matplotlib's `svg.fonttype='path'`) or `<text>`.
+Text uses DejaVu Sans/Serif (or Inter) with ASCII plus Latin-1, Latin Extended-A, Greek letters, general punctuation,
+super/subscripts, currency, arrows, math operators, box drawing, block elements, geometric shapes and ✓/✗ baked in
+(`scripts/gen_fonts.py`). Anything else draws matplotlib's empty .notdef box and warns once: `Glyph N (c) missing from
+font(s) …` when the font lacks it (as matplotlib does), or `… is in DejaVu Sans but not bundled with mpljs` when only the
+baked subset lacks it.
+Done and covered by the oracle: `plot`, `scatter`, `bar`/`barh`, `fill_between`, `text`/`annotate`, `legend`, `grid` with Line2D
+kwargs (major/minor), `tight_layout`, per-tick label styling, multi-line text, log scales, date axes, `twinx`, 9+ bundled styles, PNG output (own Agg port), SVG with glyph outlines (matplotlib's `svg.fonttype='path'`) or `<text>`.
 Everything (`src/`, `test/`, `tools/`, `scripts/`, `bench/`, `examples/`) is TypeScript run directly by Node and typechecked by `tsc -p .`;
 `src/` additionally obeys the modeling rules below.
 
@@ -264,7 +309,8 @@ python3 -m venv .venv && . .venv/bin/activate
 pip install -r fixtures/requirements.txt     # matplotlib==3.11.2, numpy, fonttools
 npm run fixtures                             # fixtures/generate.py -> fixtures/ref/*.{json,svg,png}
 npm run tables                               # scripts/gen_tables.py -> src/core/data/{markers,colors,stylelib}.ts
-INTER_DIR=/path/to/Inter-4.0/extras/otf python3 scripts/gen_fonts.py   # src/core/data/fonts/*.ts
+INTER_DIR=/path/to/Inter-4.0/extras/otf python3 scripts/gen_fonts.py   # src/core/data/fonts/*.ts (or name faces: ... gen_fonts.py dejavu-sans)
+python3 fixtures/generate_additions.py      # only the api_* / example_* cases missing from fixtures/ref
 npm run fuzz                                 # python fuzz oracles, then the JS comparison (N=..., SEED=...)
 npm test
 ```

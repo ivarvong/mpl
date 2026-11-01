@@ -1,0 +1,373 @@
+{
+ "spec": [
+  [
+   "barh",
+   [
+    [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    [
+     3,
+     2,
+     1.5,
+     6,
+     3.5,
+     4,
+     1
+    ]
+   ],
+   {
+    "left": [
+     0,
+     0,
+     2,
+     3,
+     3,
+     5,
+     9
+    ],
+    "color": [
+     "C0",
+     "C0",
+     "C0",
+     "C1",
+     "C1",
+     "C1",
+     "C2"
+    ],
+    "height": 0.6
+   }
+  ],
+  [
+   "set_yticks",
+   [
+    [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ]
+   ],
+   {}
+  ],
+  [
+   "set_yticklabels",
+   [
+    [
+     "Discovery",
+     "  Interviews",
+     "  Synthesis",
+     "Build",
+     "  API",
+     "  UI",
+     "Launch"
+    ]
+   ],
+   {}
+  ],
+  [
+   "ticklabel",
+   [
+    "y",
+    0,
+    "set_fontweight",
+    "bold"
+   ],
+   {}
+  ],
+  [
+   "ticklabel",
+   [
+    "y",
+    3,
+    "set_fontweight",
+    "bold"
+   ],
+   {}
+  ],
+  [
+   "ticklabel",
+   [
+    "y",
+    6,
+    "set_fontweight",
+    "bold"
+   ],
+   {}
+  ],
+  [
+   "set_ylim",
+   [
+    6.6,
+    -0.6
+   ],
+   {}
+  ],
+  [
+   "set_xlabel",
+   [
+    "weeks"
+   ],
+   {}
+  ],
+  [
+   "set_title",
+   [
+    "Project plan"
+   ],
+   {}
+  ],
+  [
+   "grid",
+   [
+    true
+   ],
+   {
+    "axis": "x",
+    "color": "0.9",
+    "lw": 0.8,
+    "ls": "--"
+   }
+  ],
+  [
+   "spine",
+   [
+    "top",
+    "set_visible",
+    false
+   ],
+   {}
+  ],
+  [
+   "spine",
+   [
+    "right",
+    "set_visible",
+    false
+   ],
+   {}
+  ],
+  [
+   "fig.tight_layout",
+   [],
+   {}
+  ]
+ ],
+ "style": null,
+ "rc": {},
+ "xlim": [
+  0.0,
+  10.5
+ ],
+ "ylim": [
+  6.6,
+  -0.6
+ ],
+ "xticks": [
+  0.0,
+  2.0,
+  4.0,
+  6.0,
+  8.0,
+  10.0,
+  12.0
+ ],
+ "yticks": [
+  0.0,
+  1.0,
+  2.0,
+  3.0,
+  4.0,
+  5.0,
+  6.0
+ ],
+ "xticklabels": [
+  "0",
+  "2",
+  "4",
+  "6",
+  "8",
+  "10",
+  "12"
+ ],
+ "yticklabels": [
+  "Discovery",
+  "  Interviews",
+  "  Synthesis",
+  "Build",
+  "  API",
+  "  UI",
+  "Launch"
+ ],
+ "xoffset": "",
+ "yoffset": "",
+ "legend": null,
+ "x": {
+  "lim": [
+   0.0,
+   10.5
+  ],
+  "ticks": [
+   0.0,
+   2.0,
+   4.0,
+   6.0,
+   8.0,
+   10.0,
+   12.0
+  ],
+  "labels": [
+   "0",
+   "2",
+   "4",
+   "6",
+   "8",
+   "10",
+   "12"
+  ],
+  "minor": [],
+  "minorlabels": [],
+  "offset": ""
+ },
+ "y": {
+  "lim": [
+   6.6,
+   -0.6
+  ],
+  "ticks": [
+   0.0,
+   1.0,
+   2.0,
+   3.0,
+   4.0,
+   5.0,
+   6.0
+  ],
+  "labels": [
+   "Discovery",
+   "  Interviews",
+   "  Synthesis",
+   "Build",
+   "  API",
+   "  UI",
+   "Launch"
+  ],
+  "minor": [],
+  "minorlabels": [],
+  "offset": ""
+ },
+ "axes": [
+  {
+   "xlim": [
+    0.0,
+    10.5
+   ],
+   "ylim": [
+    6.6,
+    -0.6
+   ],
+   "xticks": [
+    0.0,
+    2.0,
+    4.0,
+    6.0,
+    8.0,
+    10.0,
+    12.0
+   ],
+   "yticks": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0
+   ],
+   "xticklabels": [
+    "0",
+    "2",
+    "4",
+    "6",
+    "8",
+    "10",
+    "12"
+   ],
+   "yticklabels": [
+    "Discovery",
+    "  Interviews",
+    "  Synthesis",
+    "Build",
+    "  API",
+    "  UI",
+    "Launch"
+   ],
+   "xoffset": "",
+   "yoffset": "",
+   "legend": null,
+   "x": {
+    "lim": [
+     0.0,
+     10.5
+    ],
+    "ticks": [
+     0.0,
+     2.0,
+     4.0,
+     6.0,
+     8.0,
+     10.0,
+     12.0
+    ],
+    "labels": [
+     "0",
+     "2",
+     "4",
+     "6",
+     "8",
+     "10",
+     "12"
+    ],
+    "minor": [],
+    "minorlabels": [],
+    "offset": ""
+   },
+   "y": {
+    "lim": [
+     6.6,
+     -0.6
+    ],
+    "ticks": [
+     0.0,
+     1.0,
+     2.0,
+     3.0,
+     4.0,
+     5.0,
+     6.0
+    ],
+    "labels": [
+     "Discovery",
+     "  Interviews",
+     "  Synthesis",
+     "Build",
+     "  API",
+     "  UI",
+     "Launch"
+    ],
+    "minor": [],
+    "minorlabels": [],
+    "offset": ""
+   }
+  }
+ ]
+}

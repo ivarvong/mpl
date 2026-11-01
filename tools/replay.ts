@@ -47,6 +47,15 @@ export function build(fx: Fixture): Figure {
       api[action](val);
       continue;
     }
+    // Tick label edits: ['ticklabel', [axis, index, setter, value]] is ax.get_{x,y}ticklabels()[index].setter(value)
+    if (fn === 'ticklabel') {
+      const [which, i, action, val] = args as ['x' | 'y', number, string, unknown];
+      const labels = which === 'x' ? ax.get_xticklabels() : ax.get_yticklabels();
+      const t = labels[i] as unknown as Record<string, (v: unknown) => void> | undefined;
+      if (!t || typeof t[action] !== 'function') throw new Error(`no ticklabel ${which}[${i}].${action}`);
+      t[action](val);
+      continue;
+    }
     if (typeof (ax as unknown as Dyn)[fn] !== 'function') throw new Error(`no Axes.${fn}`);
     const kw = Object.fromEntries(Object.entries(kwargs).map(([k, v]) => [k, v && typeof v === 'object' && '$transform' in v ? (v.$transform === 'axes' ? ax.transAxes : ax.transData) : v]));
     (ax as unknown as Dyn)[fn]?.(...args, ...(Object.keys(kw).length ? [kw] : []));

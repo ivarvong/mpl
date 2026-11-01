@@ -33,10 +33,14 @@ export type FaceData = {
   /** OS/2 sTypoAscender, −sTypoDescender, sTypoLineGap (else hhea), font units */
   readonly typo: readonly [number, number, number];
   readonly cmap: Readonly<Record<string, number>>;
+  /** every code point the font file maps, as [first, last] runs (cmap holds only the baked ones) */
+  readonly cover: readonly (readonly [number, number])[];
   /** gid → [advance, xMin, xMax, yMin, yMax], font units, control-point box */
   readonly glyphs: Readonly<Record<string, readonly [number, number, number, number, number]>>;
   /** gid → contours, flat [x, y, tag] with FreeType tags (1 on, 0 conic, 2 cubic) */
   readonly outlines: Readonly<Record<string, readonly (readonly number[])[]>>;
+  /** composite gid → per contour, its component offsets [dx, dy, ...] (font units), each scaled on its own */
+  readonly offsets: Readonly<Record<string, readonly (readonly number[])[]>>;
   readonly kern: Readonly<Record<string, number>>;
   readonly gsub: { readonly order: readonly number[]; readonly lookups: Readonly<Record<string, { readonly flag: number; readonly subs: readonly SubTable[] }>>; readonly gclass: Readonly<Record<string, number>> };
 };
@@ -90,6 +94,7 @@ export type Face = {
   readonly cmap: ReadonlyMap<string, number>;
   readonly glyphs: ReadonlyMap<number, readonly [number, number, number, number, number]>;
   readonly outlines: ReadonlyMap<number, readonly (readonly number[])[]>;
+  readonly offsets: ReadonlyMap<number, readonly (readonly number[])[]>;
   readonly kern: ReadonlyMap<number, number>;            // key: left * 65536 + right
   readonly lookups: ReadonlyMap<number, Lookup>;
   /** GDEF glyph class (1 base, 2 ligature, 3 mark) */
@@ -105,6 +110,7 @@ function load(d: FaceData): Face {
   return {
     id: `${d.family}:${d.weight}`, family: d.family, weight: d.weight, upm: d.upm, cmap, glyphs,
     outlines: new Map(Object.entries(d.outlines).map(([k, v]) => [Number(k), v] as const)),
+    offsets: new Map(Object.entries(d.offsets).map(([k, v]) => [Number(k), v] as const)),
     kern: new Map(Object.entries(d.kern).map(([k, v]) => { const [a, b] = k.split(','); return [Number(a) * 65536 + Number(b), v] as const; })),
     lookups: new Map(Object.entries(d.gsub.lookups).map(([k, v]) => [Number(k), compileLookup(v)] as const)),
     gclass: numMap(d.gsub.gclass),
@@ -284,9 +290,51 @@ function context(face: Face, buf: number[], inp: readonly number[], recs: Recs):
   return end;
 }
 
+// ------------------------------------------------------------------ missing glyphs
+/** Is code point `cp` mapped by the font file itself (not just by the baked subset)? */
+const inFontFile = (face: Face, cp: number): boolean => {
+  const runs = face.data.cover;
+  let lo = 0, hi = runs.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1, [a, b] = runs[mid];
+    if (cp < a) hi = mid - 1; else if (cp > b) lo = mid + 1; else return true;
+  }
+  return false;
+};
+/** Why a character has no baked glyph: the font lacks it (matplotlib warns and draws .notdef), or
+ *  matplotlib would draw a real glyph that mpljs does not bundle (we draw .notdef, so say so). */
+export type MissingGlyph =
+  | { readonly kind: 'not-in-font'; readonly cp: number; readonly family: string }
+  | { readonly kind: 'not-bundled'; readonly cp: number; readonly family: string };
+export const missingGlyphMessage = (m: MissingGlyph): string => {
+  const ch = String.fromCodePoint(m.cp);
+  switch (m.kind) {
+    // ft2font.cpp ft_glyph_warn: "Glyph %lu (%s) missing from font(s) %s." (Python adds \N{NAME})
+    case 'not-in-font': return `Glyph ${m.cp} (${ch}) missing from font(s) ${m.family}.`;
+    case 'not-bundled': return `Glyph ${m.cp} (${ch}) is in ${m.family} but not bundled with mpljs; drawing .notdef. See scripts/gen_fonts.py.`;
+    default: return assertNever(m);
+  }
+};
+/** Each message once per process, as Python's default warnings filter does. Replaceable for tests. */
+const warned = new Set<string>();
+let glyphWarn: (msg: string) => void = (msg) => { console.warn(`UserWarning: ${msg}`); };
+export function setGlyphWarningSink(sink: (msg: string) => void): void { glyphWarn = sink; warned.clear(); }
+function noteMissing(face: Face, ch: string): void {
+  const cp = Number(ch.codePointAt(0));                          // ch is one code point from [...text]
+  const msg = missingGlyphMessage({ kind: inFontFile(face, cp) ? 'not-bundled' : 'not-in-font', cp, family: face.family });
+  if (warned.has(msg)) return;
+  warned.add(msg);
+  glyphWarn(msg);
+}
+
 /** Characters → glyph ids, with the default GSUB features applied in lookup order. */
 export function shapeGlyphs(face: Face, text: string): number[] {
-  const buf = [...text].map((ch) => getOr(face.cmap, ch, 0));   // .notdef for unmapped
+  const buf = [...text].map((ch) => {
+    const g = lookup(face.cmap, ch);
+    if (g.kind === 'some') return g.value;
+    noteMissing(face, ch);
+    return 0;                                                       // .notdef, as FreeType returns
+  });
   for (const li of face.data.gsub.order) {
     for (let i = 0; i < buf.length;) {
       const r = applyLookup(face, li, buf, i);

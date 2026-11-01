@@ -12,5 +12,9 @@ for (const name of ['quickstart', 'twinx_theme']) {
   const made = readFileSync(new URL(`examples/out/${name}.png`, ROOT)), shown = readFileSync(new URL(`docs/images/${name}.png`, ROOT));
   if (!made.equals(shown)) { bad++; console.log(`docs/images/${name}.png differs from examples/${name}.ts output; refresh it`); }
 }
+// docs/images/gantt.svg is shown in the README exactly as examples/gantt.ts writes it (fig.toSVG())
+if (!readFileSync(new URL('examples/out/gantt.svg', ROOT)).equals(readFileSync(new URL('docs/images/gantt.svg', ROOT)))) {
+  bad++; console.log('docs/images/gantt.svg differs from examples/gantt.ts output; refresh it');
+}
 console.log(`examples: ${examples.length} ran, README images ${bad === 0 ? 'match' : 'STALE'}`);
 if (bad) process.exitCode = 1;

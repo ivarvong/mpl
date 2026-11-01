@@ -4,7 +4,9 @@ Each face carries what matplotlib 3.11's text path needs, keyed by glyph id:
   cmap      char -> gid for the supported character set
   glyphs    gid -> [advance, xMin, xMax, yMin, yMax] (font units; control-point cbox)
   outlines  gid -> contours, each flat [x, y, tag, ...] with FreeType tags
-            (1 on-curve, 0 conic control, 2 cubic control)
+            (1 on-curve, 0 conic control, 2 cubic control); a composite glyph's contours are
+            in their components' units, and
+  offsets   gid -> per contour, the component offsets [dx, dy, ...] to add after scaling
   kern      "gidL,gidR" -> x-advance adjustment (GPOS 'kern' pair positioning, or the 'kern' table)
   gsub      the default-feature lookups HarfBuzz applies to Latin text (ccmp, locl, rlig,
             calt, clig, liga), restricted to the glyph closure of the character set
@@ -33,6 +35,24 @@ FACES = [
     ("inter-bold", "Inter", 700, os.path.join(INTER, "Inter-Bold.otf")),
 ]
 CHARS = [chr(c) for c in range(0x20, 0x7F)] + list("−×µ²³√°±·—–…→←↑↓•’‘“”")
+# DejaVu faces also carry these whole Unicode blocks (every code point the font maps), so labels
+# with accents, Greek letters, typographic punctuation, arrows, math, box drawing (tree views:
+# └ ├ │), blocks and geometric shapes render as matplotlib draws them. Characters outside the baked
+# set fall back to .notdef with matplotlib's "Glyph N missing from font(s)" warning.
+DEJAVU_BLOCKS = [
+    (0x00A0, 0x017F),  # Latin-1 Supplement, Latin Extended-A
+    (0x0391, 0x03C9),  # Greek letters
+    (0x2000, 0x206F),  # General Punctuation
+    (0x2070, 0x209F),  # Superscripts and Subscripts
+    (0x20A0, 0x20CF),  # Currency Symbols
+    (0x2190, 0x21FF),  # Arrows
+    (0x2200, 0x22FF),  # Mathematical Operators
+    (0x2500, 0x257F),  # Box Drawing
+    (0x2580, 0x259F),  # Block Elements
+    (0x25A0, 0x25FF),  # Geometric Shapes
+    (0x2713, 0x2718),  # Dingbats: check marks and ballot x
+]
+DEJAVU_CHARS = list(dict.fromkeys(CHARS + [chr(c) for a, b in DEJAVU_BLOCKS for c in range(a, b + 1)]))
 FEATURES = ["ccmp", "locl", "rlig", "calt", "clig", "liga"]
 
 
@@ -63,7 +83,7 @@ def bake(slug, family, weight, path):
     order = t.getGlyphOrder()
     gid = {n: i for i, n in enumerate(order)}
     cmap = t.getBestCmap()
-    chars = [c for c in CHARS if ord(c) in cmap]
+    chars = [c for c in (DEJAVU_CHARS if slug.startswith("dejavu") else CHARS) if ord(c) in cmap]
     gsub = t["GSUB"].table if "GSUB" in t else None
     roots = langsys_lookups(gsub, FEATURES) if gsub else []
 
@@ -180,7 +200,7 @@ def bake(slug, family, weight, path):
                     if g1 not in closure:
                         continue
                     row = st.Class1Record[c1.get(g1, 0)].Class2Record
-                    for g2 in closure:
+                    for g2 in sorted(closure, key=gid.get):
                         v = row[c2.get(g2, 0)].Value1
                         x = getattr(v, "XAdvance", 0) if v is not None else 0
                         # a class match applies even when zero: HarfBuzz stops at the first subtable that covers the pair
@@ -195,22 +215,46 @@ def bake(slug, family, weight, path):
     # outlines and metrics
     gs = t.getGlyphSet()
     is_tt = "glyf" in t
-    glyphs, outlines = {}, {}
-    for name in closure:
+    glyphs, outlines, offsets = {}, {}, {}
+
+    def tt_parts(name):
+        """Contours of a TrueType glyph in each simple glyph's own units, with the component offsets
+        above it: FreeType scales a composite's points per component and adds each FT_MulFix'd
+        offset (TT_Process_Composite_Component; unhinted, so ROUND_XY_TO_GRID does not apply)."""
+        gl = t["glyf"][name]
+        if gl.isComposite():
+            out = []
+            for c in gl.components:
+                if hasattr(c, "transform") or not hasattr(c, "x"):
+                    sys.exit(f"{slug}: {name}: scaled or point-matched components are not supported")
+                out += [(flat, offs + [c.x, c.y]) for flat, offs in tt_parts(c.glyphName)]
+            return out
+        if gl.numberOfContours == 0:
+            return []
+        coords, ends, flags = gl.getCoordinates(t["glyf"])
+        res, start = [], 0
+        for e in ends:
+            flat = []
+            for i in range(start, e + 1):
+                flat += [int(coords[i][0]), int(coords[i][1]), int(flags[i] & 1)]
+            res.append((flat, []))
+            start = e + 1
+        return res
+
+    for name in sorted(closure, key=gid.get):
         g = gid[name]
         adv = t["hmtx"][name][0]
         contours = []
+        local = None
         if is_tt:
-            gl = t["glyf"][name]
-            if gl.numberOfContours != 0:
-                coords, ends, flags = gl.getCoordinates(t["glyf"])
-                start = 0
-                for e in ends:
-                    flat = []
-                    for i in range(start, e + 1):
-                        flat += [int(coords[i][0]), int(coords[i][1]), int(flags[i] & 1)]
-                    contours.append(flat)
-                    start = e + 1
+            parts = tt_parts(name)
+            # resolved contours for the control box; local ones + offsets for rendering
+            for flat, offs in parts:
+                dx, dy = sum(offs[0::2]), sum(offs[1::2])
+                contours.append([v + (dx if i % 3 == 0 else dy if i % 3 == 1 else 0) for i, v in enumerate(flat)])
+            if any(offs for _, offs in parts):
+                local = [flat for flat, _ in parts]
+                offsets[str(g)] = [offs for _, offs in parts]
         else:
             pen = RecordingPen(); gs[name].draw(pen)
             cur = None
@@ -233,15 +277,23 @@ def bake(slug, family, weight, path):
         ys = [c[i + 1] for c in contours for i in range(0, len(c), 3)]
         box = [min(xs), max(xs), min(ys), max(ys)] if xs else [0, 0, 0, 0]
         glyphs[str(g)] = [adv, *box]
-        outlines[str(g)] = contours
+        outlines[str(g)] = local if local is not None else contours
 
     # Text._get_layout's minimum ascent/descent/line gap: OS/2 typo metrics, else hhea
     if "OS/2" in t:
         typo = [t["OS/2"].sTypoAscender, -t["OS/2"].sTypoDescender, t["OS/2"].sTypoLineGap]
     else:
         typo = [t["hhea"].ascent, -t["hhea"].descent, t["hhea"].lineGap]
+    # every code point the font maps, as [first, last] runs: tells "not in this font" (matplotlib's
+    # missing-glyph warning) apart from "in the font but not baked into mpljs"
+    cover = []
+    for cp in sorted(cmap):
+        if cover and cover[-1][1] == cp - 1:
+            cover[-1][1] = cp
+        else:
+            cover.append([cp, cp])
     data = dict(family=family, weight=weight, upm=t["head"].unitsPerEm, typo=typo,
-                cmap={c: gid[cmap[ord(c)]] for c in chars}, glyphs=glyphs, outlines=outlines, kern=kern,
+                cmap={c: gid[cmap[ord(c)]] for c in chars}, cover=cover, glyphs=glyphs, outlines=outlines, offsets=offsets, kern=kern,
                 gsub=dict(order=sorted(int(i) for i in roots), lookups=lookups, gclass=gclass))
     body = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
     with open(os.path.join(OUT, f"{slug}.ts"), "w") as f:
@@ -252,5 +304,8 @@ def bake(slug, family, weight, path):
           + (f", skipped {skipped}" if skipped else "") + f", {len(body) / 1024:.0f} KiB")
 
 
+# python3 scripts/gen_fonts.py [slug ...]   (no slugs: every face)
+only = set(sys.argv[1:])
 for face in FACES:
-    bake(*face)
+    if not only or face[0] in only:
+        bake(*face)

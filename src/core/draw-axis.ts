@@ -8,8 +8,9 @@ import { pathNode, snap, snapOffset } from './scene.ts';
 import type { TextBox } from './text.ts';
 import { measureLabel, placeLayout, pxPerPt } from './text.ts';
 import type { TickSet } from './ticks.ts';
-import type { Node, Rgb, Seg, Stroke, Theme, TickDirection, TickTheme } from './types.ts';
-import { assertNever } from './types.ts';
+import type { TickLabelStyles, AxisGrid, GridLines, Node, Rgb, Seg, Stroke, Theme, TickDirection, TickTheme, TickGrid } from './types.ts';
+import { assertNever, none } from './types.ts';
+import { lookup } from './std.ts';
 import type { Tracer } from '../trace.ts';
 
 /** Which spines carry ticks and which side gets labels (x: near=bottom, y: near=left). */
@@ -44,12 +45,16 @@ export function labelNodes(b: TextBox, k: number, color: Rgb): readonly Node[] {
     : { kind: 'text', text: r.text, x: b.penX + r.dy, y: b.penY - r.dx, sizePx: r.sizePt * k, sizePt: r.sizePt, glyphs: r.glyphs, face: r.face, color, rotation: 'vertical' }));
 }
 
+/** Gridlines of a tick family are drawn when shown with a visible linestyle; each family snaps at its own width. */
+const gridDrawn = (g: TickGrid): boolean => g.on && g.lines.style.kind === 'some' && g.lines.widthPt > 0;
+
 export function drawAxis(
   axis: 'x' | 'y',
   ticks: TickSet,
   tt: TickTheme,
   sides: Sides,
-  gridOn: boolean,
+  grid: AxisGrid,
+  labelStyles: TickLabelStyles,
   f: Frame,
   theme: Theme,
   dpi: number,
@@ -59,10 +64,10 @@ export function drawAxis(
   const k = pxPerPt(dpi);
   // all baselines taken from `bases`
   const bases = base;
-  const glw = theme.grid.widthPt * k;
-  const majorSegs: Seg[] = [], minorSegs: Seg[] = [], gridSegs: Seg[] = [], labels: Node[] = [];
+  const majorSegs: Seg[] = [], minorSegs: Seg[] = [], majorGrid: Seg[] = [], minorGrid: Seg[] = [], labels: Node[] = [];
   const nearBoxes: TextBox[] = [], farBoxes: TextBox[] = [];
   const face = resolveFace(theme.font.families, theme.font.weight);
+  const styles = new Map(labelStyles);
   for (const t of ticks.visible) {
     tracer.span('tick', { axis, loc: t.loc, minor: t.minor, label: t.label.kind === 'plain' ? t.label.text : `${t.label.base}^${t.label.exponent}` }, (sp) => {
       const size = (t.minor ? tt.minorSizePt : tt.sizePt) * k;
@@ -73,31 +78,42 @@ export function drawAxis(
       const segs = t.minor ? minorSegs : majorSegs;
       // Ticks are markers: Agg snaps the marker path (offsets from the tick origin) and the origin separately.
       const te = (b0: number, e: number): number => Math.floor(b0 + 0.5) + Math.floor(e + 0.5) + snapOffset(width);
-      const lay = measureLabel(t.label, tt.labelSizePt, dpi, face);
+      // a styled major label (Text.set_fontsize/set_fontweight/set_color on Tick.label1) keeps its own font
+      const st = t.minor ? none : lookup(styles, t.index);
+      const sizePt = st.kind === 'some' && st.value.sizePt.kind === 'some' ? st.value.sizePt.value : tt.labelSizePt;
+      const lface = st.kind === 'some' && st.value.weight.kind === 'some' ? resolveFace(theme.font.families, st.value.weight.value) : face;
+      const lcolor = st.kind === 'some' && st.value.color.kind === 'some' ? st.value.color.value : tt.labelColor;
+      const lay = measureLabel(t.label, sizePt, dpi, lface);
+      const g = t.minor ? grid.minor : grid.major;
+      const gridOn = gridDrawn(g), gridSegs = t.minor ? minorGrid : majorGrid, glw = g.lines.widthPt * k;
       if (axis === 'x') {
         const d = tx(f, t.loc), x = snap(d, width);
-        if (gridOn && !t.minor) gridSegs.push(['M', snap(d, glw), snap(bases.yBottom, glw)], ['L', snap(d, glw), snap(bases.yTop, glw)]);
+        if (gridOn) gridSegs.push(['M', snap(d, glw), snap(bases.yBottom, glw)], ['L', snap(d, glw), snap(bases.yTop, glw)]);
         if (sides.near) segs.push(['M', x, te(bases.yBottom, e0)], ['L', x, te(bases.yBottom, e1)]);          // bottom: outward is +y
         if (sides.far) segs.push(['M', x, te(bases.yTop, -e0)], ['L', x, te(bases.yTop, -e1)]);           // top: outward is -y
-        if (sides.labels === 'near') { const b = placeLayout(lay, d, bases.yBottom + out, { kind: 'horizontal', ha: 'center', va: 'top' }); nearBoxes.push(b); labels.push(...labelNodes(b, k, tt.labelColor)); }
-        if (sides.labels === 'far') { const b = placeLayout(lay, d, bases.yTop - out, { kind: 'horizontal', ha: 'center', va: 'bottom' }); farBoxes.push(b); labels.push(...labelNodes(b, k, tt.labelColor)); }
+        if (sides.labels === 'near') { const b = placeLayout(lay, d, bases.yBottom + out, { kind: 'horizontal', ha: 'center', va: 'top' }); nearBoxes.push(b); labels.push(...labelNodes(b, k, lcolor)); }
+        if (sides.labels === 'far') { const b = placeLayout(lay, d, bases.yTop - out, { kind: 'horizontal', ha: 'center', va: 'bottom' }); farBoxes.push(b); labels.push(...labelNodes(b, k, lcolor)); }
       } else {
         const d = ty(f, t.loc), y = snap(d, width);
-        if (gridOn && !t.minor) gridSegs.push(['M', snap(bases.xLeft, glw), snap(d, glw)], ['L', snap(bases.xRight, glw), snap(d, glw)]);
+        if (gridOn) gridSegs.push(['M', snap(bases.xLeft, glw), snap(d, glw)], ['L', snap(bases.xRight, glw), snap(d, glw)]);
         if (sides.near) segs.push(['M', te(bases.xLeft, -e0), y], ['L', te(bases.xLeft, -e1), y]);          // left: outward is -x
         if (sides.far) segs.push(['M', te(bases.xRight, e0), y], ['L', te(bases.xRight, e1), y]);           // right: outward is +x
-        if (sides.labels === 'near') { const b = placeLayout(lay, bases.xLeft - out, d, { kind: 'horizontal', ha: 'right', va: 'center_baseline' }); nearBoxes.push(b); labels.push(...labelNodes(b, k, tt.labelColor)); }
-        if (sides.labels === 'far') { const b = placeLayout(lay, bases.xRight + out, d, { kind: 'horizontal', ha: 'left', va: 'center_baseline' }); farBoxes.push(b); labels.push(...labelNodes(b, k, tt.labelColor)); }
+        if (sides.labels === 'near') { const b = placeLayout(lay, bases.xLeft - out, d, { kind: 'horizontal', ha: 'right', va: 'center_baseline' }); nearBoxes.push(b); labels.push(...labelNodes(b, k, lcolor)); }
+        if (sides.labels === 'far') { const b = placeLayout(lay, bases.xRight + out, d, { kind: 'horizontal', ha: 'left', va: 'center_baseline' }); farBoxes.push(b); labels.push(...labelNodes(b, k, lcolor)); }
       }
       sp.setAttribute('w', +lay.width.toFixed(2));
     });
   }
   // Gridlines are Line2Ds: caps and joins follow lines.{solid,dash}_{cap,join}style.
-  const gridStroke: Stroke = lineStroke(theme, { hex: theme.grid.color.hex, alpha: theme.grid.color.alpha * theme.grid.alpha }, theme.grid.widthPt, theme.grid.style, k);
+  const gridPath = (segs: readonly Seg[], gl: GridLines): readonly Node[] => {
+    if (segs.length === 0 || gl.style.kind !== 'some') return [];
+    const stroke: Stroke = lineStroke(theme, { hex: gl.color.hex, alpha: gl.alpha }, gl.widthPt, gl.style.value, k);
+    return stroke.color.alpha > 0 ? [pathNode(segs, { kind: 'stroke', stroke })] : [];
+  };
   const tickPath = (segs: readonly Seg[], widthPt: number): readonly Node[] =>
     segs.length > 0 && widthPt > 0 ? [pathNode(segs, { kind: 'stroke', stroke: { color: tt.color, width: widthPt * k, cap: 'butt', join: 'miter', dash: { kind: 'solid' } } })] : [];
   return {
-    grid: gridSegs.length > 0 && gridStroke.color.alpha > 0 ? [pathNode(gridSegs, { kind: 'stroke', stroke: gridStroke })] : [],
+    grid: [...gridPath(majorGrid, grid.major.lines), ...gridPath(minorGrid, grid.minor.lines)],
     marks: [...labels, ...tickPath(majorSegs, tt.widthPt), ...tickPath(minorSegs, tt.minorWidthPt)],
     nearBoxes, farBoxes,
   };

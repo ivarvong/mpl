@@ -30,3 +30,19 @@ Both `fixtures/generate.py` and `fixtures/generate_additions.py` set `font.famil
 
 `npm run tables` (`scripts/gen_tables.py`) and `scripts/gen_fonts.py` produce `src/core/data/` from matplotlib's data files and
 are not affected by FreeType/hinting.
+
+## Writing a case in `fixtures/generate_additions.py`
+
+A case is a list of `(method, args, kwargs)` calls that matplotlib runs on `fig, ax = plt.subplots()` and that
+`tools/replay.ts` replays on mpljs, call for call. Besides `Axes` methods, the spec understands:
+
+| call | matplotlib | mpljs |
+| --- | --- | --- |
+| `("fig.<name>", args, kw)` | `fig.<name>(*args, **kw)` (e.g. `fig.tight_layout`) | `fig.<name>(...args, kw)` |
+| `("twinx", [])`, `("sca", [i])` | `ax = ax.twinx()`, pick axes `i` | same |
+| `("spine", [side, setter, value])` | `ax.spines[side].setter(value)` | `ax.spines[side].setter(value)` |
+| `("ticklabel", [axis, i, setter, value])` | `ax.get_{axis}ticklabels()[i].setter(value)` | same |
+| `("$rc", [], {key: value})` | `rcParams.update` before the figure exists (`svg.*` keys only reach SVG output) | `subplots({ rc })` |
+
+Run `python3 fixtures/generate_additions.py` (the guard refuses anything but FreeType 2.14.3); it writes only cases missing
+from `_index.json`. `FORCE=1` rewrites every case it defines.

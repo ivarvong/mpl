@@ -1,5 +1,5 @@
 export { Axes, Figure, subplots } from './api.ts';
-export type { Kwargs } from './api.ts';
+export type { Kwargs, TickLabelText, TransformRef } from './api.ts';
 export { availableStyles, composeStyles, parseStyle } from './core/style.ts';
 export { parseTheme } from './core/theme.ts';
 export { layoutFigure } from './core/layout.ts';

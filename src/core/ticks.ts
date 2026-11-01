@@ -7,7 +7,8 @@ import { autoTicks, scalarFormat } from './ticker.ts';
 import type { AxisSpec, Scale, Theme, TickLabel } from './types.ts';
 import { assertNever } from './types.ts';
 
-export type Tick = { readonly loc: number; readonly label: TickLabel; readonly minor: boolean };
+/** `index` is the tick's place in its locator's list (Axis.get_major_ticks order), in view or not. */
+export type Tick = { readonly loc: number; readonly label: TickLabel; readonly minor: boolean; readonly index: number };
 export type TickSet = {
   readonly locs: readonly number[]; readonly labels: readonly TickLabel[]; readonly offset: string;
   readonly minor: readonly number[]; readonly minorLabels: readonly TickLabel[];
@@ -100,7 +101,7 @@ export function computeTicks(spec: AxisSpec, lim: readonly [number, number], spa
   const tol = 1e-10 * (hi - lo);
   const inView = (v: number): boolean => { const t = forward(scale, v); return t >= lo - tol && t <= hi + tol; };
   const visible: Tick[] = [];
-  locs.major.forEach((v, i) => { if (inView(v)) visible.push({ loc: v, label: f.labels[i], minor: false }); });
-  locs.minor.forEach((v, i) => { if (inView(v)) visible.push({ loc: v, label: f.minor[i], minor: true }); });
+  locs.major.forEach((v, i) => { if (inView(v)) visible.push({ loc: v, label: f.labels[i], minor: false, index: i }); });
+  locs.minor.forEach((v, i) => { if (inView(v)) visible.push({ loc: v, label: f.minor[i], minor: true, index: i }); });
   return { locs: locs.major, labels: f.labels, offset: f.offset, minor: locs.minor, minorLabels: f.minor, visible };
 }

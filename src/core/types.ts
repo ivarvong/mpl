@@ -180,7 +180,19 @@ export type AxisSpec =
   | { readonly kind: 'datetime'; readonly limits: Limits; readonly ticks: TickSpec; readonly labels: LabelSpec };
 
 export type GridWhich = 'x' | 'y' | 'both';
+/** Text properties set on one major tick label (set_xticklabels kwargs, get_xticklabels()[i].set_*). */
+export type TickLabelStyle = { readonly color: Option<Rgb>; readonly sizePt: Option<number>; readonly weight: Option<number> };
+/** [major tick index, style] pairs (a list, so the spec stays JSON for the layout cache); an index
+ *  with no entry uses the tick theme. */
+export type TickLabelStyles = readonly (readonly [number, TickLabelStyle])[];
 export type GridSpec = { readonly kind: 'off' } | { readonly kind: 'on'; readonly which: GridWhich };
+/** One family of gridlines (Line2D properties). `style` none is linestyle 'none': nothing drawn.
+ *  `alpha` replaces the colour's alpha, as Line2D.set_alpha does (grid.alpha is passed as alpha). */
+export type GridLines = { readonly color: Rgb; readonly widthPt: number; readonly style: Option<LineStyleName>; readonly alpha: number };
+/** Axis.grid state for one tick family: shown or not, and the line properties it keeps either way. */
+export type TickGrid = { readonly on: boolean; readonly lines: GridLines };
+export type AxisGrid = { readonly major: TickGrid; readonly minor: TickGrid };
+export type AxesGrid = { readonly x: AxisGrid; readonly y: AxisGrid };
 export type AnchorCode = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type LegendLoc = { readonly kind: 'best' } | { readonly kind: 'anchored'; readonly code: AnchorCode };
 export type LegendSpec =
@@ -195,7 +207,7 @@ export type Position = readonly [number, number, number, number];
 export type AxesSpec = {
   readonly role: AxesRole; readonly position: Position; readonly artists: readonly Artist[];
   readonly title: string; readonly titleLoc: HAlign; readonly titleWeight: number; readonly xlabel: string; readonly ylabel: string;
-  readonly x: AxisSpec; readonly y: AxisSpec; readonly grid: GridSpec; readonly legend: LegendSpec;
+  readonly x: AxisSpec; readonly y: AxisSpec; readonly grid: AxesGrid; readonly legend: LegendSpec;
   readonly spines: {
     readonly left: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };
     readonly right: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };
@@ -203,6 +215,7 @@ export type AxesSpec = {
     readonly bottom: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };
   };
   readonly tick: { readonly x: TickTheme; readonly y: TickTheme };
+  readonly tickLabels: { readonly x: TickLabelStyles; readonly y: TickLabelStyles };
 };
 export type FigureSpec = {
   readonly widthIn: number; readonly heightIn: number; readonly dpi: number; readonly theme: Theme; readonly axes: readonly AxesSpec[];
@@ -278,4 +291,7 @@ export type FrameMeta = {
   readonly xlim: readonly [number, number]; readonly ylim: readonly [number, number];
   readonly xscale: Scale; readonly yscale: Scale; readonly H: number;
 };
-export type AxesMeta = { readonly x: AxisMeta; readonly y: AxisMeta; readonly legend: Option<LegendMeta>; readonly frame: FrameMeta };
+/** A device-space box, px, y down. */
+export type PxBox = { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
+/** Axes.get_tightbbox(for_layout_only=True), px y down: what tight_layout fits into the figure. */
+export type AxesMeta = { readonly x: AxisMeta; readonly y: AxisMeta; readonly legend: Option<LegendMeta>; readonly frame: FrameMeta; readonly tight: PxBox };
