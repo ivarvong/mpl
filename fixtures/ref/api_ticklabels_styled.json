@@ -1,0 +1,215 @@
+{
+ "spec": [
+  [
+   "plot",
+   [
+    [
+     0,
+     1,
+     2
+    ],
+    [
+     2,
+     0,
+     1
+    ]
+   ],
+   {}
+  ],
+  [
+   "set_yticks",
+   [
+    [
+     0,
+     1,
+     2
+    ]
+   ],
+   {}
+  ],
+  [
+   "set_yticklabels",
+   [
+    [
+     "low",
+     "mid",
+     "high"
+    ]
+   ],
+   {
+    "fontweight": "bold",
+    "color": "C3",
+    "fontsize": 12
+   }
+  ],
+  [
+   "set_xticks",
+   [
+    [
+     0,
+     1,
+     2
+    ]
+   ],
+   {}
+  ],
+  [
+   "set_xticklabels",
+   [
+    [
+     "a",
+     "b",
+     "c"
+    ]
+   ],
+   {
+    "size": "small",
+    "c": "0.4"
+   }
+  ]
+ ],
+ "style": null,
+ "rc": {},
+ "xlim": [
+  -0.1,
+  2.1
+ ],
+ "ylim": [
+  -0.1,
+  2.1
+ ],
+ "xticks": [
+  0.0,
+  1.0,
+  2.0
+ ],
+ "yticks": [
+  0.0,
+  1.0,
+  2.0
+ ],
+ "xticklabels": [
+  "a",
+  "b",
+  "c"
+ ],
+ "yticklabels": [
+  "low",
+  "mid",
+  "high"
+ ],
+ "xoffset": "",
+ "yoffset": "",
+ "legend": null,
+ "x": {
+  "lim": [
+   -0.1,
+   2.1
+  ],
+  "ticks": [
+   0.0,
+   1.0,
+   2.0
+  ],
+  "labels": [
+   "a",
+   "b",
+   "c"
+  ],
+  "minor": [],
+  "minorlabels": [],
+  "offset": ""
+ },
+ "y": {
+  "lim": [
+   -0.1,
+   2.1
+  ],
+  "ticks": [
+   0.0,
+   1.0,
+   2.0
+  ],
+  "labels": [
+   "low",
+   "mid",
+   "high"
+  ],
+  "minor": [],
+  "minorlabels": [],
+  "offset": ""
+ },
+ "axes": [
+  {
+   "xlim": [
+    -0.1,
+    2.1
+   ],
+   "ylim": [
+    -0.1,
+    2.1
+   ],
+   "xticks": [
+    0.0,
+    1.0,
+    2.0
+   ],
+   "yticks": [
+    0.0,
+    1.0,
+    2.0
+   ],
+   "xticklabels": [
+    "a",
+    "b",
+    "c"
+   ],
+   "yticklabels": [
+    "low",
+    "mid",
+    "high"
+   ],
+   "xoffset": "",
+   "yoffset": "",
+   "legend": null,
+   "x": {
+    "lim": [
+     -0.1,
+     2.1
+    ],
+    "ticks": [
+     0.0,
+     1.0,
+     2.0
+    ],
+    "labels": [
+     "a",
+     "b",
+     "c"
+    ],
+    "minor": [],
+    "minorlabels": [],
+    "offset": ""
+   },
+   "y": {
+    "lim": [
+     -0.1,
+     2.1
+    ],
+    "ticks": [
+     0.0,
+     1.0,
+     2.0
+    ],
+    "labels": [
+     "low",
+     "mid",
+     "high"
+    ],
+    "minor": [],
+    "minorlabels": [],
+    "offset": ""
+   }
+  }
+ ]
+}

@@ -73,7 +73,60 @@ case("api_spans", ("plot", [x, sx]), ("axvspan", [2, 7], {"ymin": 0.1, "ymax": 0
 case("api_annotate_arrow", ("plot", [x, sx]), ("annotate", ["peak", [1.5, math.sin(1.5)]], {"xytext":[2.5,1.2], "arrowprops":{"color":"C3","linewidth":2,"headlength":8,"headwidth":6}}))
 case("api_clipoff_text", ("plot", [x, sx]), ("text", [0.5, 1.05, "outside"], {"transform": AX, "clip_on": False, "ha":"center"}))
 case("api_multiline_texts", ("plot", [x, sx]), ("set_title", ["A title\\nwith two lines"]), ("set_xlabel", ["x\\nunits"]), ("set_ylabel", ["y\\nunits"]), ("text", [0.5, 0.5, "a\\nb\\nc"], {"transform": AX, "ha":"center","va":"center"}))
+# real newlines (api_multiline_texts above passes the two characters backslash-n, not line breaks)
+case("api_multiline_real", ("plot", [x, sx]), ("set_title", ["A title\nwith two lines"]), ("set_xlabel", ["x\nunits"]), ("set_ylabel", ["y\nunits"]),
+     ("text", [0.5, 0.5, "a\nbbb\ncc"], {"transform": AX, "ha": "center", "va": "center"}),
+     ("text", [0.95, 0.9, "right\naligned block"], {"transform": AX, "ha": "right", "va": "top"}),
+     ("text", [0.05, 0.1, "baseline\nof the last line"], {"transform": AX}),
+     ("fig.text", [0.01, 0.98, "fig\ntext"], {"va": "top"}))
 case("api_svg_fonttype_path", ("plot", [x, sx]), ("set_title", ["svg path text"]), ("$rc", [], {"svg.fonttype":"path"}))
+
+# Issue #7 gaps: glyph coverage, grid line kwargs, tight_layout, per-tick label styling
+TREE = "└ ls-refs\n├── src\n│   └── api.ts\n╰─▶ done ✓"
+case("api_glyphs_box_drawing", ("plot", [x, sx]),
+     ("text", [0.05, 0.55, TREE], {"transform": AX}),
+     ("text", [0.55, 0.85, "αβγ Δ ≤ ≥ ± ≠ ∞ → ⇒"], {"transform": AX}),
+     ("text", [0.55, 0.7, "café naïve Œuvre € £ ¥ §"], {"transform": AX, "fontweight": "bold"}),
+     ("text", [0.55, 0.55, "█▓▒░ ■□▲△●○ ‰ ‡ ⁿ"], {"transform": AX}),
+     ("set_title", ["Glyphs → ✓"]))
+case("api_grid_styled", ("plot", [x, sx]), ("grid", [True], {"color": "C1", "linewidth": 0.5, "linestyle": "--", "alpha": 0.6}))
+case("api_grid_aliases_axis", ("plot", [x, sx]), ("grid", [], {"axis": "y", "c": "0.85", "lw": 2, "ls": ":"}))
+case("api_grid_minor_log", ("plot", [lin(30, 1, 30), L(np.exp(np.linspace(0, 6, 30)))]), ("set_yscale", ["log"]),
+     ("grid", [True], {"which": "both"}), ("grid", [], {"which": "minor", "ls": ":", "alpha": 0.5, "color": "C0"}))
+case("api_grid_toggle_keeps_style", ("plot", [x, sx]), ("grid", [], {"color": "red", "lw": 1.5}), ("grid", [False]), ("grid", [None]))
+case("api_grid_rgba_color", ("plot", [x, sx]), ("grid", [True], {"color": [0.0, 0.0, 1.0, 0.25], "lw": 3}))
+case("api_tight_layout", ("plot", [x, sx]), ("set_title", ["tight"]), ("set_xlabel", ["x label"]), ("set_ylabel", ["y label"]), ("fig.tight_layout", []))
+case("api_tight_layout_pad_suptitle", ("plot", [x, sx]), ("set_xlabel", ["x"]), ("fig.suptitle", ["Overall"]), ("fig.supylabel", ["side"]), ("fig.tight_layout", [], {"pad": 0.4}))
+case("api_tight_layout_twinx", ("plot", [x, sx]), ("set_ylabel", ["left"]), ("twinx", []), ("plot", [x, L(np.array(cx) * 1000)], {"color": "C1"}), ("set_ylabel", ["right"]), ("fig.tight_layout", []))
+case("api_tight_layout_rect", ("plot", [x, sx]), ("set_title", ["rect"]), ("set_xlabel", ["x"]), ("fig.tight_layout", [], {"rect": [0, 0, 1, 0.9]}))
+case("api_ticklabels_styled", ("plot", [[0, 1, 2], [2, 0, 1]]), ("set_yticks", [[0, 1, 2]]),
+     ("set_yticklabels", [["low", "mid", "high"]], {"fontweight": "bold", "color": "C3", "fontsize": 12}),
+     ("set_xticks", [[0, 1, 2]]), ("set_xticklabels", [["a", "b", "c"]], {"size": "small", "c": "0.4"}))
+case("api_ticklabel_setters", ("plot", [[0, 1, 2, 3], [3, 1, 2, 0]]), ("set_yticks", [[0, 1, 2, 3]]),
+     ("set_yticklabels", [["Plan", "  Build", "  Test", "Ship"]]),
+     ("ticklabel", ["y", 0, "set_fontweight", "bold"]), ("ticklabel", ["y", 3, "set_fontweight", "bold"]),
+     ("ticklabel", ["x", 1, "set_color", "C2"]), ("ticklabel", ["x", 2, "set_fontsize", 14]))
+GANTT = ["Discovery", "  Interviews", "  Synthesis", "Build", "  API", "  UI", "Launch"]
+case("api_gantt_waterfall",
+     ("barh", [list(range(7)), [3, 2, 1.5, 6, 3.5, 4, 1]], {"left": [0, 0, 2, 3, 3, 5, 9], "color": ["C0", "C0", "C0", "C1", "C1", "C1", "C2"], "height": 0.6}),
+     ("set_yticks", [list(range(7))]), ("set_yticklabels", [GANTT]),
+     ("ticklabel", ["y", 0, "set_fontweight", "bold"]), ("ticklabel", ["y", 3, "set_fontweight", "bold"]), ("ticklabel", ["y", 6, "set_fontweight", "bold"]),
+     ("set_ylim", [6.6, -0.6]), ("set_xlabel", ["weeks"]), ("set_title", ["Project plan"]),
+     ("grid", [True], {"axis": "x", "color": "0.9", "lw": 0.8, "ls": "--"}),
+     ("spine", ["top", "set_visible", False]), ("spine", ["right", "set_visible", False]),
+     ("fig.tight_layout", []))
+
+# examples/gantt.ts, call for call (docs/images/gantt.svg)
+TRACE = [("GET /api/checkout", 0, 120, "C0"), ("├─ auth.verify", 2, 14, "C1"), ("├─ db.query orders", 15, 55, "C2"),
+         ("└─ pool.acquire", 15, 19, "C2"), ("├─ inventory.reserve", 56, 92, "C4"), ("└─ render.json", 93, 118, "C1")]
+case("example_gantt_trace", ("$rc", [], {"axes.axisbelow": True}),
+     ("barh", [list(range(len(TRACE))), [e - s for _, s, e, _ in TRACE]], {"left": [s for _, s, _, _ in TRACE], "color": [c for *_, c in TRACE], "height": 0.6}),
+     ("set_yticks", [list(range(len(TRACE)))]), ("set_yticklabels", [[l for l, *_ in TRACE]]),
+     ("ticklabel", ["y", 0, "set_fontweight", "bold"]),
+     ("set_ylim", [len(TRACE) - 0.4, -0.6]), ("set_xlabel", ["ms since request start"]), ("set_title", ["Checkout request trace"], {"loc": "left"}),
+     ("grid", [True], {"axis": "x", "color": "0.85", "linestyle": "--", "linewidth": 0.8}),
+     ("spine", ["top", "set_visible", False]), ("spine", ["right", "set_visible", False]),
+     ("fig.tight_layout", []))
 
 def run_case(name, calls):
     style = None
@@ -87,6 +140,10 @@ def run_case(name, calls):
                                "Use the stock matplotlib 3.11.2 wheel that bundles FreeType 2.14.3.")
         matplotlib.rcParams["font.family"] = "DejaVu Sans"
         matplotlib.rcParams["text.hinting"] = "none"
+        # "$rc" steps configure the figure before it exists (replay builds the Figure with fx.rc)
+        for fn, _args, kwargs in calls:
+            if fn == "$rc" and not any(k.startswith("svg.") for k in kwargs):
+                matplotlib.rcParams.update(kwargs)
         fig, ax = plt.subplots()
         axes = [ax]
         for fn, args, kwargs in calls:
@@ -104,6 +161,10 @@ def run_case(name, calls):
             if fn == "spine":
                 side, action, val = args
                 getattr(ax.spines[side], action)(val)
+            elif fn == "ticklabel":
+                which, i, action, val = args
+                labels = ax.get_xticklabels() if which == "x" else ax.get_yticklabels()
+                getattr(labels[i], action)(val)
             else:
                 kwargs = {k: (ax.transAxes if isinstance(v, dict) and v.get("$transform") == "axes" else v) for k, v in kwargs.items()}
                 getattr(ax, fn)(*args, **kwargs)
