@@ -44,10 +44,21 @@ export function labelNodes(b: TextBox, k: number, color: Rgb): readonly Node[] {
     : { kind: 'text', text: r.text, x: b.penX + r.dy, y: b.penY - r.dx, sizePx: r.sizePt * k, sizePt: r.sizePt, glyphs: r.glyphs, face: r.face, color, rotation: 'vertical' }));
 }
 
-export function drawAxis(axis: 'x' | 'y', ticks: TickSet, tt: TickTheme, sides: Sides, gridOn: boolean, f: Frame, theme: Theme,
-                         dpi: number, tracer: Tracer): AxisDrawn {
+export function drawAxis(
+  axis: 'x' | 'y',
+  ticks: TickSet,
+  tt: TickTheme,
+  sides: Sides,
+  gridOn: boolean,
+  f: Frame,
+  theme: Theme,
+  dpi: number,
+  tracer: Tracer,
+  base: { readonly xLeft: number; readonly xRight: number; readonly yBottom: number; readonly yTop: number },
+): AxisDrawn {
   const k = pxPerPt(dpi);
-  const box = f.box;
+  // all baselines taken from `bases`
+  const bases = base;
   const glw = theme.grid.widthPt * k;
   const majorSegs: Seg[] = [], minorSegs: Seg[] = [], gridSegs: Seg[] = [], labels: Node[] = [];
   const nearBoxes: TextBox[] = [], farBoxes: TextBox[] = [];
@@ -61,22 +72,22 @@ export function drawAxis(axis: 'x' | 'y', ticks: TickSet, tt: TickTheme, sides: 
       const out = tickPadding(tt.direction, size) + pad;
       const segs = t.minor ? minorSegs : majorSegs;
       // Ticks are markers: Agg snaps the marker path (offsets from the tick origin) and the origin separately.
-      const te = (base: number, e: number): number => Math.floor(base + 0.5) + Math.floor(e + 0.5) + snapOffset(width);
+      const te = (b0: number, e: number): number => Math.floor(b0 + 0.5) + Math.floor(e + 0.5) + snapOffset(width);
       const lay = measureLabel(t.label, tt.labelSizePt, dpi, face);
       if (axis === 'x') {
         const d = tx(f, t.loc), x = snap(d, width);
-        if (gridOn && !t.minor) gridSegs.push(['M', snap(d, glw), snap(box.yBot, glw)], ['L', snap(d, glw), snap(box.yTop, glw)]);
-        if (sides.near) segs.push(['M', x, te(box.yBot, e0)], ['L', x, te(box.yBot, e1)]);          // bottom: outward is +y
-        if (sides.far) segs.push(['M', x, te(box.yTop, -e0)], ['L', x, te(box.yTop, -e1)]);           // top: outward is -y
-        if (sides.labels === 'near') { const b = placeLayout(lay, d, box.yBot + out, { kind: 'horizontal', ha: 'center', va: 'top' }); nearBoxes.push(b); labels.push(...labelNodes(b, k, tt.labelColor)); }
-        if (sides.labels === 'far') { const b = placeLayout(lay, d, box.yTop - out, { kind: 'horizontal', ha: 'center', va: 'bottom' }); farBoxes.push(b); labels.push(...labelNodes(b, k, tt.labelColor)); }
+        if (gridOn && !t.minor) gridSegs.push(['M', snap(d, glw), snap(bases.yBottom, glw)], ['L', snap(d, glw), snap(bases.yTop, glw)]);
+        if (sides.near) segs.push(['M', x, te(bases.yBottom, e0)], ['L', x, te(bases.yBottom, e1)]);          // bottom: outward is +y
+        if (sides.far) segs.push(['M', x, te(bases.yTop, -e0)], ['L', x, te(bases.yTop, -e1)]);           // top: outward is -y
+        if (sides.labels === 'near') { const b = placeLayout(lay, d, bases.yBottom + out, { kind: 'horizontal', ha: 'center', va: 'top' }); nearBoxes.push(b); labels.push(...labelNodes(b, k, tt.labelColor)); }
+        if (sides.labels === 'far') { const b = placeLayout(lay, d, bases.yTop - out, { kind: 'horizontal', ha: 'center', va: 'bottom' }); farBoxes.push(b); labels.push(...labelNodes(b, k, tt.labelColor)); }
       } else {
         const d = ty(f, t.loc), y = snap(d, width);
-        if (gridOn && !t.minor) gridSegs.push(['M', snap(box.x0, glw), snap(d, glw)], ['L', snap(box.x1, glw), snap(d, glw)]);
-        if (sides.near) segs.push(['M', te(box.x0, -e0), y], ['L', te(box.x0, -e1), y]);          // left: outward is -x
-        if (sides.far) segs.push(['M', te(box.x1, e0), y], ['L', te(box.x1, e1), y]);           // right: outward is +x
-        if (sides.labels === 'near') { const b = placeLayout(lay, box.x0 - out, d, { kind: 'horizontal', ha: 'right', va: 'center_baseline' }); nearBoxes.push(b); labels.push(...labelNodes(b, k, tt.labelColor)); }
-        if (sides.labels === 'far') { const b = placeLayout(lay, box.x1 + out, d, { kind: 'horizontal', ha: 'left', va: 'center_baseline' }); farBoxes.push(b); labels.push(...labelNodes(b, k, tt.labelColor)); }
+        if (gridOn && !t.minor) gridSegs.push(['M', snap(bases.xLeft, glw), snap(d, glw)], ['L', snap(bases.xRight, glw), snap(d, glw)]);
+        if (sides.near) segs.push(['M', te(bases.xLeft, -e0), y], ['L', te(bases.xLeft, -e1), y]);          // left: outward is -x
+        if (sides.far) segs.push(['M', te(bases.xRight, e0), y], ['L', te(bases.xRight, e1), y]);           // right: outward is +x
+        if (sides.labels === 'near') { const b = placeLayout(lay, bases.xLeft - out, d, { kind: 'horizontal', ha: 'right', va: 'center_baseline' }); nearBoxes.push(b); labels.push(...labelNodes(b, k, tt.labelColor)); }
+        if (sides.labels === 'far') { const b = placeLayout(lay, bases.xRight + out, d, { kind: 'horizontal', ha: 'left', va: 'center_baseline' }); farBoxes.push(b); labels.push(...labelNodes(b, k, tt.labelColor)); }
       }
       sp.setAttribute('w', +lay.width.toFixed(2));
     });

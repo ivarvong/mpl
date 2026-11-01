@@ -11,6 +11,7 @@ import matplotlib
 matplotlib.use("Agg")
 matplotlib.rcdefaults()                      # ignore any local matplotlibrc
 matplotlib.rcParams["font.family"] = "DejaVu Sans"   # ignore any locally patched matplotlibrc
+matplotlib.rcParams["text.hinting"] = "none"         # reproduce oracle PNGs (stock FT 2.14.3, no hinting)
 import matplotlib.pyplot as plt
 
 OUT = os.path.join(os.path.dirname(__file__), "ref")
@@ -26,6 +27,14 @@ def case(name, *calls):
 x = lin(50, 0, 10)
 sx, cx = L(np.sin(x)), L(np.cos(x))
 
+# Figure-level call helpers encoded in the spec with a 'fig.' prefix
+def fig_text(x, y, s, **kw): return ("fig.text", [x, y, s], kw)
+def fig_suptitle(s, **kw): return ("fig.suptitle", [s], kw)
+def fig_subxlabel(s, **kw): return ("fig.supxlabel", [s], kw)
+def fig_subylabel(s, **kw): return ("fig.supylabel", [s], kw)
+def fig_adjust(**kw): return ("fig.subplots_adjust", [], kw)
+# Spine edit encoding: ("spine", [side, action, value])
+def spine(side, action, value): return ("spine", [side, action, value])
 # ---- slice 1 corpus (plot + title/labels) ------------------------------------
 case("sine", ("plot", [x, sx]), ("set_title", ["sin(x)"]), ("set_xlabel", ["x"]), ("set_ylabel", ["y"]))
 case("linear", ("plot", [lin(11, 0, 10), lin(11, 0, 10)]))
@@ -235,6 +244,46 @@ styled("seaborn-v0_8-whitegrid", "showcase",
        ("twinx", []), ("plot", [days90, revenue], {"color": "C3", "linewidth": 2, "label": "revenue (log)"}),
        ("set_yscale", ["log"]), ("set_ylabel", ["revenue ($)"]), ("legend", [], {"loc": "lower right"}))
 
+# ---- parity additions: APIs to audit -------------------------------------------------------
+case("fig_text_and_suplabels",
+     ("plot", [x, sx]),
+     fig_text(0.02, 0.02, "fig corner", color="C2", fontsize=10),
+     fig_suptitle("A super title"),
+     fig_subxlabel("overall x"),
+     fig_subylabel("overall y"))
+case("spines_edit",
+     ("plot", [x, sx]),
+     spine("right", "set_visible", False),
+     spine("left", "set_color", "C3"),
+     spine("bottom", "set_linewidth", 2.0),
+     spine("top", "set_position", ["outward", 6]))
+case("tick_params_edit",
+     ("plot", [x, sx]),
+     ("tick_params", [], {"length": 9, "width": 2, "colors": "C2", "labelsize": 12, "direction": "in"}))
+case("scatter_sizes",
+     ("scatter", [lin(5, 0, 4), [1, 2, 3, 2, 1]], {"s": [9, 36, 81, 144, 225], "marker": "s", "edgecolors": "k", "linewidths": 1}))
+case("spans_both",
+     ("plot", [x, sx]),
+     ("axvspan", [2, 7], {"ymin": 0.1, "ymax": 0.7, "color": "C1", "alpha": 0.3}),
+     ("axhspan", [-0.5, 0.5], {"xmin": 0.2, "xmax": 0.9, "color": "C2", "alpha": 0.3}))
+case("annotate_arrow",
+     ("plot", [x, sx]),
+     ("annotate", ["peak", [5.0, 0.5]], {"xytext": [7.0, 0.75], "arrowprops": {"color": "C3", "linewidth": 2, "headlength": 8, "headwidth": 6}}))
+case("clip_off_text",
+     ("plot", [x, sx]),
+     ("text", [-0.1, 1.05, "outside"], {"transform": AX, "clip_on": False}))
+case("multi_line_texts",
+     ("plot", [x, sx]),
+     ("set_title", ["A title\\nwith two lines"]),
+     ("set_xlabel", ["x\\nunits"]),
+     ("set_ylabel", ["y\\nunits"]),
+     ("text", [0.5, 0.5, "a\\nb\\nc"], {"transform": AX, "ha": "center", "va": "center"}),
+     ("set_xticks", [[0, 5, 10]]), ("set_xticklabels", [["zero\\nfive", "five", "ten\\ndec"]]))
+case("subplots_adjust_margins",
+     ("plot", [x, sx]),
+     fig_adjust(left=0.2, right=0.95, bottom=0.2, top=0.85))
+with_rc({"svg.fonttype": "path"}, "svg_fonttype_path", ("plot", [x, sx]), ("set_title", ["svg path text"]))
+
 def axis_record(axis):
     return dict(lim=[float(v) for v in axis.get_view_interval()],
                 ticks=[float(v) for v in axis.get_majorticklocs()],
@@ -277,10 +326,16 @@ for name, calls in CASES.items():
     axes = [ax]
     for fn, args, kwargs in calls:
         args = [decode(a) for a in args]
+        if fn.startswith("fig."):
+            # Figure-level calls encoded as 'fig.method'
+            getattr(fig, fn[4:])(*args, **kwargs); continue
         if fn == "twinx":
             ax = ax.twinx(); axes.append(ax); continue
         if fn == "sca":
             ax = axes[args[0]]; continue
+        if fn == "spine":
+            side, action, val = args
+            getattr(ax.spines[side], action)(val); continue
         kwargs = {k: (ax.transAxes if isinstance(v, dict) and v.get("$transform") == "axes" else v) for k, v in kwargs.items()}
         getattr(ax, fn)(*args, **kwargs)
     fig.canvas.draw()

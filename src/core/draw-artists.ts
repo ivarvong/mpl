@@ -6,14 +6,17 @@ import type { Box } from './legend-index.ts';
 import { lineStroke, markersNode } from './marks.ts';
 import type { XY } from './path.ts';
 import { isRectilinear, simplifyPolyline } from './path.ts';
-import { inkOf, rectNode, snap, snapOffset } from './scene.ts';
+import { inkOf, pathNode, rectNode, snap, snapOffset } from './scene.ts';
+import { MARKERS } from './data/markers.ts';
+import { yaArrowPath } from './arrow.ts';
 import { lookup } from './std.ts';
 import { forwardAll } from './scale.ts';
-import type { BarArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme } from './types.ts';
+import type { BarArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, Paint } from './types.ts';
 import { labelNodes } from './draw-axis.ts';
 import { placeText, pxPerPt } from './text.ts';
 import type { Face } from './fonts.ts';
-import { none, some } from './types.ts';
+import { resolveFace } from './fonts.ts';
+import { assertNever, none, some } from './types.ts';
 import type { SpanHandle } from '../trace.ts';
 
 export type Drawn = { readonly nodes: readonly Node[]; readonly lines: readonly XY[]; readonly boxes: readonly Box[]; readonly handle: Option<Handle> };
@@ -146,4 +149,128 @@ export function drawText(a: TextArtist, f: Frame, dpi: number, face: Face): Draw
   const y = a.coords === 'data' ? ty(f, a.y) : f.H - (a.y * f.box.h + (f.H - f.box.yBot));
   const nodes = a.text === '' ? [] : labelNodes(placeText(a.text, a.sizePt, dpi, face, x, y, { kind: 'horizontal', ha: a.ha, va: a.va }), k, a.color);
   return { nodes, lines: [], boxes: [], handle: none };
+}
+
+/** ax.annotate: Annotation.draw draws its FancyArrowPatch (ArrowStyle.Simple via the YAArrow emulation), then the text. */
+export function drawAnnotation(a: AnnotationArtist, f: Frame, dpi: number, theme: Theme, k: number, clip: Clip): Drawn {
+  const toPx = (cx: 'data' | 'axes', x: number, y: number): readonly [number, number] =>
+    (cx === 'data' ? [tx(f, x), ty(f, y)] as const : [f.box.x0 + x * f.box.w, f.H - (f.box.yBot + y * f.box.h)] as const);
+  const [x0, y0] = toPx(a.xycoords, a.x, a.y);
+  const [x1, y1] = toPx(a.textcoords, a.tx, a.ty);
+  const face = resolveFace(theme.font.families, a.weight);
+  const box = placeText(a.text, a.sizePt, dpi, face, x1, y1, { kind: 'horizontal', ha: a.ha, va: a.va });
+  const textNodes = a.text === '' ? [] : labelNodes(box, k, a.color);
+  // matplotlib works in y-up display space; Agg flips with height - y
+  const up = (y: number): number => f.H - y;
+  const arrowNodes = ((): readonly Node[] => {
+    if (a.arrow.kind === 'none') return [];
+    const ar = a.arrow.value;
+    const bbox = a.text === '' ? { x0: x1, y0: up(y1), x1, y1: up(y1) } : { x0: box.x0, y0: up(box.y1), x1: box.x1, y1: up(box.y0) };
+    const path = yaArrowPath(bbox, [x0, up(y0)], a.text !== '',
+      { widthPt: ar.widthPt, headWidthPt: ar.headWidthPt, headLengthPt: ar.headLengthPt, shrink: ar.shrink, mutationPt: a.sizePt }, k);
+    const segs = path.map((sg): Seg => {
+      switch (sg.kind) {
+        case 'M': return ['M', sg.p[0], up(sg.p[1])];
+        case 'L': return ['L', sg.p[0], up(sg.p[1])];
+        case 'Q': return ['Q', sg.c[0], up(sg.c[1]), sg.p[0], up(sg.p[1])];
+        case 'Z': return ['Z'];
+        default: return assertNever(sg);
+      }
+    });
+    // FancyArrowPatch: round join and cap; a curved path is never snapped
+    const stroke: Option<Stroke> = ar.linewidthPt > 0 ? some({ color: ar.edge, width: ar.linewidthPt * k, cap: 'round', join: 'round', dash: { kind: 'solid' } }) : none;
+    const ink = inkOf({ kind: 'solid', color: ar.face }, stroke);
+    return ink.kind === 'some' ? [pathNode(segs, ink.value)] : [];
+  })();
+  const nodes: readonly Node[] = [{ kind: 'group', clip, nodes: [...arrowNodes, ...textNodes], tag: '' }];
+  return { nodes, lines: [], boxes: [], handle: none };
+}
+
+/** ax.scatter: markers-only collection with sizes in pt^2. */
+export function drawScatter(a: ScatterArtist, f: Frame, _theme: Theme, k: number, clip: Clip): Drawn {
+  const n = Math.min(a.x.length, a.y.length, a.sizePt2.length);
+  if (n === 0) return { nodes: [], lines: [], boxes: [], handle: some({ kind: 'line', stroke: { kind: 'none' }, markers: { kind: 'none' } }) };
+  const xs = new Float64Array(n), ys = new Float64Array(n);
+  for (let i = 0; i < n; i++) { xs[i] = tx(f, a.x[i]); ys[i] = ty(f, a.y[i]); }
+  // Group by (size, face, edge) to support per-point sizes and colours
+  type Key = string;
+  const keyOf = (i: number): Key => {
+    const sPt = Math.max(0, a.sizePt2[i]);
+    const size = Math.sqrt(sPt);
+    const face = a.faces[i];
+    const edge = a.edges[i];
+    const fc = face.kind === 'solid' ? `${face.color.hex}/${face.color.alpha}` : 'none';
+    const ec = edge.kind === 'solid' ? `${edge.color.hex}/${edge.color.alpha}` : 'none';
+    return `${size.toFixed(4)}|${fc}|${ec}`;
+  };
+  const groups = new Map<Key, { sizePt: number; face: Paint; edge: Paint; xs: number[]; ys: number[] }>();
+  for (let i = 0; i < n; i++) {
+    const sPt2 = Math.max(0, a.sizePt2[i]);
+    const sizePt = Math.sqrt(sPt2);   // points
+    const kkey = keyOf(i);
+    const g = groups.get(kkey);
+    if (!g) {
+      groups.set(kkey, { sizePt, face: a.faces[i], edge: a.edges[i], xs: [xs[i]], ys: [ys[i]] });
+    } else {
+      g.xs.push(xs[i]); g.ys.push(ys[i]);
+    }
+  }
+  const strokeOf = (edge: Paint): Option<Stroke> =>
+    edge.kind === 'solid' && a.edgeWidthPt > 0 ? some({ color: edge.color, width: a.edgeWidthPt * k, cap: 'butt', join: 'round', dash: { kind: 'solid' } }) : none;
+  const nodes: Node[] = [];
+  if (groups.size === 1) {
+    // Collection.draw: one path, one size, one face and edge colour -> renderer.draw_markers
+    for (const g of groups.values()) {
+      const ink = inkOf(g.face, strokeOf(g.edge));
+      if (ink.kind === 'none') continue;
+      const m = markersNode({ kind: 'on', shape: a.shape, sizePt: g.sizePt, edgeWidthPt: a.edgeWidthPt, face: g.face, edge: g.edge },
+                            Float64Array.from(g.xs), Float64Array.from(g.ys), k, true);  // PathCollection: no snapping, draw_markers offset
+      if (m.kind === 'some') nodes.push(m.value);
+    }
+  } else {
+    // Otherwise RendererAgg::_draw_path_collection_generic: each point's path is scaled by sqrt(s) * dpi / 72 and
+    // translated to its exact (unrounded) offset, then filled and stroked in order, with no pixel-centre shift.
+    for (let i = 0; i < n; i++) {
+      if (!(Number.isFinite(xs[i]) && Number.isFinite(ys[i]))) continue;
+      const ink = inkOf(MARKERS[a.shape].filled ? a.faces[i] : { kind: 'none' }, strokeOf(a.edges[i]));
+      if (ink.kind === 'none') continue;
+      const sizePx = Math.sqrt(Math.max(0, a.sizePt2[i])) * k, x = xs[i], y = ys[i];
+      const segs = MARKERS[a.shape].segs.map((sg): Seg => {
+        switch (sg[0]) {
+          case 'M': return ['M', x + sg[1] * sizePx, y - sg[2] * sizePx];
+          case 'L': return ['L', x + sg[1] * sizePx, y - sg[2] * sizePx];
+          case 'Q': return ['Q', x + sg[1] * sizePx, y - sg[2] * sizePx, x + sg[3] * sizePx, y - sg[4] * sizePx];
+          case 'C': return ['C', x + sg[1] * sizePx, y - sg[2] * sizePx, x + sg[3] * sizePx, y - sg[4] * sizePx, x + sg[5] * sizePx, y - sg[6] * sizePx];
+          case 'Z': return ['Z'];
+          default: return assertNever(sg);
+        }
+      });
+      nodes.push(pathNode(segs, ink.value));
+    }
+  }
+  const out: readonly Node[] = nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [];
+  return { nodes: out, lines: [], boxes: [], handle: some({ kind: 'line', stroke: { kind: 'none' }, markers: { kind: 'none' } }) };
+}
+
+/** axvspan / axhspan: spans in data × axes-fraction coordinates. */
+export function drawSpan(a: SpanArtist, f: Frame, k: number, clip: Clip): Drawn {
+  const stroke: Option<Stroke> = a.edge.kind === 'on' && a.edge.widthPt > 0 ? some({ color: a.edge.color, width: a.edge.widthPt * k, cap: 'butt', join: 'miter', dash: { kind: 'solid' } }) : none;
+  const ink = inkOf(a.face, stroke);
+  if (ink.kind === 'none') return { nodes: [], lines: [], boxes: [], handle: some({ kind: 'patch', face: a.face, edge: a.edge }) };
+  const off = stroke.kind === 'some' ? snapOffset(stroke.value.width) : 0;
+  if (a.orientation === 'vertical') {
+    const x0 = tx(f, a.a0), x1 = tx(f, a.a1);
+    const y0 = f.H - (a.f0 * f.box.h + (f.H - f.box.yBot)), y1 = f.H - (a.f1 * f.box.h + (f.H - f.box.yBot));
+    const X0 = Math.floor(Math.min(x0, x1) + 0.5) + off, X1 = Math.floor(Math.max(x0, x1) + 0.5) + off;
+    const Y0 = Math.floor(Math.min(y0, y1) + 0.5) + off, Y1 = Math.floor(Math.max(y0, y1) + 0.5) + off;
+    const rect = rectNode(X0, Y0, X1 - X0, Y1 - Y0, ink.value);
+    return { nodes: [{ kind: 'group', clip, nodes: [rect], tag: '' }], lines: [], boxes: [], handle: some({ kind: 'patch', face: a.face, edge: a.edge }) };
+  } else {
+    const y0 = ty(f, a.a0), y1 = ty(f, a.a1);
+    const x0 = a.f0 * f.box.w + f.box.x0, x1 = a.f1 * f.box.w + f.box.x0;
+    const X0 = Math.floor(Math.min(x0, x1) + 0.5) + off, X1 = Math.floor(Math.max(x0, x1) + 0.5) + off;
+    const Y0 = Math.floor(Math.min(y0, y1) + 0.5) + off, Y1 = Math.floor(Math.max(y0, y1) + 0.5) + off;
+    const rect = rectNode(X0, Y0, X1 - X0, Y1 - Y0, ink.value);
+    return { nodes: [{ kind: 'group', clip, nodes: [rect], tag: '' }], lines: [], boxes: [], handle: some({ kind: 'patch', face: a.face, edge: a.edge }) };
+  }
 }

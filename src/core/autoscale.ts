@@ -46,6 +46,12 @@ export function dataExtents(artists: readonly Artist[]): { readonly x: Extent; r
         }
         break;
       case 'fill': scan(a.x, X); scan(a.y1, Y); scan(a.y2, Y); break;
+      case 'scatter': scan(a.x, X); scan(a.y, Y); break;
+      case 'annotation': break;
+      case 'span':
+        if (a.orientation === 'vertical') { scan(new Float64Array([a.a0, a.a1]), X); }
+        else { scan(new Float64Array([a.a0, a.a1]), Y); }
+        break;
       case 'text': break;                            // text does not update data limits
       default: assertNever(a);
     }

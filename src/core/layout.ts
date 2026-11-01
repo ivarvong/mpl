@@ -5,7 +5,7 @@ import { dataExtents, unionExtent, viewLimits } from './autoscale.ts';
 import type { AxisDrawn, Sides } from './draw-axis.ts';
 import { drawAxis, labelNodes } from './draw-axis.ts';
 import type { Drawn } from './draw-artists.ts';
-import { drawBar, drawFill, drawLine, drawText } from './draw-artists.ts';
+import { drawBar, drawFill, drawLine, drawText, drawScatter, drawSpan, drawAnnotation } from './draw-artists.ts';
 import type { Frame } from './frame.ts';
 import { axesBox, frame } from './frame.ts';
 import { layoutLegend } from './legend.ts';
@@ -18,7 +18,7 @@ import { placeText, pxPerPt } from './text.ts';
 import { resolveFace } from './fonts.ts';
 import type { TickSet } from './ticks.ts';
 import { computeTicks, scaleOf, tickSpace } from './ticks.ts';
-import type { Artist, AxesMeta, AxesRole, AxesSpec, AxisBelow, AxisMeta, Clip, FigureSpec, GridSpec, LegendEntry, Node, Placement, Rgb, Scene, Seg, Theme, TickTheme } from './types.ts';
+import type { Artist, AxesMeta, AxesRole, AxesSpec, AxisBelow, AxisMeta, Clip, FigureSpec, GridSpec, LegendEntry, Node, Placement, Rgb, Scene, Stroke, Theme, TickTheme } from './types.ts';
 import { assertNever, none, some } from './types.ts';
 import type { Tracer } from '../trace.ts';
 
@@ -62,7 +62,10 @@ function roleImplies(role: AxesRole, hasTwin: boolean, theme: Theme): Roles {
 const tagged = (d: Drawn, i: number, kind: string): Drawn =>
   ({ ...d, nodes: d.nodes.map((n): Node => (n.kind === 'group' ? { ...n, tag: `artist/${i}/${kind}` } : n)) });
 function drawArtists(ax: AxesSpec, f: Frame, theme: Theme, k: number, clip: Clip, tracer: Tracer): readonly Drawn[] {
-  return ax.artists.map((a, i) => tagged(drawArtist(a, f, theme, k, clip, tracer), i, a.kind));
+  return ax.artists.map((a, i) => {
+    const c: Clip = a.clip === false ? { kind: 'none' } : clip;
+    return tagged(drawArtist(a, f, theme, k, c, tracer), i, a.kind);
+  });
 }
 function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tracer: Tracer): Drawn {
   {
@@ -71,6 +74,9 @@ function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tr
       case 'bar': return tracer.span('artist.bar', { rects: a.x.length }, (sp) => drawBar(a, f, k, clip, sp));
       case 'fill': return tracer.span('artist.fill', { points: a.x.length }, () => drawFill(a, f, k, clip));
       case 'text': return tracer.span('artist.text', { text: a.text, coords: a.coords }, () => drawText(a, f, k * 72, resolveFace(theme.font.families, a.weight)));
+      case 'scatter': return tracer.span('artist.scatter', { points: a.x.length }, () => drawScatter(a, f, theme, k, clip));
+      case 'annotation': return tracer.span('artist.annotation', { }, () => drawAnnotation(a, f, theme.figure.dpi, theme, k, clip));
+      case 'span': return tracer.span('artist.span', { orientation: a.orientation }, () => drawSpan(a, f, k, clip));
       default: return assertNever(a);
     }
   }
@@ -80,31 +86,64 @@ function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tr
 function legendEntries(ax: AxesSpec, drawn: readonly Drawn[]): readonly LegendEntry[] {
   const children: LegendEntry[] = [], containers: LegendEntry[] = [];
   ax.artists.forEach((a, i) => {
-    if (a.kind === 'text' || a.label.kind === 'none') return;
+    if (a.kind === 'text' || a.kind === 'annotation') return;
+    if (a.label.kind === 'none') return;
     const h = drawn[i].handle;
     if (h.kind === 'none') return;
     const e: LegendEntry = { label: a.label.text, handle: h.value };
     switch (a.kind) {
-      case 'line': case 'fill': children.push(e); break;     // collections are Axes children too
-      case 'bar': containers.push(e); break;
+      case 'line': case 'fill': case 'scatter': children.push(e); break;     // collections are Axes children too
+      case 'bar': case 'span': containers.push(e); break;
       default: assertNever(a);
     }
   });
   return [...children, ...containers];
 }
 
-function spines(theme: Theme, f: Frame, k: number): readonly Node[] {
-  const w = theme.axes.linewidthPt * k, b = f.box, s = theme.axes.spines;
-  const x0 = snap(b.x0, w), x1 = snap(b.x1, w), yB = snap(b.yBot, w), yT = snap(b.yTop, w);
-  // One Patch per spine, in Spines' order (left, right, bottom, top); Spine sets capstyle 'projecting'.
-  const lines: (readonly Seg[])[] = [
-    ...(s.left ? [[['M', x0, yB], ['L', x0, yT]] as const] : []),
-    ...(s.right ? [[['M', x1, yB], ['L', x1, yT]] as const] : []),
-    ...(s.bottom ? [[['M', x0, yB], ['L', x1, yB]] as const] : []),
-    ...(s.top ? [[['M', x0, yT], ['L', x1, yT]] as const] : []),
-  ];
-  if (w <= 0) return [];
-  return lines.map((segs) => pathNode(segs, { kind: 'stroke', stroke: { color: theme.axes.edge, width: w, cap: 'square', join: 'miter', dash: { kind: 'solid' } } }));
+function spinesForAxes(ax: AxesSpec, theme: Theme, f: Frame, k: number): readonly Node[] {
+  const baseW = theme.axes.linewidthPt * k, b = f.box;
+  const sides: Array<{ side: 'left' | 'right' | 'top' | 'bottom'; x0: number; y0: number; x1: number; y1: number }> = [];
+  const ov = ax.spines;
+  const has = theme.axes.spines;
+  const sideOn = (side: 'left' | 'right' | 'top' | 'bottom'): boolean => (has[side] && ov[side].visible);
+  const outwardPx = (side: 'left' | 'right' | 'top' | 'bottom'): number => {
+    const p = ov[side].position;
+    return p.kind === 'some' && p.value.kind === 'outward' ? p.value.pts * k : 0;
+  };
+  const wOf = (side: 'left' | 'right' | 'top' | 'bottom'): number => {
+    const wPt = ov[side].widthPt.kind === 'some' ? ov[side].widthPt.value : theme.axes.linewidthPt;
+    return wPt * k;
+  };
+  const colorOf = (side: 'left' | 'right' | 'top' | 'bottom'): Rgb => (ov[side].color.kind === 'some' ? ov[side].color.value : theme.axes.edge);
+  // Compute snapped positions per side, with optional outward offsets
+  if (sideOn('left')) {
+    const w = wOf('left'); const off = outwardPx('left');
+    const x = snap(b.x0 - off, w), y0 = snap(b.yBot, w), y1 = snap(b.yTop, w);
+    sides.push({ side: 'left', x0: x, y0, x1: x, y1 });
+  }
+  if (sideOn('right')) {
+    const w = wOf('right'); const off = outwardPx('right');
+    const x = snap(b.x1 + off, w), y0 = snap(b.yBot, w), y1 = snap(b.yTop, w);
+    sides.push({ side: 'right', x0: x, y0, x1: x, y1 });
+  }
+  if (sideOn('bottom')) {
+    const w = wOf('bottom'); const off = outwardPx('bottom');
+    const y = snap(b.yBot + off, w), x0 = snap(b.x0, w), x1 = snap(b.x1, w);
+    sides.push({ side: 'bottom', x0, y0: y, x1, y1: y });
+  }
+  if (sideOn('top')) {
+    const w = wOf('top'); const off = outwardPx('top');
+    const y = snap(b.yTop - off, w), x0 = snap(b.x0, w), x1 = snap(b.x1, w);
+    sides.push({ side: 'top', x0, y0: y, x1, y1: y });
+  }
+  const nodes: Node[] = [];
+  for (const s of sides) {
+    const w = Math.max(baseW, wOf(s.side));   // at least theme width; overrides can widen
+    if (w <= 0) continue;
+    const stroke: Stroke = { color: colorOf(s.side), width: w, cap: 'square', join: 'miter', dash: { kind: 'solid' } };
+    nodes.push(pathNode([[ 'M', s.x0, s.y0 ], [ 'L', s.x1, s.y1 ]], { kind: 'stroke', stroke }));
+  }
+  return nodes;
 }
 
 type AxisOut = { readonly near: readonly TextBox[]; readonly far: readonly TextBox[] };
@@ -184,15 +223,28 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
   const background: readonly Node[] = face.kind === 'some' ? [rectNode(bx0, by0, bx1 - bx0, by1 - by0, face.value)] : [];
   const drawn = tracer.span('artists', { count: ax.artists.length }, () => drawArtists(ax, f, theme, k, clip, tracer));
   // z-order 1: patches and collections, in the order added; 2: lines; 3: texts (before the titles)
-  const zOf = (i: number): number => { const kd = ax.artists[i].kind; return kd === 'bar' || kd === 'fill' ? 1 : kd === 'line' ? 2 : 3; };
+  const zOf = (i: number): number => {
+    const kd = ax.artists[i].kind;
+    return kd === 'bar' || kd === 'fill' || kd === 'span' ? 1 : kd === 'line' || kd === 'scatter' ? 2 : 3;
+  };
   const patches = drawn.flatMap((d, i) => (zOf(i) === 1 ? d.nodes : []));
   const lines = drawn.flatMap((d, i) => (zOf(i) === 2 ? d.nodes : []));
   const userTexts = drawn.flatMap((d, i) => (zOf(i) === 3 ? d.nodes : []));
-  const xa = shown(roles.x, (sides) => tracer.span('axis.x', { ticks: xt.visible.length }, () => drawAxis('x', xt, theme.xtick, sides, gridOn(ax.grid, 'x'), f, theme, dpi, tracer)));
-  const ya = shown(roles.y, (sides) => tracer.span('axis.y', { ticks: yt.visible.length, side: roles.yOnRight ? 'right' : 'left' },
-    () => drawAxis('y', yt, theme.ytick, sides, gridOn(ax.grid, 'y'), f, theme, dpi, tracer)));
+  // Spine outward offsets move the axis baseline (ticks and labels follow)
+  const offPx = (side: 'left' | 'right' | 'top' | 'bottom'): number => {
+    const p = ax.spines[side].position;
+    return p.kind === 'some' && p.value.kind === 'outward' ? p.value.pts * k : 0;
+  };
+  const baseX = { xLeft: box.x0 - offPx('left'), xRight: box.x1 + offPx('right') };
+  const baseY = { yBottom: box.yBot + offPx('bottom'), yTop: box.yTop - offPx('top') };
+  const bases = { ...baseX, ...baseY };
+  const xa = shown(roles.x, (sides) => tracer.span('axis.x', { ticks: xt.visible.length }, () =>
+    drawAxis('x', xt, ax.tick.x, sides, gridOn(ax.grid, 'x'), f, theme, dpi, tracer, bases)));
+  const ya = shown(roles.y, (sides) => tracer.span('axis.y', { ticks: yt.visible.length, side: roles.yOnRight ? 'right' : 'left' }, () =>
+    drawAxis('y', yt, ax.tick.y, sides, gridOn(ax.grid, 'y'), f, theme, dpi, tracer, bases)));
+  const decTheme: Theme = { ...theme, xtick: ax.tick.x, ytick: ax.tick.y };
   const texts = tracer.span('decorations', { role: ax.role.kind }, () =>
-    decorations(ax, roles, theme, f, k, dpi, xt, yt, { near: xa.nearBoxes, far: xa.farBoxes }, { near: ya.nearBoxes, far: ya.farBoxes }));
+    decorations(ax, roles, decTheme, f, k, dpi, xt, yt, { near: xa.nearBoxes, far: xa.farBoxes }, { near: ya.nearBoxes, far: ya.farBoxes }));
 
   const entries = legendEntries(ax, drawn);
   const axesUp: Box = { x0: box.x0, x1: box.x1, y0: H - box.yBot, y1: H - box.yTop };
@@ -209,7 +261,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
   // stable and ties keep matplotlib's get_children order (children, spines, then the axes), which
   // matters for axisbelow=False: the axis (2.5) then draws over the spines (2.5).
   const layers: ReadonlyArray<readonly [number, readonly Node[]]> = [
-    [1, patches], [2, lines], [2.5, spines(theme, f, k)],
+    [1, patches], [2, lines], [2.5, spinesForAxes(ax, theme, f, k)],
     [axisZ(theme.axes.axisBelow), [...clipped(xa.grid), ...xa.marks, ...clipped(ya.grid), ...ya.marks]],
     [3, [...userTexts, ...texts]], [5, legend.kind === 'some' ? legend.value.out.nodes : []],
   ];
@@ -250,8 +302,29 @@ export function layoutFigure(fig: FigureSpec, tracer: Tracer): { readonly scene:
   };
   const parts = fig.axes.map((ax, i) => tracer.span('axes.layout', { artists: ax.artists.length, role: ax.role.kind }, () =>
     layoutAxes({ ax, x: sharedX(i), yExtent: ext[i].y, hasTwin: ax.role.kind === 'primary' && xGroup(fig.axes, i).length > 1 }, fig, tracer)));
+  const W = fig.widthIn * fig.dpi, H = fig.heightIn * fig.dpi, k = pxPerPt(fig.dpi);
+  const figTexts: Node[] = [];
+  // generic fig.text
+  for (const t of fig.figText) {
+    const x = t.x * W, y = H - t.y * H;
+    figTexts.push(...labelNodes(placeText(t.text, t.sizePt, fig.dpi, resolveFace(fig.theme.font.families, t.weight), x, y, { kind: 'horizontal', ha: t.ha, va: t.va }), k, t.color));
+  }
+  // suptitle and supx/supylabel
+  if (fig.suptitle.kind === 'some') {
+    const s = fig.suptitle.value, x = s.x * W, y = H - s.y * H;
+    figTexts.push(...labelNodes(placeText(s.text, s.sizePt, fig.dpi, resolveFace(fig.theme.font.families, s.weight), x, y, { kind: 'horizontal', ha: s.ha, va: s.va }), k, s.color));
+  }
+  if (fig.supx.kind === 'some') {
+    const s = fig.supx.value, x = s.x * W, y = H - s.y * H;
+    figTexts.push(...labelNodes(placeText(s.text, s.sizePt, fig.dpi, resolveFace(fig.theme.font.families, s.weight), x, y, { kind: 'horizontal', ha: s.ha, va: s.va }), k, s.color));
+  }
+  if (fig.supy.kind === 'some') {
+    const s = fig.supy.value, x = s.x * W, y = H - s.y * H;
+    const b = placeText(s.text, s.sizePt, fig.dpi, resolveFace(fig.theme.font.families, s.weight), x, y, { kind: 'vertical', ha: s.ha, va: s.va });
+    figTexts.push(...labelNodes(b, k, s.color));
+  }
   return {
-    scene: { width: fig.widthIn * fig.dpi, height: fig.heightIn * fig.dpi, dpi: fig.dpi, background: fig.theme.figure.background, nodes: parts.flatMap((p) => p.nodes) },
+    scene: { width: W, height: H, dpi: fig.dpi, background: fig.theme.figure.background, nodes: [...parts.flatMap((p) => p.nodes), ...figTexts] },
     meta: parts.map((p) => p.meta),
   };
 }
