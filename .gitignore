@@ -7,3 +7,4 @@ tools/live/lib/
 *.tmp.mjs
 .DS_Store
 out/
+fixtures/__pycache__/

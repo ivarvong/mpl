@@ -4,6 +4,7 @@ Writes only the new cases into fixtures/ref and appends them to _index.json.
 Requires matplotlib==3.11.2 and numpy installed in the Python environment.
 """
 import contextlib, json, math, os
+from fixture_guard import check_no_literal_newlines
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -178,6 +179,7 @@ def run_case(name, calls):
         plt.close(fig)
 
 def main():
+    check_no_literal_newlines(CASES)
     with open(INDEX, "r") as f:
         names = json.load(f)
     new_names = []
