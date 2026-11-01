@@ -12,7 +12,7 @@
 // quad is the advance of 'm'. The box is ceil(width) × (ceil(height) + ceil(depth)).
 import type { Face } from './fonts.ts';
 import { ftScale, glyphOf, inkExtent, mathMetrics, minMetrics, penPositions, shapeGlyphs } from './fonts.ts';
-import type { Glyph, Placement, Rotation, TickLabel } from './types.ts';
+import type { Glyph, HAlign, Placement, Rotation, TickLabel } from './types.ts';
 import { assertNever } from './types.ts';
 export const pxPerPt = (dpi: number): number => dpi / 72;
 
@@ -33,34 +33,30 @@ function measurePlain(text: string, sizePt: number, dpi: number, face: Face): La
            runs: [{ text, dx: 0, dy: 0, sizePt, face: face.id, glyphs }] };
 }
 
-/** Multi-line: lay out each line and stack vertically with a 1.2× line spacing, aligning by ha and respecting va. */
-function measureMultiline(text: string, sizePt: number, dpi: number, face: Face, lineSpacing = 1.2): LabelLayout {
+/** Multi-line text as Text._get_layout lays it out (linespacing 'normal', the 3.11 default): each line
+ *  keeps its ink ascent and descent floored at the face's typo metrics, plus half the typo line gap
+ *  above and below; lines stack with no further leading. Lines align within the block by the
+ *  multialignment, which defaults to the horizontal alignment. The block's anchor baseline is the
+ *  last line's (va='baseline' puts the last baseline on y). */
+function measureMultiline(text: string, sizePt: number, dpi: number, face: Face, malign: HAlign): LabelLayout {
   const lines = text.split('\n');
-  if (lines.length === 1) return measurePlain(text, sizePt, dpi, face);
-  const m = lines.map((t) => measurePlain(t, sizePt, dpi, face));
+  const scale = 1 / face.upm * sizePt * dpi / 72;
+  const gap = face.data.typo[2] * scale;
+  const m = lines.map((t) => measurePlain(t, sizePt, dpi, face));          // ascent/descent already floored
+  const a = m.map((mm) => mm.ascent + gap / 2), d = m.map((mm) => mm.descent + gap / 2);
   const width = Math.max(...m.map((mm) => mm.width));
-  // Line box heights are ascent+descent; stack them with spacing (applied to full height, as in matplotlib).
-  const heights = m.map((mm) => mm.ascent + mm.descent);
-  const H = heights.reduce((s, h, i) => s + (i === 0 ? h : h * lineSpacing), 0);
-  // Baselines: first line baseline at y = m[0].ascent; each next line baseline increments by previous height*lineSpacing
   const baselines: number[] = [];
-  let y = m.length > 0 ? m[0].ascent : 0;
-  for (let i = 0; i < m.length; i++) { baselines.push(y); y += (heights[i]) * lineSpacing; }
-  const runs: Run[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const mm = m[i];
-    // Align each line's penX at 0; alignment is handled in placeLayout
-    for (const r of mm.runs) runs.push({ ...r, dy: r.dy + (baselines[i] - mm.ascent) });
-  }
-  // The ascent/descent for the block: top is first line baseline, bottom is total - that baseline
-  const ascent = baselines.length > 0 ? baselines[0] : 0;
-  const descent = Math.max(0, H - ascent);
-  return { width, ascent, descent, runs };
+  let y = 0;
+  for (let i = 0; i < m.length; i++) { y += a[i]; baselines.push(y); y += d[i]; }
+  const H = y, last = baselines[baselines.length - 1];
+  const shift = (w: number): number => (malign === 'left' ? 0 : malign === 'right' ? width - w : width / 2 - w / 2);
+  const runs: Run[] = m.flatMap((mm, i) => mm.runs.map((r) => ({ ...r, dx: r.dx + shift(mm.width), dy: r.dy + baselines[i] - last })));
+  return { width, ascent: last, descent: H - last, runs };
 }
 
-/** Plain or multi-line text, with matplotlib-like 1.2× line spacing. */
-export function measure(text: string, sizePt: number, dpi: number, face: Face): LabelLayout {
-  return text.includes('\n') ? measureMultiline(text, sizePt, dpi, face, 1.2) : measurePlain(text, sizePt, dpi, face);
+/** Plain or multi-line text; `malign` aligns the lines of a multi-line block. */
+export function measure(text: string, sizePt: number, dpi: number, face: Face, malign: HAlign = 'left'): LabelLayout {
+  return text.includes('\n') ? measureMultiline(text, sizePt, dpi, face, malign) : measurePlain(text, sizePt, dpi, face);
 }
 
 /**
@@ -167,8 +163,16 @@ export function placeLayout(m: LabelLayout, x: number, y: number, p: Placement):
   }
 }
 
+/** Text._get_multialignment: the horizontal alignment (rotated axis labels are centred). */
+const malignOf = (p: Placement): HAlign => {
+  switch (p.kind) {
+    case 'horizontal': case 'vertical': return p.ha;
+    case 'ylabel': case 'ylabelRight': return 'center';
+    default: return assertNever(p);
+  }
+};
 export const placeText = (text: string, sizePt: number, dpi: number, face: Face, x: number, y: number, p: Placement): TextBox =>
-  placeLayout(measure(text, sizePt, dpi, face), x, y, p);
+  placeLayout(measure(text, sizePt, dpi, face, malignOf(p)), x, y, p);
 
 function verticalTop(va: 'top' | 'bottom' | 'center' | 'baseline' | 'center_baseline', y: number, H: number, ascent: number): number {
   switch (va) {
