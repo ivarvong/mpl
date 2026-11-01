@@ -31,6 +31,12 @@
     },
     "./package.json": "./package.json"
   },
+  "files": [
+    "dist/browser",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
   "engines": {
     "node": ">=24"
   },
@@ -39,12 +45,13 @@
     "example": "node examples/quickstart.ts",
     "examples": "for f in examples/[a-z]*.ts; do node $f || exit 1; done",
     "test": "npm run check && npm run test:oracle",
-    "test:oracle": "node test/compare.ts && node test/fonts.test.ts && node test/png.test.ts && node test/glyphcache.test.ts && node test/view.test.ts && node test/fuzz-ticker.ts && node test/fuzz-dates.ts && node test/trace.test.ts && node test/rc-svg.test.ts && node test/layout-cache.test.ts && node test/examples.test.ts",
+    "test:oracle": "node test/compare.ts && node test/fonts.test.ts && node test/png.test.ts && node test/glyphcache.test.ts && node test/view.test.ts && node test/fuzz-ticker.ts && node test/fuzz-dates.ts && node test/trace.test.ts && node test/rc-svg.test.ts && node test/layout-cache.test.ts && node test/issue7.test.ts && node test/api-docs.test.ts && node test/examples.test.ts",
     "check": "npm run typecheck && npm run strict && npm run lint",
     "typecheck": "tsc -p .",
     "strict": "node scripts/check_strict.ts",
     "lint": "oxlint src test tools scripts bench examples --ignore-pattern tools/live/lib/**",
     "build": "node scripts/build_package.ts",
+    "prepare": "node scripts/build_package.ts",
     "live:build": "node scripts/build_browser.ts tools/live/lib",
     "fixtures": "python3 fixtures/generate.py",
     "fuzz": "python3 fixtures/fuzz_ticker.py && python3 fixtures/fuzz_dates.py && node test/fuzz-ticker.ts && node test/fuzz-dates.ts",
