@@ -10,8 +10,8 @@ import { inkOf, pathNode, rectNode, snap, snapOffset } from './scene.ts';
 import { MARKERS } from './data/markers.ts';
 import { yaArrowPath } from './arrow.ts';
 import { lookup } from './std.ts';
-import { forwardAll } from './scale.ts';
-import type { BarArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, Paint } from './types.ts';
+import { forward, forwardAll } from './scale.ts';
+import type { BarArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, AnnotationCoords, Paint } from './types.ts';
 import { labelNodes } from './draw-axis.ts';
 import { placeText, pxPerPt, strokePx } from './text.ts';
 import type { Face } from './fonts.ts';
@@ -152,11 +152,26 @@ export function drawText(a: TextArtist, f: Frame, dpi: number, face: Face): Draw
 }
 
 /** ax.annotate: Annotation.draw draws its FancyArrowPatch (ArrowStyle.Simple via the YAArrow emulation), then the text. */
-export function drawAnnotation(a: AnnotationArtist, f: Frame, dpi: number, theme: Theme, k: number, clip: Clip): Drawn {
-  const toPx = (cx: 'data' | 'axes', x: number, y: number): readonly [number, number] =>
-    (cx === 'data' ? [tx(f, x), ty(f, y)] as const : [f.box.x0 + x * f.box.w, f.H - (f.box.yBot + y * f.box.h)] as const);
-  const [x0, y0] = toPx(a.xycoords, a.x, a.y);
-  const [x1, y1] = toPx(a.textcoords, a.tx, a.ty);
+export function drawAnnotation(a: AnnotationArtist, f: Frame, W: number, dpi: number, theme: Theme, k: number, clip: Clip): Drawn {
+  // _get_xy_transform, in display (y-up) px: 'data' is transData; "<ref> <unit>" is
+  // Affine2D().scale(unit).translate(*ref.p0), with 'offset' anchored at the annotated point.
+  const up0 = (c: AnnotationCoords, x: number, y: number, offsetFrom: readonly [number, number]): readonly [number, number] => {
+    if (c.kind === 'data') return [forward(f.xscale, x) * f.ax + f.cx, forward(f.yscale, y) * f.ay + f.cy];
+    const p0: readonly [number, number] = c.ref === 'figure' ? [0, 0] : c.ref === 'axes' ? [f.box.x0, f.box.b] : offsetFrom;
+    const size: readonly [number, number] = c.ref === 'figure' ? [W, f.H] : [f.box.w, f.box.h];
+    const s: readonly [number, number] = c.unit === 'points' ? [dpi / 72, dpi / 72]
+      : c.unit === 'pixels' ? [1, 1]
+      : c.unit === 'fontsize' ? [a.sizePt * dpi / 72, a.sizePt * dpi / 72]
+      : size;
+    return [x * s[0] + p0[0], y * s[1] + p0[1]];
+  };
+  const xyUp = up0(a.xycoords, a.x, a.y, [0, 0]);
+  const textUp = up0(a.textcoords, a.tx, a.ty, xyUp);
+  // Annotation._check_xy (annotation_clip None): a 'data' annotation draws only while xy is inside the axes
+  if (a.xycoords.kind === 'data' && !(xyUp[0] >= f.box.x0 && xyUp[0] <= f.box.x1 && xyUp[1] >= f.box.b && xyUp[1] <= f.box.t)) {
+    return { nodes: [], lines: [], boxes: [], handle: none };
+  }
+  const x1 = textUp[0], y1 = f.H - textUp[1];
   const face = resolveFace(theme.font.families, a.weight);
   const box = placeText(a.text, a.sizePt, dpi, face, x1, y1, { kind: 'horizontal', ha: a.ha, va: a.va });
   const textNodes = a.text === '' ? [] : labelNodes(box, k, a.color);
@@ -165,8 +180,8 @@ export function drawAnnotation(a: AnnotationArtist, f: Frame, dpi: number, theme
   const arrowNodes = ((): readonly Node[] => {
     if (a.arrow.kind === 'none') return [];
     const ar = a.arrow.value;
-    const bbox = a.text === '' ? { x0: x1, y0: up(y1), x1, y1: up(y1) } : { x0: box.x0, y0: up(box.y1), x1: box.x1, y1: up(box.y0) };
-    const path = yaArrowPath(bbox, [x0, up(y0)], a.text !== '',
+    const bbox = a.text === '' ? { x0: x1, y0: textUp[1], x1, y1: textUp[1] } : { x0: box.x0, y0: up(box.y1), x1: box.x1, y1: up(box.y0) };
+    const path = yaArrowPath(bbox, xyUp, a.text !== '',
       { widthPt: ar.widthPt, headWidthPt: ar.headWidthPt, headLengthPt: ar.headLengthPt, shrink: ar.shrink, mutationPt: a.sizePt }, k);
     const segs = path.map((sg): Seg => {
       switch (sg.kind) {

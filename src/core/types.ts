@@ -137,7 +137,14 @@ export type ScatterArtist = {
   readonly sizePt2: Float64Array; readonly shape: MarkerName;
   readonly faces: readonly Paint[]; readonly edges: readonly Paint[]; readonly edgeWidthPt: number; readonly label: Label; readonly clip: boolean;
 };
-export type AnnotationCoords = 'data' | 'axes';
+/**
+ * An annotation coordinate system (_AnnotationBase._get_xy_transform): 'data', or "<ref> <unit>"
+ * where ref is figure | axes | offset (offset: from the annotated point; textcoords only) and
+ * unit is points | pixels | fontsize | fraction (fraction: figure and axes only).
+ */
+export type AnnotationRef = 'figure' | 'axes' | 'offset';
+export type AnnotationUnit = 'points' | 'pixels' | 'fontsize' | 'fraction';
+export type AnnotationCoords = { readonly kind: 'data' } | { readonly kind: 'relative'; readonly ref: AnnotationRef; readonly unit: AnnotationUnit };
 export type AnnotationArtist = {
   readonly kind: 'annotation';
   readonly x: number; readonly y: number; readonly xycoords: AnnotationCoords;
@@ -216,6 +223,10 @@ export type AxesSpec = {
   };
   readonly tick: { readonly x: TickTheme; readonly y: TickTheme };
   readonly tickLabels: { readonly x: TickLabelStyles; readonly y: TickLabelStyles };
+  /** index of the first Axes sharing this x (y) axis: one group gets one set of limits and ticks */
+  readonly xShare: number; readonly yShare: number;
+  /** label_outer: this Axes draws no tick labels (major or minor) and no offset text on that axis */
+  readonly hiddenLabels: { readonly x: boolean; readonly y: boolean };
 };
 export type FigureSpec = {
   readonly widthIn: number; readonly heightIn: number; readonly dpi: number; readonly theme: Theme; readonly axes: readonly AxesSpec[];
@@ -239,6 +250,8 @@ export type Simplify = { readonly kind: 'off' } | { readonly kind: 'on'; readonl
 
 export type Theme = {
   readonly figure: { readonly widthIn: number; readonly heightIn: number; readonly dpi: number; readonly background: Paint; readonly subplot: Position;
+    /** figure.subplot.wspace / hspace */
+    readonly spacing: { readonly wspace: number; readonly hspace: number };
     readonly titleSizePt: number; readonly titleWeight: number; readonly labelSizePt: number; readonly labelWeight: number };
   /** font.family resolved to faces by weight: body text, axes titles, axes labels */
   readonly font: { readonly families: readonly string[]; readonly sizePt: number; readonly weight: number; readonly titleWeight: number; readonly labelWeight: number };

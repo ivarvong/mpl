@@ -30,25 +30,32 @@ const axisZ = (b: AxisBelow): number => {
     default: return assertNever(b);
   }
 };
-const axisMeta = (lim: readonly [number, number], t: TickSet): AxisMeta =>
-  ({ lim, ticks: t.locs, labels: t.labels.map(tickLabelText), offset: t.offset, minor: t.minor, minorLabels: t.minorLabels.map(tickLabelText) });
+/** Axis.get_ticklabels lists only drawn labels: none once label_outer has hidden them. */
+const axisMeta = (lim: readonly [number, number], t: TickSet, hidden: boolean): AxisMeta =>
+  ({ lim, ticks: t.locs, labels: hidden ? [] : t.labels.map(tickLabelText), offset: t.offset, minor: t.minor, minorLabels: hidden ? [] : t.minorLabels.map(tickLabelText) });
 
 // ---------------------------------------------------------------- what a role implies
 type AxisVisibility = { readonly kind: 'hidden' } | { readonly kind: 'shown'; readonly sides: Sides };
 type Roles = { readonly x: AxisVisibility; readonly y: AxisVisibility; readonly patch: boolean; readonly yOnRight: boolean };
 const themeSides = (t: TickTheme): Sides => ({ near: t.near, far: t.far, labels: t.labelNear ? 'near' : 'none' });
 
+/** label_outer: ticks stay, their labels go. */
+const unlabel = (v: AxisVisibility, off: boolean): AxisVisibility => (off && v.kind === 'shown' ? { kind: 'shown', sides: { ...v.sides, labels: 'none' } } : v);
+
 /** twinx(): the twin hides its x axis and patch and ticks its y on the right; the host's y is ticked left only. */
-function roleImplies(role: AxesRole, hasTwin: boolean, theme: Theme): Roles {
-  switch (role.kind) {
-    case 'primary':
-      return { x: { kind: 'shown', sides: themeSides(theme.xtick) },
-               y: { kind: 'shown', sides: hasTwin ? { near: true, far: false, labels: 'near' } : themeSides(theme.ytick) },
-               patch: true, yOnRight: false };
-    case 'twinx':
-      return { x: { kind: 'hidden' }, y: { kind: 'shown', sides: { near: false, far: true, labels: 'far' } }, patch: false, yOnRight: true };
-    default: return assertNever(role);
-  }
+function roleImplies(role: AxesRole, hasTwin: boolean, theme: Theme, hidden: AxesSpec['hiddenLabels']): Roles {
+  const r = ((): Roles => {
+    switch (role.kind) {
+      case 'primary':
+        return { x: { kind: 'shown', sides: themeSides(theme.xtick) },
+                 y: { kind: 'shown', sides: hasTwin ? { near: true, far: false, labels: 'near' } : themeSides(theme.ytick) },
+                 patch: true, yOnRight: false };
+      case 'twinx':
+        return { x: { kind: 'hidden' }, y: { kind: 'shown', sides: { near: false, far: true, labels: 'far' } }, patch: false, yOnRight: true };
+      default: return assertNever(role);
+    }
+  })();
+  return { ...r, x: unlabel(r.x, hidden.x), y: unlabel(r.y, hidden.y) };
 }
 
 /** Each artist's top-level groups carry its provenance, so interactive renderers can find its marks. */
@@ -68,7 +75,7 @@ function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tr
       case 'fill': return tracer.span('artist.fill', { points: a.x.length }, () => drawFill(a, f, k, clip));
       case 'text': return tracer.span('artist.text', { text: a.text, coords: a.coords }, () => drawText(a, f, k * 72, resolveFace(theme.font.families, a.weight)));
       case 'scatter': return tracer.span('artist.scatter', { points: a.x.length }, () => drawScatter(a, f, theme, k, clip));
-      case 'annotation': return tracer.span('artist.annotation', { }, () => drawAnnotation(a, f, theme.figure.dpi, theme, k, clip));
+      case 'annotation': return tracer.span('artist.annotation', { }, () => drawAnnotation(a, f, f.W, k * 72, theme, k, clip));
       case 'span': return tracer.span('artist.span', { orientation: a.orientation }, () => drawSpan(a, f, k, clip));
       default: return assertNever(a);
     }
@@ -169,18 +176,18 @@ function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: numb
   if (roles.x.kind === 'shown') {
     let bottom = b.yBot + half;
     for (const lb of xb.near) bottom = Math.max(bottom, lb.y1);
-    xBoxes.push(...optBox(put(xt.offset, b.x1, bottom + pad, { kind: 'horizontal', ha: 'right', va: 'top' }, theme.xtick.labelSizePt, theme.xtick.color)));
+    if (!ax.hiddenLabels.x) xBoxes.push(...optBox(put(xt.offset, b.x1, bottom + pad, { kind: 'horizontal', ha: 'right', va: 'top' }, theme.xtick.labelSizePt, theme.xtick.color)));
     xBoxes.push(...optBox(put(ax.xlabel, (b.x0 + b.x1) / 2, bottom + lp, { kind: 'horizontal', ha: 'center', va: 'top' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseX));
   }
   if (roles.yOnRight) {
     let right = b.x1 + half;
     for (const lb of yb.far) right = Math.max(right, lb.x1);
-    yBoxes.push(...optBox(put(yt.offset, b.x1, b.yTop - pad, { kind: 'horizontal', ha: 'right', va: 'baseline' }, theme.ytick.labelSizePt, theme.ytick.color)));
+    if (!ax.hiddenLabels.y) yBoxes.push(...optBox(put(yt.offset, b.x1, b.yTop - pad, { kind: 'horizontal', ha: 'right', va: 'baseline' }, theme.ytick.labelSizePt, theme.ytick.color)));
     yBoxes.push(...optBox(put(ax.ylabel, right + lp, (b.yTop + b.yBot) / 2, { kind: 'ylabelRight' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseY));
   } else {
     let left = b.x0 - half;
     for (const lb of yb.near) left = Math.min(left, lb.x0);
-    yBoxes.push(...optBox(put(yt.offset, b.x0, b.yTop - pad, { kind: 'horizontal', ha: 'left', va: 'baseline' }, theme.ytick.labelSizePt, theme.ytick.color)));
+    if (!ax.hiddenLabels.y) yBoxes.push(...optBox(put(yt.offset, b.x0, b.yTop - pad, { kind: 'horizontal', ha: 'left', va: 'baseline' }, theme.ytick.labelSizePt, theme.ytick.color)));
     yBoxes.push(...optBox(put(ax.ylabel, left - lp, (b.yTop + b.yBot) / 2, { kind: 'ylabel' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseY));
   }
   const tx0 = ax.titleLoc === 'left' ? b.x0 : ax.titleLoc === 'right' ? b.x1 : (b.x0 + b.x1) / 2;
@@ -243,16 +250,24 @@ function shown(v: AxisVisibility, draw: (sides: Sides) => AxisDrawn): AxisDrawn 
 }
 
 /** The shared x axis of a twin group, planned once and applied to every member. */
-type SharedX = { readonly lim: readonly [number, number]; readonly ticks: TickSet; readonly minpos: number };
-type AxesIn = { readonly ax: AxesSpec; readonly x: SharedX; readonly yExtent: Extent; readonly hasTwin: boolean };
+type Shared = { readonly lim: readonly [number, number]; readonly ticks: TickSet; readonly minpos: number };
+type AxesIn = { readonly ax: AxesSpec; readonly x: Shared; readonly y: Shared; readonly hasTwin: boolean };
 
-function planX(ax: AxesSpec, extent: Extent, fig: FigureSpec, tracer: Tracer): SharedX {
+/**
+ * One axis of a share group (sharex/sharey, twinx): autoscale_view over the union of the siblings' data
+ * limits, and the shared locator, whose tick space is its own (the leader's) axis length.
+ */
+function planAxis(which: 'x' | 'y', leader: AxesSpec, extent: Extent, fig: FigureSpec, tracer: Tracer): Shared {
   const theme = fig.theme, dpi = fig.dpi;
-  const box = axesBox(ax.position, fig.widthIn * dpi, fig.heightIn * dpi);
-  const xs = scaleOf(ax.x);
-  const lim = tracer.span('limits.x', { mode: ax.x.limits.kind, scale: xs.kind }, () => viewLimits(ax.x, xs, extent, theme.axes.xmargin));
-  const ticks = tracer.span('ticks.x', { axis: ax.x.kind, scale: xs.kind, ticks: ax.x.ticks.kind, labels: ax.x.labels.kind },
-    (sp) => { const t = computeTicks(ax.x, lim, tickSpace('x', box.w, dpi, theme.xtick.labelSizePt), theme, extent.minpos); sp.setAttribute('major', t.locs.length).setAttribute('minor', t.minor.length).setAttribute('offset', t.offset); return t; });
+  const box = axesBox(leader.position, fig.widthIn * dpi, fig.heightIn * dpi);
+  const spec = which === 'x' ? leader.x : leader.y;
+  const sc = scaleOf(spec);
+  const lim = tracer.span(`limits.${which}`, { mode: spec.limits.kind, scale: sc.kind }, () => viewLimits(spec, sc, extent, which === 'x' ? theme.axes.xmargin : theme.axes.ymargin));
+  const ticks = tracer.span(`ticks.${which}`, { axis: spec.kind, scale: sc.kind, ticks: spec.ticks.kind, labels: spec.labels.kind },
+    (sp) => {
+      const t = computeTicks(spec, lim, tickSpace(which, which === 'x' ? box.w : box.h, dpi, which === 'x' ? theme.xtick.labelSizePt : theme.ytick.labelSizePt), theme, extent.minpos);
+      sp.setAttribute('major', t.locs.length).setAttribute('minor', t.minor.length).setAttribute('offset', t.offset); return t;
+    });
   return { lim, ticks, minpos: extent.minpos };
 }
 
@@ -261,15 +276,12 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
   const theme = fig.theme, dpi = fig.dpi, k = pxPerPt(dpi);
   const W = fig.widthIn * dpi, H = fig.heightIn * dpi;
   const box = axesBox(ax.position, W, H);
-  const roles = roleImplies(ax.role, inp.hasTwin, theme);
+  const roles = roleImplies(ax.role, inp.hasTwin, theme, ax.hiddenLabels);
   const xs = scaleOf(ax.x), ys = scaleOf(ax.y);
 
-  const xlim = inp.x.lim;
-  const ylim = tracer.span('limits.y', { mode: ax.y.limits.kind, scale: ys.kind }, () => viewLimits(ax.y, ys, inp.yExtent, theme.axes.ymargin));
-  const xt = inp.x.ticks;
-  const yt = tracer.span('ticks.y', { axis: ax.y.kind, scale: ys.kind, ticks: ax.y.ticks.kind, labels: ax.y.labels.kind },
-    (sp) => { const t = computeTicks(ax.y, ylim, tickSpace('y', box.h, dpi, theme.ytick.labelSizePt), theme, inp.yExtent.minpos); sp.setAttribute('major', t.locs.length).setAttribute('minor', t.minor.length).setAttribute('offset', t.offset); return t; });
-  const f = frame(box, H, xlim, ylim, xs, ys);
+  const xlim = inp.x.lim, ylim = inp.y.lim;
+  const xt = inp.x.ticks, yt = inp.y.ticks;
+  const f = frame(box, W, H, xlim, ylim, xs, ys);
   const clip: Clip = { kind: 'rect', x: box.x0, y: box.yTop, w: box.w, h: box.h };
 
   const face = roles.patch ? inkOf(theme.axes.face, none) : none;
@@ -324,7 +336,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
   return {
     nodes,
     meta: {
-      x: axisMeta(xlim, xt), y: axisMeta(ylim, yt),
+      x: axisMeta(xlim, xt, ax.hiddenLabels.x), y: axisMeta(ylim, yt, ax.hiddenLabels.y),
       frame: { box: { x0: box.x0, x1: box.x1, yTop: box.yTop, yBot: box.yBot }, xlim, ylim, xscale: xs, yscale: ys, H },
       tight: unionBox([
         { x0: box.x0, y0: box.yTop, x1: box.x1, y1: box.yBot },
@@ -342,8 +354,8 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
   };
 }
 
-/** The axes whose x is shared with axes i: its host group (host + all twins of that host). */
-function xGroup(axes: readonly AxesSpec[], i: number): readonly number[] {
+/** Axes i's twin group: its host and every twinx of that host. */
+function twinGroup(axes: readonly AxesSpec[], i: number): readonly number[] {
   const root = (j: number): number => { const r = axes[j].role; return r.kind === 'twinx' ? r.host : j; };
   const host = root(i);
   return axes.map((_, j) => j).filter((j) => root(j) === host);
@@ -367,18 +379,20 @@ export function layoutFigure(fig: FigureSpec, tracer: Tracer): { readonly scene:
   const ext = fig.axes.map((ax) => tracer.span('datalimits', { artists: ax.artists.length }, (sp) => {
     const e = dataExtents(ax.artists); sp.setAttribute('values', e.x.count + e.y.count); return e;
   }));
-  // plan: one shared x (limits + ticks) per twin group; apply: every member reuses it
-  const planned = new Map<number, SharedX>();
-  const sharedX = (i: number): SharedX => {
-    const group = xGroup(fig.axes, i), root = group[0];
-    const found = lookup(planned, root);
+  // plan: one set of limits and ticks per share group (sharex/sharey, twinx); apply: every member reuses it
+  const planned = new Map<string, Shared>();
+  const shared = (which: 'x' | 'y', i: number): Shared => {
+    const lead = which === 'x' ? fig.axes[i].xShare : fig.axes[i].yShare;
+    const key = `${which}${lead}`;
+    const found = lookup(planned, key);
     if (found.kind === 'some') return found.value;
-    const p = tracer.span('plan.x', { group: group.length }, () => planX(fig.axes[root], unionExtent(group.map((j) => ext[j].x)), fig, tracer));
-    planned.set(root, p);
+    const group = fig.axes.map((_, j) => j).filter((j) => (which === 'x' ? fig.axes[j].xShare : fig.axes[j].yShare) === lead);
+    const p = tracer.span(`plan.${which}`, { group: group.length }, () => planAxis(which, fig.axes[lead], unionExtent(group.map((j) => ext[j][which])), fig, tracer));
+    planned.set(key, p);
     return p;
   };
-  const parts = fig.axes.map((ax, i) => tracer.span('axes.layout', { artists: ax.artists.length, role: ax.role.kind }, () =>
-    layoutAxes({ ax, x: sharedX(i), yExtent: ext[i].y, hasTwin: ax.role.kind === 'primary' && xGroup(fig.axes, i).length > 1 }, fig, tracer)));
+  const parts = fig.axes.map((ax, i) => tracer.span('axes.layout', { artists: ax.artists.length, role: ax.role.kind, index: i }, () =>
+    layoutAxes({ ax, x: shared('x', i), y: shared('y', i), hasTwin: ax.role.kind === 'primary' && twinGroup(fig.axes, i).length > 1 }, fig, tracer)));
   const W = fig.widthIn * fig.dpi, H = fig.heightIn * fig.dpi, k = pxPerPt(fig.dpi);
   const figTexts: Node[] = [];
   // generic fig.text

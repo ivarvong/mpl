@@ -129,6 +129,70 @@ case("example_gantt_trace", ("$rc", [], {"axes.axisbelow": True}),
      ("spine", ["top", "set_visible", False]), ("spine", ["right", "set_visible", False]),
      ("fig.tight_layout", []))
 
+# Annotation coordinate systems, mixed (_AnnotationBase._get_xy_transform)
+ARW = {"color": "C3", "width": 1.5, "headwidth": 6, "headlength": 6}
+ANN = [
+    ("annotate", ["data to axes", [2.0, math.sin(2.0)]], {"xytext": [0.55, 0.88], "textcoords": "axes fraction", "arrowprops": ARW}),
+    ("annotate", ["axes to data", [0.05, 0.08]], {"xycoords": "axes fraction", "xytext": [3.5, -0.6], "textcoords": "data", "arrowprops": ARW}),
+    ("annotate", ["figure fraction", [0.5, 0.96]], {"xycoords": "figure fraction", "ha": "center", "va": "top"}),
+    ("annotate", ["offset points", [7.0, math.sin(7.0)]], {"xytext": [-40, -36], "textcoords": "offset points", "arrowprops": ARW}),
+    ("annotate", ["axes to figure", [0.95, 0.95]], {"xycoords": "axes fraction", "xytext": [0.72, 0.03], "textcoords": "figure fraction", "arrowprops": ARW}),
+    ("annotate", ["axes pixels", [12, 30]], {"xycoords": "axes pixels", "xytext": [6, 6], "textcoords": "offset pixels", "color": "C2"}),
+    ("annotate", ["fontsize", [9.0, math.sin(9.0)]], {"xytext": [-6, 1.5], "textcoords": "offset fontsize", "fontsize": 8, "arrowprops": ARW}),
+    ("annotate", ["figure points", [10, 10]], {"xycoords": "figure points", "color": "C1"}),
+    ("annotate", ["outside, hidden", [20.0, 0.0]], {"xytext": [0.5, 0.5], "textcoords": "axes fraction"}),
+]
+case("annotate_coords_mixed", ("plot", [x, sx]), *ANN)
+case("annotate_coords_dpi", ("$rc", [], {"figure.dpi": 72, "figure.figsize": [5.0, 3.5]}), ("plot", [x, sx]), *ANN)
+
+# Subplot grids: ("$subplots", [nrows, ncols], kwargs) first; ("sca", [i]) picks fig.axes[i]
+def panel(i, **kw):
+    """Distinct data per panel: a damped sine with its own phase and scale."""
+    t = np.linspace(0, 10, 60)
+    return [("sca", [i]), ("plot", [L(t), L(np.sin(t + i) * np.exp(-t / (6 + i)) * (1 + i))], kw)]
+def panels(n): return [c for i in range(n) for c in panel(i)]
+case("grid_1x1_squeeze", ("$subplots", [1, 1]), *panel(0), ("set_title", ["one"]))
+case("grid_1x3", ("$subplots", [1, 3]), *[c for i in range(3) for c in panel(i) + [("set_title", [f"panel {i}"])]])
+case("grid_3x1", ("$subplots", [3, 1]), *[c for i in range(3) for c in panel(i) + [("set_ylabel", [f"y{i}"])]],
+     ("set_xlabel", ["time"]))
+case("grid_2x2", ("$subplots", [2, 2]), *[c for i in range(4) for c in panel(i) + [("set_title", [f"title {i}"]), ("set_xlabel", ["x"]), ("set_ylabel", ["y"])]])
+case("grid_2x3_ratios", ("$subplots", [2, 3], {"gridspec_kw": {"width_ratios": [1, 2, 1], "height_ratios": [2, 1]}}), *panels(6))
+case("grid_sharex_col", ("$subplots", [2, 2], {"sharex": "col"}),
+     ("plot", [[0, 1, 2], [1, 3, 2]]), ("sca", [1]), ("plot", [[10, 20, 30], [0, 1, 0]]),
+     ("sca", [2]), ("plot", [[-1, 0.5], [5, 6]]), ("set_xlabel", ["left x"]), ("sca", [3]), ("plot", [[15, 50], [2, 1]]), ("set_xlabel", ["right x"]))
+case("grid_sharey_row", ("$subplots", [2, 2], {"sharey": "row"}),
+     ("plot", [[0, 1, 2], [1, 3, 2]]), ("set_ylabel", ["top y"]), ("sca", [1]), ("plot", [[0, 1], [10, -4]]),
+     ("sca", [2]), ("plot", [[0, 1], [100, 200]]), ("set_ylabel", ["bottom y"]), ("sca", [3]), ("plot", [[0, 1], [150, 260]]))
+case("grid_sharex_row_sharey_col", ("$subplots", [2, 2], {"sharex": "row", "sharey": "col"}), *panels(4))
+case("grid_share_all", ("$subplots", [2, 2], {"sharex": True, "sharey": True}),
+     ("plot", [[0, 1, 2], [100000.0, 100000.5, 100001.0]]), ("sca", [1]), ("plot", [[1, 3], [100000.2, 100000.4]]),
+     ("sca", [2]), ("plot", [[0.5, 2.5], [100000.1, 100000.9]]), ("set_xlabel", ["x"]), ("set_ylabel", ["y"]),
+     ("sca", [3]), ("set_xlim", [-0.5, 4.0]), ("plot", [[2, 3], [100000.3, 100000.6]]), ("set_xlabel", ["x"]))
+case("grid_subplots_adjust", ("$subplots", [2, 2]), *panels(4),
+     ("fig.subplots_adjust", [], {"left": 0.08, "right": 0.97, "bottom": 0.07, "top": 0.95, "wspace": 0.45, "hspace": 0.6}))
+case("grid_gridspec_kw_spacing", ("$subplots", [2, 3], {"gridspec_kw": {"wspace": 0.05, "hspace": 0.5}}), *panels(6),
+     ("fig.subplots_adjust", [], {"wspace": 0.8, "left": 0.05}))
+LONG = [("set_title", ["a fairly long panel title"]), ("set_xlabel", ["a long x axis label (units)"]), ("set_ylabel", ["long y label (units)"])]
+case("grid_tight_layout_2x2", ("$subplots", [2, 2]), *[c for i in range(4) for c in panel(i) + LONG], ("fig.tight_layout", []))
+case("grid_tight_layout_pads", ("$subplots", [2, 3]), *[c for i in range(6) for c in panel(i) + LONG[:2]], ("fig.tight_layout", [], {"pad": 0.5, "w_pad": 2.0, "h_pad": 0.2}))
+case("grid_suptitle_suplabels", ("$subplots", [2, 2], {"sharex": True, "sharey": True}), *panels(4),
+     ("fig.suptitle", ["A grid of four"]), ("fig.supxlabel", ["shared time"]), ("fig.supylabel", ["shared amplitude"]))
+case("grid_suptitle_tight", ("$subplots", [2, 2]), *[c for i in range(4) for c in panel(i) + [("set_title", [f"t{i}"])]],
+     ("fig.suptitle", ["Tight with a suptitle"]), ("fig.supxlabel", ["x"]), ("fig.supylabel", ["y"]), ("fig.tight_layout", []))
+case("grid_twinx_cell", ("$subplots", [2, 2]), *panels(4), ("sca", [3]), ("set_ylabel", ["left"]), ("twinx", []),
+     ("plot", [lin(20, 0, 10), lin(20, 1000, 3000)], {"color": "C1"}), ("set_ylabel", ["right"]))
+case("grid_twinx_tight", ("$subplots", [1, 2]), *panels(2), ("set_ylabel", ["left"]), ("twinx", []),
+     ("plot", [lin(20, 0, 10), lin(20, 1000, 3000)], {"color": "C1"}), ("set_ylabel", ["right"]), ("fig.tight_layout", []))
+case("grid_figsize_dpi", ("$rc", [], {"figure.figsize": [7.0, 3.0], "figure.dpi": 80}), ("$subplots", [1, 3], {"sharey": True}), *panels(3))
+
+# examples/small_multiples.ts, call for call (docs/images/small_multiples.svg)
+CITIES = [('Oslo', [-4.0, -2.7, 1.0, 6.0, 11.0, 14.7, 16.0, 14.7, 11.0, 6.0, 1.0, -2.7]), ('Lisbon', [11.0, 11.8, 14.0, 17.0, 20.0, 22.2, 23.0, 22.2, 20.0, 17.0, 14.0, 11.8]), ('Cairo', [15.0, 15.9, 18.5, 22.0, 25.5, 28.1, 29.0, 28.1, 25.5, 22.0, 18.5, 15.9]), ('Sydney', [23.0, 22.3, 20.5, 18.0, 15.5, 13.7, 13.0, 13.7, 15.5, 18.0, 20.5, 22.3]), ('Quito', [13.5, 13.6, 13.8, 14.0, 14.2, 14.4, 14.5, 14.4, 14.2, 14.0, 13.8, 13.6]), ('Montreal', [-8.0, -6.0, -0.5, 7.0, 14.5, 20.0, 22.0, 20.0, 14.5, 7.0, -0.5, -6.0])]
+SM = []
+for i, (city, temps) in enumerate(CITIES):
+    SM += [("sca", [i]), ("plot", [list(range(1, 13)), temps, "o-"], {"color": f"C{i}", "markersize": 4}), ("set_title", [city]), ("grid", [True], {"color": "0.9"})]
+case("example_small_multiples", ("$subplots", [2, 3], {"sharex": True, "sharey": True, "figsize": [9, 5]}), *SM,
+     ("fig.suptitle", ["Monthly mean temperature"]), ("fig.supxlabel", ["month"]), ("fig.supylabel", ["°C"]), ("fig.tight_layout", []))
+
 def run_case(name, calls):
     style = None
     rc_layer = {}
@@ -145,9 +209,18 @@ def run_case(name, calls):
         for fn, _args, kwargs in calls:
             if fn == "$rc" and not any(k.startswith("svg.") for k in kwargs):
                 matplotlib.rcParams.update(kwargs)
-        fig, ax = plt.subplots()
-        axes = [ax]
+        grid = next((c for c in calls if c[0] == "$subplots"), None)
+        if grid is not None:
+            # a grid: Axes listed row-major (fig.axes order); "sca" picks one by index
+            fig, axarr = plt.subplots(*grid[1], squeeze=False, **grid[2])
+            axes = list(axarr.flat)
+        else:
+            fig, ax0 = plt.subplots()
+            axes = [ax0]
+        ax = axes[0]
         for fn, args, kwargs in calls:
+            if fn == "$subplots":
+                continue
             args = [decode(a) for a in args]
             if fn == "twinx":
                 ax = ax.twinx(); axes.append(ax); continue

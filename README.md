@@ -77,6 +77,24 @@ and `fig.tight_layout()`. The same calls are an oracle case (`fixtures/ref/examp
 pixel for pixel. This is its `fig.toSVG()`:
 
 <img src="docs/images/gantt.svg" width="560" alt="Gantt chart of a checkout request trace: one bold root span and five child spans as horizontal bars, with tree-drawing labels">
+
+### Example: subplot grids (small multiples)
+
+`subplots(nrows, ncols, { sharex, sharey, gridspec_kw })` returns matplotlib's shapes, typed. A 1x1 grid with squeeze gives one
+`Axes`, a single row or column gives `Axes[]`, and anything else gives rows of Axes (`Axes[][]`). Shared axes get one set of
+limits and ticks, and keep tick labels on the outer panels only:
+
+```ts
+const [fig, axes] = subplots(2, 3, { sharex: true, sharey: true, figsize: [9, 5] });   // axes: Axes[][]
+axes[0][0].plot(months, oslo, 'o-');
+fig.suptitle('Monthly mean temperature'); fig.supxlabel('month'); fig.supylabel('°C');
+fig.tight_layout();
+```
+
+[`examples/small_multiples.ts`](examples/small_multiples.ts) is also an oracle case (`fixtures/ref/example_small_multiples`):
+
+<img src="docs/images/small_multiples.svg" width="640" alt="A 2x3 grid of line charts of monthly temperature for six cities, sharing x and y axes, with a figure title and shared axis labels">
+
 `npm run build` emits plain ES modules plus `.d.ts` into `dist/browser` for use from a browser, a Cloudflare Worker, or any
 project that cannot run `.ts` files (Node refuses to strip types inside `node_modules`).
 
@@ -98,7 +116,7 @@ fig.toPNGSync();        // Uint8Array, rasterized by mpljs' own port of Agg
 
 The API is matplotlib-shaped (`subplots`, `plot`, `bar`/`barh`, `fill_between`, `text`, `legend`, `grid`, `set_xlim`,
 `set_yscale('log')`, `twinx`, `tight_layout`, styled tick labels, date axes, 9+ bundled styles); unknown keyword arguments
-are errors, as in matplotlib. Out of scope so far: hist, errorbar, subplot grids, colormaps, general mathtext, constrained layout.
+are errors, as in matplotlib. Subplot grids: `subplots(nrows, ncols, …)` with sharex/sharey, width/height ratios, `subplots_adjust` and grid `tight_layout`. Out of scope so far: hist, errorbar, spanning subplots (`subplot_mosaic`, gridspec slices), colormaps, general mathtext, constrained layout.
 
 ## Commands
 

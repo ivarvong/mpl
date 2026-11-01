@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="500" viewBox="0 0 900 500">
+<rect width="900" height="500" fill="#ffffff"/>
+<rect x="74" y="68" width="257" height="160" fill="#ffffff" stroke="none"/>
+<clipPath id="c0"><rect x="74.0764" y="67.681" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c0)">
+<path d="M118.5 228.5 L118.5 68.5 M171.5 228.5 L171.5 68.5 M224.5 228.5 L224.5 68.5 M277.5 228.5 L277.5 68.5 M330.5 228.5 L330.5 68.5" fill="none" stroke="#e6e6e6" stroke-width="1.1111" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<path d="M118.5 228.5 L118.5 233.5 M171.5 228.5 L171.5 233.5 M224.5 228.5 L224.5 233.5 M277.5 228.5 L277.5 233.5 M330.5 228.5 L330.5 233.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c1"><rect x="74.0764" y="67.681" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c1)">
+<path d="M74.5 189.5 L331.5 189.5 M74.5 150.5 L331.5 150.5 M74.5 110.5 L331.5 110.5 M74.5 71.5 L331.5 71.5" fill="none" stroke="#e6e6e6" stroke-width="1.1111" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<text x="55.5104" y="194.6766" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">0</text>
+<text x="46.6667" y="155.2214" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">10</text>
+<text x="46.6667" y="115.7661" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">20</text>
+<text x="46.6667" y="76.3108" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">30</text>
+<path d="M74.5 189.5 L69.5 189.5 M74.5 150.5 L69.5 150.5 M74.5 110.5 L69.5 110.5 M74.5 71.5 L69.5 71.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c2"><rect x="74.0764" y="67.681" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c2)" data-artist="artist/0/line">
+<path d="M85.7613 205.1826L107.0065 200.0534L128.2517 185.4549L149.4969 165.7273L170.7421 145.9997L191.9873 131.4012L213.2326 126.272L234.4778 131.4012L255.723 145.9997L276.9682 165.7273L298.2134 185.4549L319.4586 200.0534" fill="none" stroke="#1f77b4" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+<defs><path id="m3" d="M0 2.7778 C0.7367 2.7778 1.4433 2.4851 1.9642 1.9642 C2.4851 1.4433 2.7778 0.7367 2.7778 0 C2.7778 -0.7367 2.4851 -1.4433 1.9642 -1.9642 C1.4433 -2.4851 0.7367 -2.7778 0 -2.7778 C-0.7367 -2.7778 -1.4433 -2.4851 -1.9642 -1.9642 C-2.4851 -1.4433 -2.7778 -0.7367 -2.7778 0 C-2.7778 0.7367 -2.4851 1.4433 -1.9642 1.9642 C-1.4433 2.4851 -0.7367 2.7778 0 2.7778 Z" fill="#1f77b4" stroke="#1f77b4" stroke-width="1.3889" stroke-linejoin="round"/></defs>
+<use href="#m3" x="86.5" y="205.5"/><use href="#m3" x="107.5" y="200.5"/><use href="#m3" x="128.5" y="185.5"/><use href="#m3" x="149.5" y="166.5"/><use href="#m3" x="171.5" y="146.5"/><use href="#m3" x="192.5" y="131.5"/><use href="#m3" x="213.5" y="126.5"/><use href="#m3" x="234.5" y="131.5"/><use href="#m3" x="256.5" y="146.5"/><use href="#m3" x="277.5" y="166.5"/><use href="#m3" x="298.5" y="185.5"/><use href="#m3" x="319.5" y="200.5"/>
+</g>
+<path d="M74.5 228.5 L74.5 68.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M331.5 228.5 L331.5 68.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M74.5 228.5 L331.5 228.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M74.5 68.5 L331.5 68.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="184.2896" y="59.3477" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">Oslo</text>
+<rect x="351" y="68" width="257" height="160" fill="#ffffff" stroke="none"/>
+<clipPath id="c4"><rect x="351.0046" y="67.681" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c4)">
+<path d="M395.5 228.5 L395.5 68.5 M448.5 228.5 L448.5 68.5 M501.5 228.5 L501.5 68.5 M554.5 228.5 L554.5 68.5 M607.5 228.5 L607.5 68.5" fill="none" stroke="#e6e6e6" stroke-width="1.1111" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<path d="M395.5 228.5 L395.5 233.5 M448.5 228.5 L448.5 233.5 M501.5 228.5 L501.5 233.5 M554.5 228.5 L554.5 233.5 M607.5 228.5 L607.5 233.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c5"><rect x="351.0046" y="67.681" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c5)">
+<path d="M351.5 189.5 L608.5 189.5 M351.5 150.5 L608.5 150.5 M351.5 110.5 L608.5 110.5 M351.5 71.5 L608.5 71.5" fill="none" stroke="#e6e6e6" stroke-width="1.1111" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<path d="M351.5 189.5 L346.5 189.5 M351.5 150.5 L346.5 150.5 M351.5 110.5 L346.5 110.5 M351.5 71.5 L346.5 71.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c6"><rect x="351.0046" y="67.681" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c6)" data-artist="artist/0/line">
+<path d="M362.6895 145.9997L383.9347 142.8433L405.1799 134.1631L426.4252 122.3265L447.6704 110.4899L468.9156 101.8098L490.1608 98.6534L511.406 101.8098L532.6512 110.4899L553.8965 122.3265L575.1417 134.1631L596.3869 142.8433" fill="none" stroke="#ff7f0e" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+<defs><path id="m7" d="M0 2.7778 C0.7367 2.7778 1.4433 2.4851 1.9642 1.9642 C2.4851 1.4433 2.7778 0.7367 2.7778 0 C2.7778 -0.7367 2.4851 -1.4433 1.9642 -1.9642 C1.4433 -2.4851 0.7367 -2.7778 0 -2.7778 C-0.7367 -2.7778 -1.4433 -2.4851 -1.9642 -1.9642 C-2.4851 -1.4433 -2.7778 -0.7367 -2.7778 0 C-2.7778 0.7367 -2.4851 1.4433 -1.9642 1.9642 C-1.4433 2.4851 -0.7367 2.7778 0 2.7778 Z" fill="#ff7f0e" stroke="#ff7f0e" stroke-width="1.3889" stroke-linejoin="round"/></defs>
+<use href="#m7" x="363.5" y="146.5"/><use href="#m7" x="384.5" y="143.5"/><use href="#m7" x="405.5" y="134.5"/><use href="#m7" x="426.5" y="122.5"/><use href="#m7" x="448.5" y="110.5"/><use href="#m7" x="469.5" y="102.5"/><use href="#m7" x="490.5" y="99.5"/><use href="#m7" x="511.5" y="102.5"/><use href="#m7" x="533.5" y="110.5"/><use href="#m7" x="554.5" y="122.5"/><use href="#m7" x="575.5" y="134.5"/><use href="#m7" x="596.5" y="143.5"/>
+</g>
+<path d="M351.5 228.5 L351.5 68.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M608.5 228.5 L608.5 68.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M351.5 228.5 L608.5 228.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M351.5 68.5 L608.5 68.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="452.5694" y="59.3477" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">Lisbon</text>
+<rect x="628" y="68" width="257" height="160" fill="#ffffff" stroke="none"/>
+<clipPath id="c8"><rect x="627.9329" y="67.681" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c8)">
+<path d="M671.5 228.5 L671.5 68.5 M725.5 228.5 L725.5 68.5 M778.5 228.5 L778.5 68.5 M831.5 228.5 L831.5 68.5 M884.5 228.5 L884.5 68.5" fill="none" stroke="#e6e6e6" stroke-width="1.1111" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<path d="M671.5 228.5 L671.5 233.5 M725.5 228.5 L725.5 233.5 M778.5 228.5 L778.5 233.5 M831.5 228.5 L831.5 233.5 M884.5 228.5 L884.5 233.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c9"><rect x="627.9329" y="67.681" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c9)">
+<path d="M628.5 189.5 L885.5 189.5 M628.5 150.5 L885.5 150.5 M628.5 110.5 L885.5 110.5 M628.5 71.5 L885.5 71.5" fill="none" stroke="#e6e6e6" stroke-width="1.1111" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<path d="M628.5 189.5 L623.5 189.5 M628.5 150.5 L623.5 150.5 M628.5 110.5 L623.5 110.5 M628.5 71.5 L623.5 71.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c10"><rect x="627.9329" y="67.681" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c10)" data-artist="artist/0/line">
+<path d="M639.6177 130.2176L660.863 126.6666L682.1082 116.4082L703.3534 102.5989L724.5986 88.7896L745.8438 78.5312L767.089 74.9802L788.3343 78.5312L809.5795 88.7896L830.8247 102.5989L852.0699 116.4082L873.3151 126.6666" fill="none" stroke="#2ca02c" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+<defs><path id="m11" d="M0 2.7778 C0.7367 2.7778 1.4433 2.4851 1.9642 1.9642 C2.4851 1.4433 2.7778 0.7367 2.7778 0 C2.7778 -0.7367 2.4851 -1.4433 1.9642 -1.9642 C1.4433 -2.4851 0.7367 -2.7778 0 -2.7778 C-0.7367 -2.7778 -1.4433 -2.4851 -1.9642 -1.9642 C-2.4851 -1.4433 -2.7778 -0.7367 -2.7778 0 C-2.7778 0.7367 -2.4851 1.4433 -1.9642 1.9642 C-1.4433 2.4851 -0.7367 2.7778 0 2.7778 Z" fill="#2ca02c" stroke="#2ca02c" stroke-width="1.3889" stroke-linejoin="round"/></defs>
+<use href="#m11" x="640.5" y="130.5"/><use href="#m11" x="661.5" y="127.5"/><use href="#m11" x="682.5" y="116.5"/><use href="#m11" x="703.5" y="103.5"/><use href="#m11" x="725.5" y="89.5"/><use href="#m11" x="746.5" y="79.5"/><use href="#m11" x="767.5" y="75.5"/><use href="#m11" x="788.5" y="79.5"/><use href="#m11" x="810.5" y="89.5"/><use href="#m11" x="831.5" y="103.5"/><use href="#m11" x="852.5" y="116.5"/><use href="#m11" x="873.5" y="127.5"/>
+</g>
+<path d="M628.5 228.5 L628.5 68.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M885.5 228.5 L885.5 68.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M628.5 228.5 L885.5 228.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M628.5 68.5 L885.5 68.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="734.8727" y="59.3477" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">Cairo</text>
+<rect x="74" y="269" width="257" height="161" fill="#ffffff" stroke="none"/>
+<clipPath id="c12"><rect x="74.0764" y="269.1302" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c12)">
+<path d="M118.5 430.5 L118.5 269.5 M171.5 430.5 L171.5 269.5 M224.5 430.5 L224.5 269.5 M277.5 430.5 L277.5 269.5 M330.5 430.5 L330.5 269.5" fill="none" stroke="#e6e6e6" stroke-width="1.1111" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<text x="106.5744" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">2.5</text>
+<text x="159.6874" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">5.0</text>
+<text x="212.8005" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">7.5</text>
+<text x="261.4917" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">10.0</text>
+<text x="314.6047" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">12.5</text>
+<path d="M118.5 430.5 L118.5 435.5 M171.5 430.5 L171.5 435.5 M224.5 430.5 L224.5 435.5 M277.5 430.5 L277.5 435.5 M330.5 430.5 L330.5 435.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c13"><rect x="74.0764" y="269.1302" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c13)">
+<path d="M74.5 391.5 L331.5 391.5 M74.5 351.5 L331.5 351.5 M74.5 312.5 L331.5 312.5 M74.5 272.5 L331.5 272.5" fill="none" stroke="#e6e6e6" stroke-width="1.1111" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<text x="55.5104" y="396.1258" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">0</text>
+<text x="46.6667" y="356.6706" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">10</text>
+<text x="46.6667" y="317.2153" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">20</text>
+<text x="46.6667" y="277.7601" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">30</text>
+<path d="M74.5 391.5 L69.5 391.5 M74.5 351.5 L69.5 351.5 M74.5 312.5 L69.5 312.5 M74.5 272.5 L69.5 272.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c14"><rect x="74.0764" y="269.1302" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c14)" data-artist="artist/0/line">
+<path d="M85.7613 300.1026L107.0065 302.8645L128.2517 309.9664L149.4969 319.8302L170.7421 329.694L191.9873 336.796L213.2326 339.5578L234.4778 336.796L255.723 329.694L276.9682 319.8302L298.2134 309.9664L319.4586 302.8645" fill="none" stroke="#d62728" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+<defs><path id="m15" d="M0 2.7778 C0.7367 2.7778 1.4433 2.4851 1.9642 1.9642 C2.4851 1.4433 2.7778 0.7367 2.7778 0 C2.7778 -0.7367 2.4851 -1.4433 1.9642 -1.9642 C1.4433 -2.4851 0.7367 -2.7778 0 -2.7778 C-0.7367 -2.7778 -1.4433 -2.4851 -1.9642 -1.9642 C-2.4851 -1.4433 -2.7778 -0.7367 -2.7778 0 C-2.7778 0.7367 -2.4851 1.4433 -1.9642 1.9642 C-1.4433 2.4851 -0.7367 2.7778 0 2.7778 Z" fill="#d62728" stroke="#d62728" stroke-width="1.3889" stroke-linejoin="round"/></defs>
+<use href="#m15" x="86.5" y="300.5"/><use href="#m15" x="107.5" y="303.5"/><use href="#m15" x="128.5" y="310.5"/><use href="#m15" x="149.5" y="320.5"/><use href="#m15" x="171.5" y="330.5"/><use href="#m15" x="192.5" y="337.5"/><use href="#m15" x="213.5" y="340.5"/><use href="#m15" x="234.5" y="337.5"/><use href="#m15" x="256.5" y="330.5"/><use href="#m15" x="277.5" y="320.5"/><use href="#m15" x="298.5" y="310.5"/><use href="#m15" x="319.5" y="303.5"/>
+</g>
+<path d="M74.5 430.5 L74.5 269.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M331.5 430.5 L331.5 269.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M74.5 430.5 L331.5 430.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M74.5 269.5 L331.5 269.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="171.7662" y="260.7969" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">Sydney</text>
+<rect x="351" y="269" width="257" height="161" fill="#ffffff" stroke="none"/>
+<clipPath id="c16"><rect x="351.0046" y="269.1302" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c16)">
+<path d="M395.5 430.5 L395.5 269.5 M448.5 430.5 L448.5 269.5 M501.5 430.5 L501.5 269.5 M554.5 430.5 L554.5 269.5 M607.5 430.5 L607.5 269.5" fill="none" stroke="#e6e6e6" stroke-width="1.1111" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<text x="383.5026" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">2.5</text>
+<text x="436.6157" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">5.0</text>
+<text x="489.7287" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">7.5</text>
+<text x="538.4199" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">10.0</text>
+<text x="591.5329" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">12.5</text>
+<path d="M395.5 430.5 L395.5 435.5 M448.5 430.5 L448.5 435.5 M501.5 430.5 L501.5 435.5 M554.5 430.5 L554.5 435.5 M607.5 430.5 L607.5 435.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c17"><rect x="351.0046" y="269.1302" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c17)">
+<path d="M351.5 391.5 L608.5 391.5 M351.5 351.5 L608.5 351.5 M351.5 312.5 L608.5 312.5 M351.5 272.5 L608.5 272.5" fill="none" stroke="#e6e6e6" stroke-width="1.1111" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<path d="M351.5 391.5 L346.5 391.5 M351.5 351.5 L346.5 351.5 M351.5 312.5 L346.5 312.5 M351.5 272.5 L346.5 272.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c18"><rect x="351.0046" y="269.1302" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c18)" data-artist="artist/0/line">
+<path d="M362.6895 337.5851L383.9347 337.1905L405.1799 336.4014L426.4252 335.6123L447.6704 334.8232L468.9156 334.0341L490.1608 333.6396L511.406 334.0341L532.6512 334.8232L553.8965 335.6123L575.1417 336.4014L596.3869 337.1905" fill="none" stroke="#9467bd" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+<defs><path id="m19" d="M0 2.7778 C0.7367 2.7778 1.4433 2.4851 1.9642 1.9642 C2.4851 1.4433 2.7778 0.7367 2.7778 0 C2.7778 -0.7367 2.4851 -1.4433 1.9642 -1.9642 C1.4433 -2.4851 0.7367 -2.7778 0 -2.7778 C-0.7367 -2.7778 -1.4433 -2.4851 -1.9642 -1.9642 C-2.4851 -1.4433 -2.7778 -0.7367 -2.7778 0 C-2.7778 0.7367 -2.4851 1.4433 -1.9642 1.9642 C-1.4433 2.4851 -0.7367 2.7778 0 2.7778 Z" fill="#9467bd" stroke="#9467bd" stroke-width="1.3889" stroke-linejoin="round"/></defs>
+<use href="#m19" x="363.5" y="338.5"/><use href="#m19" x="384.5" y="337.5"/><use href="#m19" x="405.5" y="336.5"/><use href="#m19" x="426.5" y="336.5"/><use href="#m19" x="448.5" y="335.5"/><use href="#m19" x="469.5" y="334.5"/><use href="#m19" x="490.5" y="334.5"/><use href="#m19" x="511.5" y="334.5"/><use href="#m19" x="533.5" y="335.5"/><use href="#m19" x="554.5" y="336.5"/><use href="#m19" x="575.5" y="336.5"/><use href="#m19" x="596.5" y="337.5"/>
+</g>
+<path d="M351.5 430.5 L351.5 269.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M608.5 430.5 L608.5 269.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M351.5 430.5 L608.5 430.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M351.5 269.5 L608.5 269.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="457.0148" y="260.7969" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">Quito</text>
+<rect x="628" y="269" width="257" height="161" fill="#ffffff" stroke="none"/>
+<clipPath id="c20"><rect x="627.9329" y="269.1302" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c20)">
+<path d="M671.5 430.5 L671.5 269.5 M725.5 430.5 L725.5 269.5 M778.5 430.5 L778.5 269.5 M831.5 430.5 L831.5 269.5 M884.5 430.5 L884.5 269.5" fill="none" stroke="#e6e6e6" stroke-width="1.1111" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<text x="660.4309" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">2.5</text>
+<text x="713.5439" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">5.0</text>
+<text x="766.657" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">7.5</text>
+<text x="815.3481" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">10.0</text>
+<text x="868.4612" y="449.9876" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">12.5</text>
+<path d="M671.5 430.5 L671.5 435.5 M725.5 430.5 L725.5 435.5 M778.5 430.5 L778.5 435.5 M831.5 430.5 L831.5 435.5 M884.5 430.5 L884.5 435.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c21"><rect x="627.9329" y="269.1302" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c21)">
+<path d="M628.5 391.5 L885.5 391.5 M628.5 351.5 L885.5 351.5 M628.5 312.5 L885.5 312.5 M628.5 272.5 L885.5 272.5" fill="none" stroke="#e6e6e6" stroke-width="1.1111" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<path d="M628.5 391.5 L623.5 391.5 M628.5 351.5 L623.5 351.5 M628.5 312.5 L623.5 312.5 M628.5 272.5 L623.5 272.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c22"><rect x="627.9329" y="269.1302" width="257.0671" height="160.5829"/></clipPath>
+<g clip-path="url(#c22)" data-artist="artist/0/line">
+<path d="M639.6177 422.4139L660.863 414.5228L682.1082 392.8224L703.3534 363.231L724.5986 333.6396L745.8438 311.9392L767.089 304.0481L788.3343 311.9392L809.5795 333.6396L830.8247 363.231L852.0699 392.8224L873.3151 414.5228" fill="none" stroke="#8c564b" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+<defs><path id="m23" d="M0 2.7778 C0.7367 2.7778 1.4433 2.4851 1.9642 1.9642 C2.4851 1.4433 2.7778 0.7367 2.7778 0 C2.7778 -0.7367 2.4851 -1.4433 1.9642 -1.9642 C1.4433 -2.4851 0.7367 -2.7778 0 -2.7778 C-0.7367 -2.7778 -1.4433 -2.4851 -1.9642 -1.9642 C-2.4851 -1.4433 -2.7778 -0.7367 -2.7778 0 C-2.7778 0.7367 -2.4851 1.4433 -1.9642 1.9642 C-1.4433 2.4851 -0.7367 2.7778 0 2.7778 Z" fill="#8c564b" stroke="#8c564b" stroke-width="1.3889" stroke-linejoin="round"/></defs>
+<use href="#m23" x="640.5" y="422.5"/><use href="#m23" x="661.5" y="415.5"/><use href="#m23" x="682.5" y="393.5"/><use href="#m23" x="703.5" y="363.5"/><use href="#m23" x="725.5" y="334.5"/><use href="#m23" x="746.5" y="312.5"/><use href="#m23" x="767.5" y="304.5"/><use href="#m23" x="788.5" y="312.5"/><use href="#m23" x="810.5" y="334.5"/><use href="#m23" x="831.5" y="363.5"/><use href="#m23" x="852.5" y="393.5"/><use href="#m23" x="873.5" y="415.5"/>
+</g>
+<path d="M628.5 430.5 L628.5 269.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M885.5 430.5 L885.5 269.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M628.5 430.5 L885.5 430.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M628.5 269.5 L885.5 269.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="719.8258" y="260.7969" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">Montreal</text>
+<text x="335.3203" y="22.6719" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">Monthly mean temperature</text>
+<text x="422.9531" y="490.9961" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">month</text>
+<text x="30.6628" y="259.9922" font-family="DejaVu Sans" font-size="16.6667" fill="#000000" transform="rotate(-90 30.6628 259.9922)">°C</text>
+</svg>

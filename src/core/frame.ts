@@ -8,7 +8,7 @@ export type AxesBox = {
   readonly b: number; readonly t: number;
 };
 export type Frame = {
-  readonly box: AxesBox; readonly H: number;
+  readonly box: AxesBox; readonly W: number; readonly H: number;
   readonly xlim: readonly [number, number]; readonly ylim: readonly [number, number];
   readonly xscale: Scale; readonly yscale: Scale;
   /** transData's affine part, display (y up) = scaled·a + c, with matplotlib's float operations */
@@ -30,11 +30,11 @@ export function axesBox(p: Position, W: number, H: number): AxesBox {
  * BboxTransformTo(axes.bbox) ∘ BboxTransformFrom(viewLim), composed by np.dot:
  * From = [1/w, −v0·(1/w)], so a = outw·(1/w), c = outw·(−v0·(1/w)) + outl. Points map as (v·a + 0) + c.
  */
-export function frame(box: AxesBox, H: number, xlim: readonly [number, number], ylim: readonly [number, number], xscale: Scale, yscale: Scale): Frame {
+export function frame(box: AxesBox, W: number, H: number, xlim: readonly [number, number], ylim: readonly [number, number], xscale: Scale, yscale: Scale): Frame {
   const vx0 = forward(xscale, xlim[0]), vx1 = forward(xscale, xlim[1]), vy0 = forward(yscale, ylim[0]), vy1 = forward(yscale, ylim[1]);
   const kx = 1.0 / (vx1 - vx0), ky = 1.0 / (vy1 - vy0);
   const outb = box.b;
-  return { box, H, xlim, ylim, xscale, yscale,
+  return { box, W, H, xlim, ylim, xscale, yscale,
            ax: box.w * kx, cx: box.w * (-vx0 * kx) + box.x0,
            ay: box.h * ky, cy: box.h * (-vy0 * ky) + outb };
 }
