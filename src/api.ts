@@ -364,15 +364,24 @@ export class Axes {
     const DEF_COORD: AnnotationCoords = 'data';
     const xycoords = kw.read(['xycoords'], (v): Result<AnnotationCoords> => (v === 'data' || v === 'axes' ? ok(v) : err(`xycoords must be 'data' or 'axes'`)), () => DEF_COORD);
     const textcoords = kw.read(['textcoords'], (v): Result<AnnotationCoords> => (v === 'data' || v === 'axes' ? ok(v) : err(`textcoords must be 'data' or 'axes'`)), () => xycoords);
-    const arrow = kw.read(['arrowprops'], (v): Result<{ color: Rgb; widthPt: number; headLengthPt: number; headWidthPt: number }> => {
+    type Arrow = AnnotationArtist['arrow'];
+    const arrow = kw.read(['arrowprops'], (v): Result<Arrow> => {
       if (!isPlainObject(v)) return err('arrowprops must be an object');
-      const c = prop(v, 'color'); const lw = prop(v, 'linewidth'); const hl = prop(v, 'headlength'); const hw = prop(v, 'headwidth');
-      const color = c.kind === 'some' ? unwrap(parseRgb(c.value, this.theme.axes.cycle)) : this.theme.text.color;
-      const widthPt = lw.kind === 'some' ? unwrap(num('linewidth')(lw.value)) : 1;
-      const headLengthPt = hl.kind === 'some' ? unwrap(num('headlength')(hl.value)) : 6;
-      const headWidthPt = hw.kind === 'some' ? unwrap(num('headwidth')(hw.value)) : 4;
-      return ok({ color, widthPt, headLengthPt, headWidthPt });
-    }, () => ({ color: this.theme.text.color, widthPt: 1, headLengthPt: 6, headWidthPt: 4 }));
+      const known = new Set(['color', 'facecolor', 'edgecolor', 'linewidth', 'lw', 'width', 'headwidth', 'headlength', 'shrink']);
+      const extra = Object.keys(v).filter((key) => !known.has(key));
+      if (extra.length > 0) return err(`unsupported arrowprops: ${extra.join(', ')}`);
+      const numOr = (key: string, d: number): number => { const p = prop(v, key); return p.kind === 'some' ? unwrap(num(key)(p.value)) : d; };
+      const rgbOr = (key: string, d: Rgb): Rgb => { const p = prop(v, key); return p.kind === 'some' ? unwrap(parseRgb(p.value, this.theme.axes.cycle)) : d; };
+      // FancyArrowPatch defaults: patch.facecolor (C0) and patch.edgecolor; 'color' sets both
+      const color = prop(v, 'color');
+      const base = color.kind === 'some' ? some(unwrap(parseRgb(color.value, this.theme.axes.cycle))) : none;
+      const face = rgbOr('facecolor', base.kind === 'some' ? base.value : this.theme.axes.cycle[0]);
+      const edge = rgbOr('edgecolor', base.kind === 'some' ? base.value : unwrap(parseRgb('black', this.theme.axes.cycle)));
+      const lwKey = prop(v, 'lw').kind === 'some' ? 'lw' : 'linewidth';
+      // Annotation.update_positions: width 4, headwidth 12, headlength 12, shrink 0 (all pt but shrink)
+      return ok(some({ face, edge, linewidthPt: numOr(lwKey, 1), widthPt: numOr('width', 4), headLengthPt: numOr('headlength', 12),
+                       headWidthPt: numOr('headwidth', 12), shrink: numOr('shrink', 0) }));
+    }, (): Arrow => none);
     const color = this.theme.text.color;
     const sizePt = this.theme.font.sizePt;
     const ha: HAlign = 'left', va: VAlign = 'baseline';
@@ -392,7 +401,7 @@ export class Axes {
       kind: 'annotation', x: xyOk[0], y: xyOk[1], xycoords,
       tx: xytextOk[0], ty: xytextOk[1], textcoords, text: str(text),
       sizePt, weight: this.theme.font.weight, color, ha, va,
-      arrow: { color: arrow.color, widthPt: arrow.widthPt, headLengthPt: arrow.headLengthPt, headWidthPt: arrow.headWidthPt },
+      arrow,
       clip,
     };
     this.artists.push(a);
@@ -672,9 +681,9 @@ export class Figure {
   }
   suptitle(s: unknown, kwargs: Kwargs = {}): this {
     const kw = new KwReader(kwargs, 'Figure.suptitle');
-    const color = kw.read(['color', 'c'], (v) => parseRgb(v, this.theme.axes.cycle), () => this.theme.axes.titleColor);
-    const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.axes.titleSizePt), () => this.theme.axes.titleSizePt);
-    const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.titleWeight);
+    const color = kw.read(['color', 'c'], (v) => parseRgb(v, this.theme.axes.cycle), () => this.theme.text.color);
+    const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.font.sizePt), () => this.theme.figure.titleSizePt);
+    const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.figure.titleWeight);
     kw.done();
     // Matplotlib default: layout-free placement near the top, aligned to the top.
     this._suptitle = some({ text: str(s), x: 0.5, y: 0.98, ha: 'center', va: 'top', sizePt, weight, color });
@@ -682,9 +691,9 @@ export class Figure {
   }
   supxlabel(s: unknown, kwargs: Kwargs = {}): this {
     const kw = new KwReader(kwargs, 'Figure.supxlabel');
-    const color = kw.read(['color', 'c'], (v) => parseRgb(v, this.theme.axes.cycle), () => this.theme.axes.labelColor);
-    const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.axes.labelSizePt), () => this.theme.axes.labelSizePt);
-    const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.labelWeight);
+    const color = kw.read(['color', 'c'], (v) => parseRgb(v, this.theme.axes.cycle), () => this.theme.text.color);
+    const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.font.sizePt), () => this.theme.figure.labelSizePt);
+    const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.figure.labelWeight);
     kw.done();
     // Matplotlib default: bottom of the figure area.
     this._supx = some({ text: str(s), x: 0.5, y: 0.01, ha: 'center', va: 'bottom', sizePt, weight, color });
@@ -692,9 +701,9 @@ export class Figure {
   }
   supylabel(s: unknown, kwargs: Kwargs = {}): this {
     const kw = new KwReader(kwargs, 'Figure.supylabel');
-    const color = kw.read(['color', 'c'], (v) => parseRgb(v, this.theme.axes.cycle), () => this.theme.axes.labelColor);
-    const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.axes.labelSizePt), () => this.theme.axes.labelSizePt);
-    const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.labelWeight);
+    const color = kw.read(['color', 'c'], (v) => parseRgb(v, this.theme.axes.cycle), () => this.theme.text.color);
+    const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.font.sizePt), () => this.theme.figure.labelSizePt);
+    const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.figure.labelWeight);
     kw.done();
     // Matplotlib default: left of the figure area, rotated like a ylabel.
     this._supy = some({ text: str(s), x: 0.02, y: 0.5, ha: 'left', va: 'center', sizePt, weight, color });

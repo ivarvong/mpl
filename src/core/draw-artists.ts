@@ -6,7 +6,9 @@ import type { Box } from './legend-index.ts';
 import { lineStroke, markersNode } from './marks.ts';
 import type { XY } from './path.ts';
 import { isRectilinear, simplifyPolyline } from './path.ts';
-import { inkOf, rectNode, snap, snapOffset } from './scene.ts';
+import { inkOf, pathNode, rectNode, snap, snapOffset } from './scene.ts';
+import { MARKERS } from './data/markers.ts';
+import { yaArrowPath } from './arrow.ts';
 import { lookup } from './std.ts';
 import { forwardAll } from './scale.ts';
 import type { BarArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, Paint } from './types.ts';
@@ -14,7 +16,7 @@ import { labelNodes } from './draw-axis.ts';
 import { placeText, pxPerPt } from './text.ts';
 import type { Face } from './fonts.ts';
 import { resolveFace } from './fonts.ts';
-import { none, some } from './types.ts';
+import { assertNever, none, some } from './types.ts';
 import type { SpanHandle } from '../trace.ts';
 
 export type Drawn = { readonly nodes: readonly Node[]; readonly lines: readonly XY[]; readonly boxes: readonly Box[]; readonly handle: Option<Handle> };
@@ -149,37 +151,38 @@ export function drawText(a: TextArtist, f: Frame, dpi: number, face: Face): Draw
   return { nodes, lines: [], boxes: [], handle: none };
 }
 
-/** ax.annotate: straight leader line with triangular head into (x, y), plus text at (tx, ty). */
+/** ax.annotate: Annotation.draw draws its FancyArrowPatch (ArrowStyle.Simple via the YAArrow emulation), then the text. */
 export function drawAnnotation(a: AnnotationArtist, f: Frame, dpi: number, theme: Theme, k: number, clip: Clip): Drawn {
   const toPx = (cx: 'data' | 'axes', x: number, y: number): readonly [number, number] =>
     (cx === 'data' ? [tx(f, x), ty(f, y)] as const : [f.box.x0 + x * f.box.w, f.H - (f.box.yBot + y * f.box.h)] as const);
   const [x0, y0] = toPx(a.xycoords, a.x, a.y);
   const [x1, y1] = toPx(a.textcoords, a.tx, a.ty);
-  // Shrink at both ends by 2 pt each, as FancyArrowPatch default shrinkA/B ~ 2 (points).
-  const shrinkPx = 2 * k;
-  const dx0 = x0 - x1, dy0 = y0 - y1;
-  const L0 = Math.hypot(dx0, dy0) || 1;
-  const ux0 = dx0 / L0, uy0 = dy0 / L0;
-  const sx0 = x0 - ux0 * shrinkPx, sy0 = y0 - uy0 * shrinkPx;
-  const tx0 = x1 + ux0 * shrinkPx, ty0 = y1 + uy0 * shrinkPx;
-  const dx = sx0 - tx0, dy = sy0 - ty0;
-  const L = Math.hypot(dx, dy) || 1;
-  const ux = dx / L, uy = dy / L;
-  const shaftEndX = sx0 - ux * (a.arrow.headLengthPt * k);
-  const shaftEndY = sy0 - uy * (a.arrow.headLengthPt * k);
-  const halfW = (a.arrow.headWidthPt * k) / 2;
-  const nx = -uy, ny = ux;
-  const headP1x = sx0, headP1y = sy0;
-  const headP2x = shaftEndX + nx * halfW, headP2y = shaftEndY + ny * halfW;
-  const headP3x = shaftEndX - nx * halfW, headP3y = shaftEndY - ny * halfW;
-  const stroke: Stroke = { color: a.arrow.color, width: a.arrow.widthPt * k, cap: 'butt', join: 'miter', dash: { kind: 'solid' } };
-  const segs: Seg[] = [['M', tx0, ty0], ['L', shaftEndX, shaftEndY]];
-  const head: Seg[] = [['M', headP1x, headP1y], ['L', headP2x, headP2y], ['L', headP3x, headP3y], ['Z']];
-  const lineNode: Node = { kind: 'path', segs, ink: { kind: 'stroke', stroke } };
-  const headNode: Node = { kind: 'path', segs: head, ink: { kind: 'fill', fill: a.arrow.color } };
   const face = resolveFace(theme.font.families, a.weight);
-  const textNodes = a.text === '' ? [] : labelNodes(placeText(a.text, a.sizePt, dpi, face, x1, y1, { kind: 'horizontal', ha: a.ha, va: a.va }), k, a.color);
-  const nodes: readonly Node[] = [{ kind: 'group', clip, nodes: [lineNode, headNode, ...textNodes], tag: '' }];
+  const box = placeText(a.text, a.sizePt, dpi, face, x1, y1, { kind: 'horizontal', ha: a.ha, va: a.va });
+  const textNodes = a.text === '' ? [] : labelNodes(box, k, a.color);
+  // matplotlib works in y-up display space; Agg flips with height - y
+  const up = (y: number): number => f.H - y;
+  const arrowNodes = ((): readonly Node[] => {
+    if (a.arrow.kind === 'none') return [];
+    const ar = a.arrow.value;
+    const bbox = a.text === '' ? { x0: x1, y0: up(y1), x1, y1: up(y1) } : { x0: box.x0, y0: up(box.y1), x1: box.x1, y1: up(box.y0) };
+    const path = yaArrowPath(bbox, [x0, up(y0)], a.text !== '',
+      { widthPt: ar.widthPt, headWidthPt: ar.headWidthPt, headLengthPt: ar.headLengthPt, shrink: ar.shrink, mutationPt: a.sizePt }, k);
+    const segs = path.map((sg): Seg => {
+      switch (sg.kind) {
+        case 'M': return ['M', sg.p[0], up(sg.p[1])];
+        case 'L': return ['L', sg.p[0], up(sg.p[1])];
+        case 'Q': return ['Q', sg.c[0], up(sg.c[1]), sg.p[0], up(sg.p[1])];
+        case 'Z': return ['Z'];
+        default: return assertNever(sg);
+      }
+    });
+    // FancyArrowPatch: round join and cap; a curved path is never snapped
+    const stroke: Option<Stroke> = ar.linewidthPt > 0 ? some({ color: ar.edge, width: ar.linewidthPt * k, cap: 'round', join: 'round', dash: { kind: 'solid' } }) : none;
+    const ink = inkOf({ kind: 'solid', color: ar.face }, stroke);
+    return ink.kind === 'some' ? [pathNode(segs, ink.value)] : [];
+  })();
+  const nodes: readonly Node[] = [{ kind: 'group', clip, nodes: [...arrowNodes, ...textNodes], tag: '' }];
   return { nodes, lines: [], boxes: [], handle: none };
 }
 
@@ -212,14 +215,38 @@ export function drawScatter(a: ScatterArtist, f: Frame, _theme: Theme, k: number
       g.xs.push(xs[i]); g.ys.push(ys[i]);
     }
   }
+  const strokeOf = (edge: Paint): Option<Stroke> =>
+    edge.kind === 'solid' && a.edgeWidthPt > 0 ? some({ color: edge.color, width: a.edgeWidthPt * k, cap: 'butt', join: 'round', dash: { kind: 'solid' } }) : none;
   const nodes: Node[] = [];
-  for (const g of groups.values()) {
-    const stroke: Option<Stroke> = g.edge.kind === 'solid' && a.edgeWidthPt > 0 ? some({ color: g.edge.color, width: a.edgeWidthPt * k, cap: 'butt', join: 'round', dash: { kind: 'solid' } }) : none;
-    const ink = inkOf(g.face, stroke);
-    if (ink.kind === 'none') continue;
-    const m = markersNode({ kind: 'on', shape: a.shape, sizePt: g.sizePt, edgeWidthPt: a.edgeWidthPt, face: g.face, edge: g.edge },
-                          Float64Array.from(g.xs), Float64Array.from(g.ys), k, true);  // PathCollection: no snapping, draw_markers offset
-    if (m.kind === 'some') nodes.push(m.value);
+  if (groups.size === 1) {
+    // Collection.draw: one path, one size, one face and edge colour -> renderer.draw_markers
+    for (const g of groups.values()) {
+      const ink = inkOf(g.face, strokeOf(g.edge));
+      if (ink.kind === 'none') continue;
+      const m = markersNode({ kind: 'on', shape: a.shape, sizePt: g.sizePt, edgeWidthPt: a.edgeWidthPt, face: g.face, edge: g.edge },
+                            Float64Array.from(g.xs), Float64Array.from(g.ys), k, true);  // PathCollection: no snapping, draw_markers offset
+      if (m.kind === 'some') nodes.push(m.value);
+    }
+  } else {
+    // Otherwise RendererAgg::_draw_path_collection_generic: each point's path is scaled by sqrt(s) * dpi / 72 and
+    // translated to its exact (unrounded) offset, then filled and stroked in order, with no pixel-centre shift.
+    for (let i = 0; i < n; i++) {
+      if (!(Number.isFinite(xs[i]) && Number.isFinite(ys[i]))) continue;
+      const ink = inkOf(MARKERS[a.shape].filled ? a.faces[i] : { kind: 'none' }, strokeOf(a.edges[i]));
+      if (ink.kind === 'none') continue;
+      const sizePx = Math.sqrt(Math.max(0, a.sizePt2[i])) * k, x = xs[i], y = ys[i];
+      const segs = MARKERS[a.shape].segs.map((sg): Seg => {
+        switch (sg[0]) {
+          case 'M': return ['M', x + sg[1] * sizePx, y - sg[2] * sizePx];
+          case 'L': return ['L', x + sg[1] * sizePx, y - sg[2] * sizePx];
+          case 'Q': return ['Q', x + sg[1] * sizePx, y - sg[2] * sizePx, x + sg[3] * sizePx, y - sg[4] * sizePx];
+          case 'C': return ['C', x + sg[1] * sizePx, y - sg[2] * sizePx, x + sg[3] * sizePx, y - sg[4] * sizePx, x + sg[5] * sizePx, y - sg[6] * sizePx];
+          case 'Z': return ['Z'];
+          default: return assertNever(sg);
+        }
+      });
+      nodes.push(pathNode(segs, ink.value));
+    }
   }
   const out: readonly Node[] = nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [];
   return { nodes: out, lines: [], boxes: [], handle: some({ kind: 'line', stroke: { kind: 'none' }, markers: { kind: 'none' } }) };

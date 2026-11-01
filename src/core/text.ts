@@ -156,6 +156,13 @@ export function placeLayout(m: LabelLayout, x: number, y: number, p: Placement):
       const top = y - m.width / 2;
       return { x0: x, y0: top, x1: x + H, y1: top + m.width, penX: x + m.ascent, penY: top + m.width, rotation: 'vertical', runs: m.runs };
     }
+    case 'vertical': {
+      // rotation=90, rotation_mode='default' (Text._get_layout): rotate first, then ha/va align the rotated box.
+      // The rotated box is H wide and m.width tall; the text runs upward with its baseline at x0 + ascent.
+      const x0 = p.ha === 'left' ? x : p.ha === 'right' ? x - H : x - H / 2;
+      const top = verticalTop(p.va === 'baseline' || p.va === 'center_baseline' ? 'center' : p.va, y, m.width, m.width / 2);
+      return { x0, y0: top, x1: x0 + H, y1: top + m.width, penX: x0 + m.ascent, penY: top + m.width, rotation: 'vertical', runs: m.runs };
+    }
     default: return assertNever(p);
   }
 }

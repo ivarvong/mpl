@@ -90,7 +90,9 @@ export type VAlign = 'top' | 'bottom' | 'center' | 'baseline' | 'center_baseline
 export type Placement =
   | { readonly kind: 'horizontal'; readonly ha: HAlign; readonly va: VAlign }
   | { readonly kind: 'ylabel' }          // left y label: rotation 90, va bottom
-  | { readonly kind: 'ylabelRight' };    // right y label (twinx): rotation 90, va top
+  | { readonly kind: 'ylabelRight' }    // right y label (twinx): rotation 90, va top
+  /** rotation 90, rotation_mode='default': ha/va align the rotated box on (x, y) */
+  | { readonly kind: 'vertical'; readonly ha: HAlign; readonly va: VAlign };
 
 // ---------------------------------------------------------------- artists
 export type MarkerName = 'o' | 's' | '^' | 'v' | '<' | '>' | 'D' | 'd' | 'x' | '+' | '*' | '.' | 'p' | 'h' | 'X' | 'P';
@@ -141,7 +143,11 @@ export type AnnotationArtist = {
   readonly x: number; readonly y: number; readonly xycoords: AnnotationCoords;
   readonly tx: number; readonly ty: number; readonly textcoords: AnnotationCoords;
   readonly text: string; readonly sizePt: number; readonly weight: number; readonly color: Rgb; readonly ha: HAlign; readonly va: VAlign;
-  readonly arrow: { readonly color: Rgb; readonly widthPt: number; readonly headLengthPt: number; readonly headWidthPt: number };
+  /** arrowprops without an arrowstyle (FancyArrowPatch + ArrowStyle.Simple); none when arrowprops is absent */
+  readonly arrow: Option<{
+    readonly face: Rgb; readonly edge: Rgb; readonly linewidthPt: number;
+    readonly widthPt: number; readonly headLengthPt: number; readonly headWidthPt: number; readonly shrink: number;
+  }>;
   readonly clip: boolean;
 };
 /** axvspan/axhspan bands: oriented spans that may use axes-fraction extents on the non-data axis. */
@@ -219,7 +225,8 @@ export type TickTheme = {
 export type Simplify = { readonly kind: 'off' } | { readonly kind: 'on'; readonly thresholdPx: number };
 
 export type Theme = {
-  readonly figure: { readonly widthIn: number; readonly heightIn: number; readonly dpi: number; readonly background: Paint; readonly subplot: Position };
+  readonly figure: { readonly widthIn: number; readonly heightIn: number; readonly dpi: number; readonly background: Paint; readonly subplot: Position;
+    readonly titleSizePt: number; readonly titleWeight: number; readonly labelSizePt: number; readonly labelWeight: number };
   /** font.family resolved to faces by weight: body text, axes titles, axes labels */
   readonly font: { readonly families: readonly string[]; readonly sizePt: number; readonly weight: number; readonly titleWeight: number; readonly labelWeight: number };
   readonly text: { readonly color: Rgb };

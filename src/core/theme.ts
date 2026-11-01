@@ -165,6 +165,8 @@ export function parseTheme(rc: RcLayer): Result<Theme> {
       widthIn: figsize[0], heightIn: figsize[1], dpi: r.num('figure.dpi'),
       background: savefig === 'auto' ? r.paint('figure.facecolor', cycle) : r.paint('savefig.facecolor', cycle),
       subplot: [r.num('figure.subplot.left'), r.num('figure.subplot.bottom'), r.num('figure.subplot.right'), r.num('figure.subplot.top')],
+      titleSizePt: r.size('figure.titlesize', fontPt), titleWeight: parseWeight(r.raw('figure.titleweight')),
+      labelSizePt: r.size('figure.labelsize', fontPt), labelWeight: parseWeight(r.raw('figure.labelweight')),
     },
     font: { families: fontFamilies(r.raw('font.family'), r.raw('font.sans-serif')), sizePt: fontPt,
             weight: parseWeight(r.raw('font.weight')), titleWeight: parseWeight(r.raw('axes.titleweight')), labelWeight: parseWeight(r.raw('axes.labelweight')) },

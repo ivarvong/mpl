@@ -311,17 +311,16 @@ export function layoutFigure(fig: FigureSpec, tracer: Tracer): { readonly scene:
   }
   // suptitle and supx/supylabel
   if (fig.suptitle.kind === 'some') {
-    const s = fig.suptitle.value, x = s.x * W, y = s.y * H;
+    const s = fig.suptitle.value, x = s.x * W, y = H - s.y * H;
     figTexts.push(...labelNodes(placeText(s.text, s.sizePt, fig.dpi, resolveFace(fig.theme.font.families, s.weight), x, y, { kind: 'horizontal', ha: s.ha, va: s.va }), k, s.color));
   }
   if (fig.supx.kind === 'some') {
-    const s = fig.supx.value, x = s.x * W, y = s.y * H;
+    const s = fig.supx.value, x = s.x * W, y = H - s.y * H;
     figTexts.push(...labelNodes(placeText(s.text, s.sizePt, fig.dpi, resolveFace(fig.theme.font.families, s.weight), x, y, { kind: 'horizontal', ha: s.ha, va: s.va }), k, s.color));
   }
   if (fig.supy.kind === 'some') {
-    const s = fig.supy.value, x = s.x * W, y = s.y * H;
-    // draw vertical like ylabel
-    const b = placeText(s.text, s.sizePt, fig.dpi, resolveFace(fig.theme.font.families, s.weight), x, y, { kind: 'ylabel' });
+    const s = fig.supy.value, x = s.x * W, y = H - s.y * H;
+    const b = placeText(s.text, s.sizePt, fig.dpi, resolveFace(fig.theme.font.families, s.weight), x, y, { kind: 'vertical', ha: s.ha, va: s.va });
     figTexts.push(...labelNodes(b, k, s.color));
   }
   return {

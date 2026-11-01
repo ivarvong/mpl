@@ -12,6 +12,10 @@ export const DEFAULTS: RcLayer = new Map<string, RcValue>(Object.entries({
   'figure.figsize': [6.4, 4.8],
   'figure.dpi': 100,
   'figure.facecolor': 'white',
+  'figure.titlesize': 'large',
+  'figure.titleweight': 'normal',
+  'figure.labelsize': 'large',
+  'figure.labelweight': 'normal',
   'savefig.facecolor': 'auto',
   // Honor matplotlib's svg.fonttype rc: 'none' -> <text>, 'path' -> glyph outlines.
   // We default to 'none' for text-based SVG by default (viewer laid out).
