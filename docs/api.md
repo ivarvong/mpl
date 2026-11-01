@@ -12,6 +12,41 @@ go in a trailing plain object (`ax.plot(x, y, { color: "C1", lw: 2 })`). Aliases
 
 subplots() / subplots({ style, rc, figsize, dpi }) -> [fig, ax]
 
+## Fonts
+
+Each face is its own module, so a bundle carries only the faces you import. DejaVu Sans (matplotlib's
+default) is always registered; register any other face before rendering text that selects it:
+
+```ts
+import { registerFonts, subplots } from 'mpljs';
+import { dejavuSansBold } from 'mpljs/fonts/dejavu-sans-bold';
+
+registerFonts(dejavuSansBold);
+const [fig, ax] = subplots();
+ax.set_title('Bold title', { fontweight: 'bold' });
+```
+
+Font selection is matplotlib's (the first family in `font.family` that mpljs ships, then the nearest
+weight), always over every shipped face, so registering faces never changes which face a text gets. If
+the selected face is not registered, rendering throws `FontNotLoadedError` (fields `face`, `family`,
+`weight`, `module`, `binding`; the message names the import to add). It never draws another face instead.
+A family mpljs does not ship falls through to the next family in the list, as in matplotlib.
+
+| face | `font.family` | weight | import |
+|---|---|---|---|
+| `DejaVu Sans:400` | DejaVu Sans (`sans-serif`) | 400 | built in |
+| `DejaVu Sans:700` | DejaVu Sans (`sans-serif`) | 700 | `import { dejavuSansBold } from 'mpljs/fonts/dejavu-sans-bold'` |
+| `DejaVu Serif:400` | DejaVu Serif (`serif`) | 400 | `import { dejavuSerif } from 'mpljs/fonts/dejavu-serif'` |
+| `DejaVu Serif:700` | DejaVu Serif (`serif`) | 700 | `import { dejavuSerifBold } from 'mpljs/fonts/dejavu-serif-bold'` |
+| `Inter:400` | Inter | 400 | `import { interRegular } from 'mpljs/fonts/inter-regular'` |
+| `Inter:500` | Inter | 500 | `import { interMedium } from 'mpljs/fonts/inter-medium'` |
+| `Inter:600` | Inter | 600 | `import { interSemibold } from 'mpljs/fonts/inter-semibold'` |
+| `Inter:700` | Inter | 700 | `import { interBold } from 'mpljs/fonts/inter-bold'` |
+
+`import { allFonts } from 'mpljs/fonts/all'` and `registerFonts(...allFonts)` registers every face, for when
+size does not matter (Node, tests). `registeredFonts()` lists the registered face ids; `FACE_CATALOG` lists
+every shipped face. A face decodes on first use (a `font.decode` span when tracing); `FACE_LOADS` records when.
+
 ## Figure
 
 Create one with `subplots()` or `new Figure({ style, rc, figsize, dpi })`.
