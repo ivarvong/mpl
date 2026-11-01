@@ -196,10 +196,14 @@ const tagOf = (t: number): Tag => (t === 1 ? 'on' : t === 2 ? 'cubic' : 'conic')
 function loadGlyph(face: Face, gid: number, scale: number, rot90: boolean, ox: number, oy: number): Pt[][] {
   const o = lookup(face.outlines, gid);
   if (o.kind === 'none') return [];
-  return o.value.map((flat) => {
+  const offs = lookup(face.offsets, gid);
+  return o.value.map((flat, ci) => {
+    // a composite's component offsets are scaled one by one and added to the scaled points
+    let dx = 0, dy = 0;
+    if (offs.kind === 'some') { const d = offs.value[ci]; for (let j = 0; j < d.length; j += 2) { dx += mulFix(d[j], scale); dy += mulFix(d[j + 1], scale); } }
     const pts: Pt[] = [];
     for (let i = 0; i < flat.length; i += 3) {
-      const x = mulFix(flat[i], scale), y = mulFix(flat[i + 1], scale);
+      const x = mulFix(flat[i], scale) + dx, y = mulFix(flat[i + 1], scale) + dy;
       // matrix [[0, -1], [1, 0]] in 16.16: x' = MulFix(y, -0x10000), y' = MulFix(x, 0x10000)
       const tx = rot90 ? mulFix(y, -0x10000) : x, ty = rot90 ? mulFix(x, 0x10000) : y;
       pts.push({ x: tx + ox, y: ty + oy, tag: tagOf(flat[i + 2]) });

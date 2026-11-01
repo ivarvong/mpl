@@ -60,11 +60,15 @@ type Ids = { next: number; readonly glyphs: Map<string, string>; readonly text: 
 function glyphPath(face: Face, gid: number): string {
   const o = lookup(face.outlines, gid);
   if (o.kind === 'none') return '';
+  const offs = lookup(face.offsets, gid);
   const out: string[] = [];
-  for (const flat of o.value) {
+  for (const [ci, flat] of o.value.entries()) {
     const n = flat.length / 3;
     if (n === 0) continue;
-    const X = (i: number): number => flat[3 * (((i % n) + n) % n)], Y = (i: number): number => flat[3 * (((i % n) + n) % n) + 1];
+    // composite glyphs: contours are in component units; add the summed component offsets
+    let dx = 0, dy = 0;
+    if (offs.kind === 'some') { const od = offs.value[ci]; for (let j = 0; j < od.length; j += 2) { dx += od[j]; dy += od[j + 1]; } }
+    const X = (i: number): number => flat[3 * (((i % n) + n) % n)] + dx, Y = (i: number): number => flat[3 * (((i % n) + n) % n) + 1] + dy;
     const T = (i: number): number => flat[3 * (((i % n) + n) % n) + 2];
     // start on an on-curve point, or the midpoint of two conics
     let start = 0;
