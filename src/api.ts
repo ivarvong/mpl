@@ -6,6 +6,8 @@ import { date2num, fromEpochMs } from './core/dates.ts';
 import type { FmtShape } from './core/fmt.ts';
 import { parseFmt, parseLinestyle, parseMarker } from './core/fmt.ts';
 import { layoutFigure, supBoxes, unionBox } from './core/layout.ts';
+import type { GridSpec, SubplotParams, SubplotSpec } from './core/gridspec.ts';
+import { cellPosition, validParams } from './core/gridspec.ts';
 import { parseWeight } from './core/fonts.ts';
 import type { RcLayer, RcValue } from './core/rc.ts';
 import { DEFAULTS } from './core/rc.ts';
@@ -173,10 +175,13 @@ export class Axes {
   readonly fig: Figure;
   readonly role: AxesRole;
   readonly theme: Theme;
-  position: Position;
+  /** The SubplotSpec this Axes occupies; its position follows the figure's subplot parameters. */
+  readonly cell: SubplotSpec;
   readonly artists: Artist[] = [];
   readonly xaxis: Axis;
-  readonly yaxis: Axis = new Axis();
+  readonly yaxis: Axis;
+  /** _label_outer_xaxis / _label_outer_yaxis: tick labels (major and minor) and offset text hidden */
+  private hiddenLabels = { x: false, y: false };
   title = ''; titleLoc: HAlign = 'center'; titleWeight = 400; xlabel = ''; ylabel = '';
   private grid_: AxesGrid;
   legendSpec: LegendSpec = { kind: 'off' };
@@ -197,8 +202,8 @@ export class Axes {
   private lineCycle = 0;
   private patchCycle = 0;
 
-  constructor(fig: Figure, role: AxesRole, xaxis: Axis) {
-    this.fig = fig; this.role = role; this.theme = fig.theme; this.position = fig.theme.figure.subplot;
+  constructor(fig: Figure, role: AxesRole, cell: SubplotSpec, xaxis: Axis, yaxis: Axis) {
+    this.fig = fig; this.role = role; this.theme = fig.theme; this.cell = cell; this.yaxis = yaxis;
     this.titleWeight = this.theme.font.titleWeight; this.titleLoc = this.theme.axes.titleLoc;
     this.xaxis = xaxis; this.grid_ = initialGrid(fig.theme);
     this.tickXOv = { ...this.theme.xtick }; this.tickYOv = { ...this.theme.ytick };
@@ -206,9 +211,21 @@ export class Axes {
   /** A second Axes sharing this one's x axis, with its y axis on the right. */
   twinx(): Axes {
     const host = this.fig.axes.indexOf(this);
-    const twin = new Axes(this.fig, { kind: 'twinx', host }, this.xaxis);
+    const twin = new Axes(this.fig, { kind: 'twinx', host }, this.cell, this.xaxis, new Axis());
     this.fig.axes.push(twin);
     return twin;
+  }
+  /** The Axes box [left, bottom, right, top] in figure fractions (SubplotSpec.get_position). */
+  get position(): Position { return cellPosition(this.cell, this.fig.subplotpars); }
+  /**
+   * Axes._label_outer_xaxis / _label_outer_yaxis for a shared grid (subplots(sharex='col'|'all', …)): an
+   * Axes off the bottom row loses its x tick labels and offset text, one off the left column its y ones.
+   * Tick labels stay on the outer edge only; ticks are kept.
+   */
+  labelOuter(axis: 'x' | 'y'): void {
+    const { rows, cols, grid } = this.cell;
+    if (axis === 'x' && rows[1] !== grid.nrows) { this.xlabel = ''; this.hiddenLabels = { ...this.hiddenLabels, x: true }; }
+    if (axis === 'y' && cols[0] !== 0) { this.ylabel = ''; this.hiddenLabels = { ...this.hiddenLabels, y: true }; }
   }
   /** set_xscale('linear' | 'log') */
   set_xscale(s: unknown): this { this.xaxis.setScale(s); return this; }
@@ -362,13 +379,12 @@ export class Axes {
     return t;
   }
 
-  /** annotate(text, xy, { xytext, xycoords, textcoords, arrowprops }) */
+  /** annotate(text, xy, { xytext, xycoords, textcoords, arrowprops, ha, va, color, fontsize, fontweight, clip_on }) — coords are 'data' or '<figure|axes> <fraction|points|pixels|fontsize>', and textcoords may also be 'offset <points|pixels|fontsize>' from xy. */
   annotate(text: unknown, xy: unknown, kwargs: Kwargs = {}): AnnotationArtist {
     const kw = new KwReader(kwargs, 'annotate');
     const xytextV = kw.get(['xytext']);
-    const DEF_COORD: AnnotationCoords = 'data';
-    const xycoords = kw.read(['xycoords'], (v): Result<AnnotationCoords> => (v === 'data' || v === 'axes' ? ok(v) : err(`xycoords must be 'data' or 'axes'`)), () => DEF_COORD);
-    const textcoords = kw.read(['textcoords'], (v): Result<AnnotationCoords> => (v === 'data' || v === 'axes' ? ok(v) : err(`textcoords must be 'data' or 'axes'`)), () => xycoords);
+    const xycoords = kw.read(['xycoords'], (v) => parseAnnotationCoords(v, 'xycoords'), (): AnnotationCoords => ({ kind: 'data' }));
+    const textcoords = kw.read(['textcoords'], (v) => parseAnnotationCoords(v, 'textcoords'), () => xycoords);
     type Arrow = AnnotationArtist['arrow'];
     const arrow = kw.read(['arrowprops'], (v): Result<Arrow> => {
       if (!isPlainObject(v)) return err('arrowprops must be an object');
@@ -387,9 +403,11 @@ export class Axes {
       return ok(some({ face, edge, linewidthPt: numOr(lwKey, 1), widthPt: numOr('width', 4), headLengthPt: numOr('headlength', 12),
                        headWidthPt: numOr('headwidth', 12), shrink: numOr('shrink', 0) }));
     }, (): Arrow => none);
-    const color = this.theme.text.color;
-    const sizePt = this.theme.font.sizePt;
-    const ha: HAlign = 'left', va: VAlign = 'baseline';
+    const color = kw.read(['color', 'c'], (v) => parseRgb(v, this.theme.axes.cycle), () => this.theme.text.color);
+    const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.font.sizePt), () => this.theme.font.sizePt);
+    const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.weight);
+    const ha = kw.read(['ha', 'horizontalalignment'], parseHAlign, (): HAlign => 'left');
+    const va = kw.read(['va', 'verticalalignment'], parseVAlign, (): VAlign => 'baseline');
     const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => false);   // matplotlib default: annotations are not clipped
     kw.done();
     const xyOk = ((): readonly [number, number] => {
@@ -405,7 +423,7 @@ export class Axes {
     const a: AnnotationArtist = {
       kind: 'annotation', x: xyOk[0], y: xyOk[1], xycoords,
       tx: xytextOk[0], ty: xytextOk[1], textcoords, text: str(text),
-      sizePt, weight: this.theme.font.weight, color, ha, va,
+      sizePt, weight, color, ha, va,
       arrow,
       clip,
     };
@@ -675,6 +693,10 @@ export class Axes {
       },
       tick: { x: this.tickXOv, y: this.tickYOv },
       tickLabels: this.labelStyles,
+      // shared axes (sharex/sharey, twinx) hold the same Axis: the first Axes holding it leads the group
+      xShare: this.fig.axes.findIndex((o) => o.xaxis === this.xaxis),
+      yShare: this.fig.axes.findIndex((o) => o.yaxis === this.yaxis),
+      hiddenLabels: this.hiddenLabels,
     };
   }
 }
@@ -728,6 +750,41 @@ function parseStyles(v: unknown): Result<readonly StyleSpec[]> {
   return err(`style must be a name, .mplstyle text, an rc object, or a list of those`);
 }
 
+const NO_OVERRIDES: GridSpec['overrides'] = { left: none, bottom: none, right: none, top: none, wspace: none, hspace: none };
+const sameCell = (a: SubplotSpec, b: SubplotSpec): boolean =>
+  a.grid === b.grid && a.rows[0] === b.rows[0] && a.rows[1] === b.rows[1] && a.cols[0] === b.cols[0] && a.cols[1] === b.cols[1];
+
+/** sharex / sharey after GridSpec.subplots maps a bool to 'all' or 'none'. */
+type Share = 'none' | 'all' | 'row' | 'col';
+const parseShare = (what: string) => (v: unknown): Result<Share> => {
+  if (v === true) return ok('all');
+  if (v === false) return ok('none');
+  return v === 'none' || v === 'all' || v === 'row' || v === 'col' ? ok(v) : err(`${what} must be a bool or one of 'none', 'all', 'row', 'col', got ${JSON.stringify(v)}`);
+};
+const positiveInt = (what: string, v: unknown): number => {
+  if (typeof v === 'number' && Number.isInteger(v) && v > 0) return v;
+  throw new TypeError(`${what} must be a positive integer, got ${JSON.stringify(v)}`);
+};
+const ratios = (name: string, n: number) => (v: unknown): Result<readonly number[]> => {
+  const a: readonly unknown[] = Array.isArray(v) ? v : [];
+  return a.length === n && a.every((x) => typeof x === 'number' && x > 0)
+    ? ok(a.map(Number)) : err(`${name} must be ${n} positive numbers, got ${JSON.stringify(v)}`);
+};
+const ones = (n: number): readonly number[] => Array.from({ length: n }, () => 1);
+const zeros = (n: number): number[] => Array.from({ length: n }, () => 0);
+const maxOf = (xs: readonly number[]): number => Math.max(...xs);
+/** GridSpec(nrows, ncols, **gridspec_kw): left/bottom/right/top/wspace/hspace and width/height_ratios. */
+function parseGridSpec(nrowsRaw: unknown, ncolsRaw: unknown, kwargs: Kwargs): GridSpec {
+  const nrows = positiveInt('nrows', nrowsRaw), ncols = positiveInt('ncols', ncolsRaw);
+  const kw = new KwReader(kwargs, 'GridSpec');
+  const opt = (name: string): Option<number> => kw.read([name], (v) => (num(name)(v).ok ? ok(some(Number(v))) : err(`${name} must be a number`)), (): Option<number> => none);
+  const overrides = { left: opt('left'), bottom: opt('bottom'), right: opt('right'), top: opt('top'), wspace: opt('wspace'), hspace: opt('hspace') };
+  const widthRatios = kw.read(['width_ratios'], ratios('width_ratios', ncols), () => ones(ncols));
+  const heightRatios = kw.read(['height_ratios'], ratios('height_ratios', nrows), () => ones(nrows));
+  kw.done();
+  return { nrows, ncols, widthRatios, heightRatios, overrides };
+}
+
 export class Figure {
   readonly theme: Theme;
   readonly widthIn: number;
@@ -735,6 +792,8 @@ export class Figure {
   readonly dpi: number;
   readonly axes: Axes[] = [];
   meta: readonly AxesMeta[] = [];
+  /** Figure.subplotpars: figure.subplot.* until subplots_adjust or tight_layout changes them */
+  subplotpars: SubplotParams;
   private _figText: { readonly x: number; readonly y: number; readonly text: string; readonly ha: HAlign; readonly va: VAlign; readonly sizePt: number; readonly weight: number; readonly color: Rgb }[] = [];
   private _suptitle: Option<{ readonly text: string; readonly x: number; readonly y: number; readonly ha: HAlign; readonly va: VAlign; readonly sizePt: number; readonly weight: number; readonly color: Rgb }> = none;
   private _supx: Option<{ readonly text: string; readonly x: number; readonly y: number; readonly ha: HAlign; readonly va: VAlign; readonly sizePt: number; readonly weight: number; readonly color: Rgb }> = none;
@@ -754,9 +813,54 @@ export class Figure {
     this.widthIn = size[0]; this.heightIn = size[1];
     this.dpi = kw.read(['dpi'], positive('dpi'), () => this.theme.figure.dpi);
     kw.done();
+    const [left, bottom, right, top] = this.theme.figure.subplot;
+    this.subplotpars = { left, bottom, right, top, ...this.theme.figure.spacing };
   }
-  /** add_subplot() — the figure's Axes, placed by figure.subplot.* (one per figure in mpljs). */
-  add_subplot(): Axes { const ax = new Axes(this, { kind: 'primary' }, new Axis()); this.axes.push(ax); return ax; }
+  /** add_subplot() — one Axes filling a 1x1 GridSpec, placed by the subplot parameters. */
+  add_subplot(): Axes {
+    const grid: GridSpec = { nrows: 1, ncols: 1, widthRatios: [1], heightRatios: [1], overrides: NO_OVERRIDES };
+    return this.addCell({ grid, rows: [0, 1], cols: [0, 1] }, none, none);
+  }
+  private addCell(cell: SubplotSpec, sharex: Option<Axes>, sharey: Option<Axes>): Axes {
+    const ax = new Axes(this, { kind: 'primary' }, cell, sharex.kind === 'some' ? sharex.value.xaxis : new Axis(), sharey.kind === 'some' ? sharey.value.yaxis : new Axis());
+    this.axes.push(ax);
+    this.touch();
+    return ax;
+  }
+  /**
+   * Figure.subplots / GridSpec.subplots: an nrows x ncols grid of Axes, row-major. sharex/sharey join
+   * Axes to [0][0] ('all' or true), their row's first ('row') or their column's first ('col'); a
+   * shared grid ('col'/'all' for x, 'row'/'all' for y) keeps tick labels on the outer Axes only.
+   * Returns every Axes as rows; subplots() applies squeeze.
+   */
+  subplots(nrows: number, ncols: number, kwargs: Kwargs = {}): readonly (readonly Axes[])[] {
+    const kw = new KwReader(kwargs, 'Figure.subplots');
+    const sharex = kw.read(['sharex'], parseShare('sharex'), (): Share => 'none');
+    const sharey = kw.read(['sharey'], parseShare('sharey'), (): Share => 'none');
+    const gkw = kw.read(['gridspec_kw'], (v): Result<Kwargs> => (isPlainObject(v) ? ok(v) : err('gridspec_kw must be an object')), (): Kwargs => ({}));
+    kw.done();
+    const grid = parseGridSpec(nrows, ncols, gkw);
+    const rows: Axes[][] = [];
+    for (let r = 0; r < grid.nrows; r++) {
+      const row: Axes[] = [];
+      for (let c = 0; c < grid.ncols; c++) {
+        const leader = (s: Share): Option<Axes> => {
+          switch (s) {
+            case 'none': return none;
+            case 'all': return r === 0 && c === 0 ? none : some(rows.length > 0 ? rows[0][0] : row[0]);
+            case 'row': return c === 0 ? none : some(row[0]);
+            case 'col': return r === 0 ? none : some(rows[0][c]);
+            default: return assertNever(s);
+          }
+        };
+        row.push(this.addCell({ grid, rows: [r, r + 1], cols: [c, c + 1] }, leader(sharex), leader(sharey)));
+      }
+      rows.push(row);
+    }
+    if (sharex === 'col' || sharex === 'all') for (const ax of rows.flat()) ax.labelOuter('x');
+    if (sharey === 'row' || sharey === 'all') for (const ax of rows.flat()) ax.labelOuter('y');
+    return rows;
+  }
   private spec(): FigureSpec {
     return {
       widthIn: this.widthIn, heightIn: this.heightIn, dpi: this.dpi, theme: this.theme, axes: this.axes.map((a) => a.spec()),
@@ -812,57 +916,90 @@ export class Figure {
     this._supy = some({ text: str(s), x: 0.02, y: 0.5, ha: 'left', va: 'center', sizePt, weight, color });
     this.touch(); return this;
   }
-  /** subplots_adjust({ left, bottom, right, top }) — the Axes box in figure fractions (wspace/hspace accepted, no effect with one Axes). */
+  /**
+   * subplots_adjust({ left, bottom, right, top, wspace, hspace }) — SubplotParams.update: unset values are
+   * kept; every Axes moves to its SubplotSpec's new position (a gridspec_kw value still wins for its grid).
+   */
   subplots_adjust(kwargs: Kwargs = {}): this {
     const kw = new KwReader(kwargs, 'Figure.subplots_adjust');
-    const left = kw.get(['left']); const right = kw.get(['right']); const bottom = kw.get(['bottom']); const top = kw.get(['top']);
-    // Accept but ignore wspace/hspace here: grid layout is owned by the grid constructor;
-    // subplots_adjust only changes the SubplotParams (margins) in our current single-axes model.
-    kw.get(['wspace']); kw.get(['hspace']);
+    const p = this.subplotpars;
+    const next: SubplotParams = {
+      left: kw.read(['left'], num('left'), () => p.left), bottom: kw.read(['bottom'], num('bottom'), () => p.bottom),
+      right: kw.read(['right'], num('right'), () => p.right), top: kw.read(['top'], num('top'), () => p.top),
+      wspace: kw.read(['wspace'], num('wspace'), () => p.wspace), hspace: kw.read(['hspace'], num('hspace'), () => p.hspace),
+    };
     kw.done();
-    const [l0, b0, r0, t0] = this.theme.figure.subplot;
-    const l = left.kind === 'some' ? unwrap(num('left')(left.value)) : l0;
-    const r = right.kind === 'some' ? unwrap(num('right')(right.value)) : r0;
-    const b = bottom.kind === 'some' ? unwrap(num('bottom')(bottom.value)) : b0;
-    const t = top.kind === 'some' ? unwrap(num('top')(top.value)) : t0;
-    // Preserve the existing subplot grid shape (as created by subplots(nrows, ncols) in matplotlib).
-    // In mpljs today figures typically have one primary Axes (plus optional twins). Match matplotlib:
-    // subplots_adjust only updates the SubplotParams; every Axes keeps its cell and twins co-locate.
-    for (const ax of this.axes) ax.position = [l, b, r, t];
+    const bad = validParams(next);
+    if (bad.kind === 'some') throw new RangeError(`subplots_adjust: ${bad.value}`);
+    this.subplotpars = next;
     this.touch(); return this;
   }
-  /** tight_layout({ pad = 1.08, h_pad, w_pad, rect }) — _tight_layout.get_tight_layout_figure for the one
-   *  subplot cell mpljs has (an Axes and its twins): lay out now, measure Axes.get_tightbbox, then
-   *  subplots_adjust so the decorations fit inside the figure with `pad` font sizes to spare. As in
-   *  matplotlib it runs once, at call time: call it after the plot is complete. */
+  /** tight_layout({ pad = 1.08, h_pad, w_pad, rect }) — _tight_layout.get_tight_layout_figure: lay out now,
+   *  measure each subplot cell's tight bbox (an Axes and its twins), then subplots_adjust margins and
+   *  wspace/hspace so the decorations fit with `pad` (h_pad/w_pad between cells) font sizes to spare.
+   *  As in matplotlib it runs once, at call time: call it after the plot is complete. */
   tight_layout(kwargs: Kwargs = {}): this {
     const kw = new KwReader(kwargs, 'Figure.tight_layout');
     const pad = kw.read(['pad'], num('pad'), () => 1.08);
-    // h_pad / w_pad only space adjacent subplots; one cell has none, but they must still be numbers
-    kw.read(['h_pad'], num('h_pad'), () => 0);
-    kw.read(['w_pad'], num('w_pad'), () => 0);
+    // h_pad / w_pad: the gap between cells, in font sizes (default: pad)
+    const hPad = kw.read(['h_pad'], (v) => (num('h_pad')(v).ok ? ok(some(Number(v))) : err('h_pad must be a number')), (): Option<number> => none);
+    const wPad = kw.read(['w_pad'], (v) => (num('w_pad')(v).ok ? ok(some(Number(v))) : err('w_pad must be a number')), (): Option<number> => none);
     const rect = kw.read(['rect'], (v): Result<Option<readonly [number, number, number, number]>> => {
       const a: readonly unknown[] = Array.isArray(v) ? v : [];
       return a.length === 4 && a.every((x) => typeof x === 'number') ? ok(some([Number(a[0]), Number(a[1]), Number(a[2]), Number(a[3])])) : err('rect must be [left, bottom, right, top] in figure fractions');
     }, (): Option<readonly [number, number, number, number]> => none);
     kw.done();
     if (this.axes.length === 0) return this;
-    const first = this.adjust(pad, none);
+    const pads = { pad, h: hPad, w: wPad };
+    const first = this.autoAdjust(pads, none);
     if (first.kind !== 'some') return this;
+    // get_tight_layout_figure: a rect shifts by the first pass's margins, then lays out again
+    const f = first.value;
     const out = rect.kind === 'some'
-      ? this.adjust(pad, some([rect.value[0] + first.value[0], rect.value[1] + first.value[1], rect.value[2] - (1 - first.value[2]), rect.value[3] - (1 - first.value[3])]))
+      ? this.autoAdjust(pads, some([rect.value[0] + f.left, rect.value[1] + f.bottom, rect.value[2] - (1 - f.right), rect.value[3] - (1 - f.top)]))
       : first;
-    if (out.kind === 'some') this.subplots_adjust({ left: out.value[0], bottom: out.value[1], right: out.value[2], top: out.value[3] });
+    if (out.kind === 'some') {
+      const o = out.value;
+      this.subplots_adjust({ left: o.left, bottom: o.bottom, right: o.right, top: o.top,
+                             ...(o.wspace.kind === 'some' ? { wspace: o.wspace.value } : {}), ...(o.hspace.kind === 'some' ? { hspace: o.hspace.value } : {}) });
+    }
     return this;
   }
-  /** _auto_adjust_subplotpars for one cell: [left, bottom, right, top], or none when it cannot fit. */
-  private adjust(pad: number, rect: Option<readonly [number, number, number, number]>): Option<readonly [number, number, number, number]> {
+  /**
+   * _tight_layout._auto_adjust_subplotpars over the figure's SubplotSpecs (twins join their host's cell):
+   * each cell's tight bbox overhang is added into the gutter rows/columns it borders, the outer gutters
+   * become margins (plus the suptitle and supx/supylabel), the inner ones wspace/hspace.
+   */
+  private autoAdjust(pads: { readonly pad: number; readonly h: Option<number>; readonly w: Option<number> }, rect: Option<readonly [number, number, number, number]>):
+      Option<{ readonly left: number; readonly bottom: number; readonly right: number; readonly top: number; readonly wspace: Option<number>; readonly hspace: Option<number> }> {
     this.toScene();
     const W = this.widthIn * this.dpi, H = this.heightIn * this.dpi;
-    const [l0, b0, r0, t0] = this.axes[0].position;           // the cell: the SubplotParams box
-    const t = unionBox(this.meta.map((m) => m.tight));        // the Axes and its twins share the cell
-    const tight = { xmin: t.x0 / W, xmax: t.x1 / W, ymin: 1 - t.y1 / H, ymax: 1 - t.y0 / H };
-    const padIn = pad * this.theme.font.sizePt / 72;
+    // ss_to_subplots: one entry per distinct SubplotSpec, in first-seen order
+    const cells: { readonly cell: SubplotSpec; readonly members: number[] }[] = [];
+    this.axes.forEach((ax, i) => {
+      const found = cells.find((c) => sameCell(c.cell, ax.cell));
+      if (found) found.members.push(i); else cells.push({ cell: ax.cell, members: [i] });
+    });
+    const maxRows = Math.max(...cells.map((c) => c.cell.grid.nrows)), maxCols = Math.max(...cells.map((c) => c.cell.grid.ncols));
+    if (cells.some((c) => maxRows % c.cell.grid.nrows !== 0 || maxCols % c.cell.grid.ncols !== 0)) {
+      console.warn('UserWarning: tight_layout not applied: number of rows/columns in subplot specifications must be multiples of one another.');
+      return none;
+    }
+    const fontIn = this.theme.font.sizePt / 72;
+    const padIn = pads.pad * fontIn;
+    const vpadIn = pads.h.kind === 'some' ? pads.h.value * fontIn : padIn;
+    const hpadIn = pads.w.kind === 'some' ? pads.w.value * fontIn : padIn;
+    const vspaces = Array.from({ length: maxRows + 1 }, () => zeros(maxCols));
+    const hspaces = Array.from({ length: maxRows }, () => zeros(maxCols + 1));
+    for (const { cell, members } of cells) {
+      const [l0, b0, r0, t0] = cellPosition(cell, this.subplotpars);
+      const t = unionBox(members.map((i) => this.meta[i].tight));
+      const tight = { xmin: t.x0 / W, xmax: t.x1 / W, ymin: 1 - t.y1 / H, ymax: 1 - t.y0 / H };
+      const dr = maxRows / cell.grid.nrows, dc = maxCols / cell.grid.ncols;
+      const rs = [cell.rows[0] * dr, cell.rows[1] * dr], cs = [cell.cols[0] * dc, cell.cols[1] * dc];
+      for (let r = rs[0]; r < rs[1]; r++) { hspaces[r][cs[0]] += l0 - tight.xmin; hspaces[r][cs[1]] += tight.xmax - r0; }
+      for (let c = cs[0]; c < cs[1]; c++) { vspaces[rs[0]][c] += tight.ymax - t0; vspaces[rs[1]][c] += b0 - tight.ymin; }
+    }
     const padW = padIn / this.widthIn, padH = padIn / this.heightIn;
     const sup = supBoxes(this.spec());
     const relW = (o: Option<{ readonly x0: number; readonly x1: number }>): number => (o.kind === 'some' ? (o.value.x1 - o.value.x0) / W + padW : 0);
@@ -870,13 +1007,26 @@ export class Figure {
     // a rect side of 0 (or none) is "not given", as `if not margin_left` reads it
     const given = (i: 0 | 1 | 2 | 3): Option<number> => (rect.kind === 'some' && rect.value[i] !== 0 ? some(rect.value[i]) : none);
     const gl = given(0), gb = given(1), gr = given(2), gt = given(3);
-    const left = gl.kind === 'some' ? gl.value : Math.max(l0 - tight.xmin, 0) + padW + relW(sup.y);
-    const right = gr.kind === 'some' ? 1 - gr.value : Math.max(tight.xmax - r0, 0) + padW;
-    const top = gt.kind === 'some' ? 1 - gt.value : Math.max(tight.ymax - t0, 0) + padH + relH(sup.title);
-    const bottom = gb.kind === 'some' ? gb.value : Math.max(b0 - tight.ymin, 0) + padH + relH(sup.x);
+    const left = gl.kind === 'some' ? gl.value : Math.max(maxOf(hspaces.map((row) => row[0])), 0) + padW + relW(sup.y);
+    const right = gr.kind === 'some' ? 1 - gr.value : Math.max(maxOf(hspaces.map((row) => row[maxCols])), 0) + padW;
+    const top = gt.kind === 'some' ? 1 - gt.value : Math.max(maxOf(vspaces[0]), 0) + padH + relH(sup.title);
+    const bottom = gb.kind === 'some' ? gb.value : Math.max(maxOf(vspaces[maxRows]), 0) + padH + relH(sup.x);
     if (left + right >= 1) { console.warn('UserWarning: Tight layout not applied. The left and right margins cannot be made large enough to accommodate all Axes decorations.'); return none; }
     if (bottom + top >= 1) { console.warn('UserWarning: Tight layout not applied. The bottom and top margins cannot be made large enough to accommodate all Axes decorations.'); return none; }
-    return some([left, bottom, 1 - right, 1 - top]);
+    let wspace: Option<number> = none, hspace: Option<number> = none;
+    if (maxCols > 1) {
+      const hs = maxOf(hspaces.flatMap((row) => row.slice(1, -1))) + hpadIn / this.widthIn;
+      const hAxes = (1 - right - left - hs * (maxCols - 1)) / maxCols;
+      if (hAxes < 0) { console.warn('UserWarning: Tight layout not applied. tight_layout cannot make Axes width small enough to accommodate all Axes decorations'); return none; }
+      wspace = some(hs / hAxes);
+    }
+    if (maxRows > 1) {
+      const vs = maxOf(vspaces.slice(1, -1).flat()) + vpadIn / this.heightIn;
+      const vAxes = (1 - top - bottom - vs * (maxRows - 1)) / maxRows;
+      if (vAxes < 0) { console.warn('UserWarning: Tight layout not applied. tight_layout cannot make Axes height small enough to accommodate all Axes decorations.'); return none; }
+      hspace = some(vs / vAxes);
+    }
+    return some({ left, bottom, right: 1 - right, top: 1 - top, wspace, hspace });
   }
   /** Run layout; one trace per run. */
   toScene(): Scene {
@@ -936,12 +1086,72 @@ export type TickLabelText = {
 export type TransformRef = { readonly kind: 'transform'; readonly coords: TextCoords };
 const parseCoords = (o: Option<unknown>): Result<TextCoords> => (o.kind === 'some' && (o.value === 'data' || o.value === 'axes') ? ok(o.value) : err('unknown transform'));
 const weightOf = (v: unknown): Result<number> => (typeof v === 'number' || typeof v === 'string' ? ok(parseWeight(v)) : err('fontweight must be a number or a weight name'));
+/** 'data' | '<figure|axes|offset> <points|pixels|fontsize|fraction>'; 'offset …' only for textcoords. */
+function parseAnnotationCoords(v: unknown, what: 'xycoords' | 'textcoords'): Result<AnnotationCoords> {
+  if (v === 'data') return ok({ kind: 'data' });
+  const parts = typeof v === 'string' ? v.split(' ') : [];
+  const [ref, unit] = parts;
+  const refOk = ref === 'figure' || ref === 'axes' || (ref === 'offset' && what === 'textcoords');
+  const unitOk = unit === 'points' || unit === 'pixels' || unit === 'fontsize' || (unit === 'fraction' && ref !== 'offset');
+  return parts.length === 2 && refOk && unitOk
+    ? ok({ kind: 'relative', ref, unit })
+    : err(`${what} must be 'data' or '<figure|axes${what === 'textcoords' ? '|offset' : ''}> <points|pixels|fontsize|fraction>', got ${JSON.stringify(v)}`);
+}
 const parseHAlign = (v: unknown): Result<HAlign> => (v === 'left' || v === 'center' || v === 'right' ? ok(v) : err(`ha must be 'left', 'center' or 'right'`));
 const parseVAlign = (v: unknown): Result<VAlign> => (v === 'top' || v === 'bottom' || v === 'center' || v === 'baseline' || v === 'center_baseline' ? ok(v) : err(`va must be one of top, bottom, center, baseline, center_baseline`));
 const unitInterval = (name: string) => (v: unknown): Result<number> => (typeof v === 'number' && v >= 0 && v <= 1 ? ok(v) : err(`${name} must be a number in [0, 1]`));
 
-/** subplots({ style, rc, figsize, dpi }) -> [fig, ax] */
-export function subplots(kwargs: Kwargs = {}): readonly [Figure, Axes] {
-  const fig = new Figure(kwargs);
-  return [fig, fig.add_subplot()];
+/** Keyword arguments of subplots(): the Figure's, the grid's, and squeeze (each may be left out). */
+export type SubplotsKwargs = Kwargs & Partial<{
+  readonly style: unknown; readonly rc: Readonly<Record<string, unknown>>; readonly figsize: readonly [number, number]; readonly dpi: number;
+  readonly sharex: boolean | Share; readonly sharey: boolean | Share; readonly squeeze: boolean;
+  readonly gridspec_kw: Partial<{
+    readonly left: number; readonly bottom: number; readonly right: number; readonly top: number;
+    readonly wspace: number; readonly hspace: number; readonly width_ratios: readonly number[]; readonly height_ratios: readonly number[];
+  }>;
+}>;
+/** A row-major grid of Axes: grid[row][col]. */
+export type AxesGrid2D = readonly (readonly Axes[])[];
+/** What subplots() can return when the shape is only known at run time. */
+export type SubplotsAxes = Axes | readonly Axes[] | AxesGrid2D;
+/**
+ * The axes value subplots(nrows, ncols, { squeeze }) returns, from the literal types of its arguments:
+ * squeeze=false: always rows of Axes; 1x1: one Axes; one row or column: a flat array; otherwise rows.
+ * With non-literal sizes the shape is decided at run time, so it is the union.
+ */
+export type SubplotsResult<R extends number, C extends number, S extends boolean> =
+  [S] extends [false] ? AxesGrid2D
+  : number extends R ? SubplotsAxes : number extends C ? SubplotsAxes
+  : [R] extends [1] ? ([C] extends [1] ? Axes : readonly Axes[])
+  : [C] extends [1] ? readonly Axes[] : AxesGrid2D;
+
+/** subplots() / subplots({ style, rc, figsize, dpi }) -> [fig, ax] */
+export function subplots(): readonly [Figure, Axes];
+export function subplots(kwargs: SubplotsKwargs): readonly [Figure, Axes];
+/** subplots(nrows) -> [fig, axes]: a column of nrows Axes (one Axes when nrows is 1) */
+export function subplots<R extends number>(nrows: R): readonly [Figure, SubplotsResult<R, 1, true>];
+/** subplots(nrows, ncols) -> [fig, axes], squeezed as matplotlib does (SubplotsResult) */
+export function subplots<R extends number, C extends number>(nrows: R, ncols: C): readonly [Figure, SubplotsResult<R, C, true>];
+/** subplots(nrows, ncols, { sharex, sharey, squeeze = true, gridspec_kw, style, rc, figsize, dpi }) -> [fig, axes] */
+export function subplots<R extends number, C extends number, S extends boolean = true>(
+  nrows: R, ncols: C, kwargs: SubplotsKwargs & Partial<{ readonly squeeze: S }>): readonly [Figure, SubplotsResult<R, C, S>];
+export function subplots(...args: readonly unknown[]): readonly [Figure, SubplotsAxes] {
+  const [a, b, c] = args;
+  if (args.length === 0 || isPlainObject(a)) {
+    const fig = new Figure(isPlainObject(a) ? a : {});
+    return [fig, fig.add_subplot()];
+  }
+  const kwargs: Kwargs = isPlainObject(c) ? c : {};
+  const figKeys = new Set(['style', 'rc', 'figsize', 'dpi']);
+  const pickKw = (f: (k: string) => boolean): Kwargs => Object.fromEntries(Object.entries(kwargs).filter(([k]) => f(k)));
+  const squeezeRaw = prop(kwargs, 'squeeze');
+  const squeeze = squeezeRaw.kind === 'some' && !isNullish(squeezeRaw.value) ? unwrap(bool('squeeze')(squeezeRaw.value)) : true;
+  const fig = new Figure(pickKw((k) => figKeys.has(k)));
+  const rows = fig.subplots(positiveInt('nrows', a), args.length < 2 ? 1 : positiveInt('ncols', b), pickKw((k) => !figKeys.has(k) && k !== 'squeeze'));
+  if (!squeeze) return [fig, rows];
+  // np.squeeze: drop the length-1 dimensions; a single Axes is returned as itself
+  if (rows.length === 1 && rows[0].length === 1) return [fig, rows[0][0]];
+  if (rows.length === 1) return [fig, rows[0]];
+  if (rows[0].length === 1) return [fig, rows.map((r) => r[0])];
+  return [fig, rows];
 }

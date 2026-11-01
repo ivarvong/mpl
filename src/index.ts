@@ -1,5 +1,6 @@
 export { Axes, Figure, subplots } from './api.ts';
-export type { Kwargs, TickLabelText, TransformRef } from './api.ts';
+export type { AxesGrid2D, Kwargs, SubplotsAxes, SubplotsKwargs, SubplotsResult, TickLabelText, TransformRef } from './api.ts';
+export type { GridSpec, SubplotParams, SubplotSpec } from './core/gridspec.ts';
 export { availableStyles, composeStyles, parseStyle } from './core/style.ts';
 export { parseTheme } from './core/theme.ts';
 export { layoutFigure } from './core/layout.ts';

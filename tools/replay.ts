@@ -15,10 +15,15 @@ export const fixtureNames = (): string[] => JSON.parse(readFileSync(REF + '_inde
 export const loadFixture = (name: string): Fixture => JSON.parse(readFileSync(REF + name + '.json', 'utf8'));
 /** Replay a fixture's [method, args, kwargs] calls: ax[method](...args, kwargs). */
 export function build(fx: Fixture): Figure {
-  const [fig, first] = subplots({ style: fx.style, rc: fx.rc || {} });
-  const axes: Axes[] = [first];
-  let ax: Axes = first;
+  // a leading ['$subplots', [nrows, ncols], kwargs] builds a grid; its Axes are listed row-major, as fig.axes
+  const grid = fx.spec.find((c: Fixture) => c[0] === '$subplots');
+  const [fig, made] = grid
+    ? subplots(grid[1][0] as number, grid[1][1] as number, { ...grid[2], squeeze: false, style: fx.style, rc: fx.rc || {} })
+    : subplots({ style: fx.style, rc: fx.rc || {} });
+  const axes: Axes[] = Array.isArray(made) ? made.flat() : [made];
+  let ax: Axes = axes[0];
   for (const [fn, args0, kwargs] of fx.spec) {
+    if (fn === '$subplots') continue;
     const args = args0.map(decode);
     // Figure-level calls are prefixed with 'fig.' in the spec
     if (fn.startsWith('fig.')) {

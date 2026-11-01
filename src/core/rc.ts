@@ -23,6 +23,8 @@ export const DEFAULTS: RcLayer = new Map<string, RcValue>(Object.entries({
   'figure.subplot.left': 0.125,
   'figure.subplot.right': 0.9,
   'figure.subplot.bottom': 0.11,
+  'figure.subplot.wspace': 0.2,
+  'figure.subplot.hspace': 0.2,
   'figure.subplot.top': 0.88,
   'font.size': 10,
   'font.family': 'DejaVu Sans',
