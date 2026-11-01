@@ -3,7 +3,11 @@
 // unknown keyword arguments are errors, as in matplotlib.
 import { parsePaint, parseRgb } from './core/colors.ts';
 import { date2num, fromEpochMs } from './core/dates.ts';
-import type { FmtShape } from './core/fmt.ts';
+import type { Fmt, FmtShape } from './core/fmt.ts';
+import { dataExtents, unionExtent, viewLimits } from './core/autoscale.ts';
+import type { Bins, Sample } from './core/histogram.ts';
+import { BIN_ESTIMATORS, histTops } from './core/histogram.ts';
+import { scaleOf } from './core/ticks.ts';
 import { parseFmt, parseLinestyle, parseMarker } from './core/fmt.ts';
 import { layoutFigure, supBoxes, unionBox } from './core/layout.ts';
 import type { GridSpec, SubplotParams, SubplotSpec } from './core/gridspec.ts';
@@ -17,6 +21,7 @@ import { composeStyles } from './core/style.ts';
 import { parseFontSize, parseLegendLoc, parseTheme } from './core/theme.ts';
 import type {
   Artist, AxesMeta, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
+  AxLineArtist, AxLineThrough, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist,
   LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords,
 } from './core/types.ts';
 import { assertNever, err, none, ok, some, unwrap } from './core/types.ts';
@@ -113,12 +118,148 @@ function broadcast(v: unknown, n: number, what: string): Result<Float64Array> {
   return err(`${what} has ${vals.length} values, expected 1 or ${n}`);
 }
 
+const pt = (v: unknown, what: string): readonly [number, number] => {
+  if (Array.isArray(v) && v.length === 2 && typeof v[0] === 'number' && typeof v[1] === 'number') return [v[0], v[1]];
+  throw new TypeError(`axline: ${what} must be [x, y] numbers`);
+};
+const pick = (a: Float64Array, m: Uint8Array): Float64Array => a.filter((_, i) => m[i] === 1);
+const and = (a: Uint8Array, b: Uint8Array): Uint8Array => a.map((v, i) => (v === 1 && b[i] === 1 ? 1 : 0));
+const edgeOf = (p: Paint, lw: number): BarEdge => (p.kind === 'solid' && p.color.alpha > 0 && lw > 0 ? { kind: 'on', color: p.color, widthPt: lw } : { kind: 'none' });
+/** A point (x, y), as matplotlib's xy tuples. */
+export type XY = readonly [number, number];
+const DATA_COORDS: LineCoords = { x: 'data', y: 'data' };
+const NO_FMT: Fmt = { color: none, shape: { kind: 'default' } };
+const alphaOf = (v: unknown): Result<Option<number>> => (typeof v === 'number' && v >= 0 && v <= 1 ? ok(some(v)) : err('alpha must be in [0, 1]'));
+/** set_alpha: replaces the colour's alpha */
+const withAlphaOpt = (p: Paint, a: Option<number>): Paint => (p.kind === 'solid' && a.kind === 'some' ? { kind: 'solid', color: { hex: p.color.hex, alpha: a.value } } : p);
+/** Python's repr() of a JSON-like value, for error messages that quote the argument as matplotlib does. */
+const pyRepr = (v: unknown): string => {
+  if (typeof v === 'string') return `'${v}'`;
+  if (typeof v === 'boolean') return v ? 'True' : 'False';
+  if (isNullish(v)) return 'None';
+  if (Array.isArray(v)) return `[${v.map(pyRepr).join(', ')}]`;
+  return typeof v === 'number' ? String(v) : JSON.stringify(v);
+};
+const unwrapErr = <T>(r: Result<T>): string => (r.ok ? '' : r.error);
+const mapResult = <T, U>(r: Result<T>, f: (t: T) => U): Result<U> => (r.ok ? ok(f(r.value)) : r);
+const parseDrawStyle = (v: unknown): Result<DrawStyle> => {
+  if (v === 'default' || v === 'steps-pre' || v === 'steps-mid' || v === 'steps-post') return ok(v);
+  if (v === 'steps') return ok('steps-pre');
+  return err(`${pyRepr(v)} is not a valid value for drawstyle. Supported values are 'default', 'steps-mid', 'steps-pre', 'steps-post', 'steps'`);
+};
+/** _api.check_in_list */
+const oneOf = <T extends string>(name: string, values: readonly T[]) => (v: unknown): Result<T> => {
+  for (const x of values) if (x === v) return ok(x);
+  return err(`${pyRepr(v)} is not a valid value for ${name}. Supported values are ${values.map((x) => `'${x}'`).join(', ')}`);
+};
+/** numpy's dtype class for a hist input: a list of Python ints, or an integer typed array, is integer data. */
+const isIntegerData = (v: unknown): boolean => {
+  if (v instanceof Int8Array || v instanceof Uint8Array || v instanceof Uint8ClampedArray || v instanceof Int16Array
+    || v instanceof Uint16Array || v instanceof Int32Array || v instanceof Uint32Array) return true;
+  if (typeof v === 'number') return Number.isInteger(v);
+  return Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'number' && Number.isInteger(x));
+};
+
+/** The Line2D properties a line-making call read, before they become a LineArtist. */
+type LineProps = {
+  readonly stroke: LineStroke; readonly markers: LineMarkers;
+  /** the line colour before alpha (errorbar's base colour) */
+  readonly color: Paint; readonly alpha: Option<number>;
+  /** linewidth / markeredgewidth exactly as passed (errorbar forwards them to its bars and caps) */
+  readonly lw: Option<number>; readonly mew: Option<number>;
+  readonly drawstyle: DrawStyle; readonly zorder: number; readonly label: Label; readonly clip: boolean;
+};
+
+/** An error spec resolved against n points: the lower and upper error of each. */
+type ErrPair = { readonly lo: Float64Array; readonly hi: Float64Array };
+type ErrDir = {
+  readonly dep: 'x' | 'y'; readonly err: Option<ErrPair>; readonly lo: Uint8Array; readonly up: Uint8Array;
+  readonly marker: MarkerName; readonly lomarker: MarkerName; readonly himarker: MarkerName;
+};
+const shapeStr = (v: unknown): string => {
+  if (!Array.isArray(v) && !ArrayBuffer.isView(v)) return '()';
+  const a: readonly unknown[] = Array.isArray(v) ? v : Array.from(v instanceof Float64Array || isNumericTypedArray(v) ? v : []);
+  if (a.length > 0 && a.every((r) => Array.isArray(r) || ArrayBuffer.isView(r))) {
+    const inner = new Set(a.map((r) => (Array.isArray(r) ? r.length : r instanceof Float64Array || isNumericTypedArray(r) ? r.length : 0)));
+    return inner.size === 1 ? `(${a.length}, ${[...inner][0]})` : `(${a.length},)`;
+  }
+  return `(${a.length},)`;
+};
+/** errorbar's np.broadcast_to(err, (2, n)), then the negative-value check. */
+function parseErr(v: unknown, n: number, dep: 'x' | 'y'): Result<Option<ErrPair>> {
+  const bad = err<Option<ErrPair>>(`'${dep}err' (shape: ${shapeStr(v)}) must be a scalar or a 1D or (2, n) array-like whose shape matches '${dep}' (shape: (${n},))`);
+  const row = (r: unknown): Option<Float64Array> => {
+    const s = parseSeries(r, `${dep}err`);
+    if (!s.ok || s.value.kind === 'strings') return none;
+    const vals = s.value.values;
+    return vals.length === n ? some(vals) : vals.length === 1 ? some(new Float64Array(n).fill(vals[0])) : none;
+  };
+  const rows = Array.isArray(v) && v.length === 2 && v.every((r) => Array.isArray(r) || ArrayBuffer.isView(r)) ? v : [v];
+  if (rows.length === 1 && Array.isArray(v) && v.some((r) => Array.isArray(r) || ArrayBuffer.isView(r))) return bad;
+  const parsed = rows.map(row);
+  const lo = parsed[0], hi = parsed[parsed.length - 1];
+  if (lo.kind === 'none' || hi.kind === 'none') return bad;
+  for (const a of [lo.value, hi.value]) for (const x of a) if (x < -x) return err(`'${dep}err' must not contain negative values`);
+  return ok(some({ lo: lo.value, hi: hi.value }));
+}
+/** lolims= / uplims=: a bool or one bool per point (np.broadcast_to(…, n).astype(bool)). */
+function boolMask(v: unknown, n: number, name: string): Result<Uint8Array> {
+  if (typeof v === 'boolean') return ok(new Uint8Array(n).fill(v ? 1 : 0));
+  if (Array.isArray(v) && (v.length === n || v.length === 1) && v.every((b) => typeof b === 'boolean')) return ok(Uint8Array.from({ length: n }, (_, i) => (v[v.length === 1 ? 0 : i] === true ? 1 : 0)));
+  return err(`${name} must be a bool or ${n} bools`);
+}
+/**
+ * Axes._errorevery_to_mask: every n-th point (a number), a (start, step) pair ({ start, step }, Python's tuple),
+ * an index list (Python's list: numpy fancy indexing, negatives from the end), or a boolean mask.
+ */
+function everyMask(v: unknown, n: number): Result<Uint8Array> {
+  const slice = (start: number, step: number): Result<Uint8Array> => {
+    if (!Number.isInteger(start) || !Number.isInteger(step)) return err(`errorevery=(${start}, ${step}) is a not a tuple of two integers`);
+    if (step === 0) return err('slice step cannot be zero');
+    if (step < 0) return err('errorevery: a negative step is not supported');
+    const m = new Uint8Array(n);
+    for (let i = start < 0 ? Math.max(0, n + start) : start; i < n; i += step) m[i] = 1;
+    return ok(m);
+  };
+  if (typeof v === 'number' && Number.isInteger(v)) return slice(0, v);
+  if (isPlainObject(v)) {
+    const start = prop(v, 'start'), step = prop(v, 'step');
+    if (start.kind === 'some' && step.kind === 'some' && typeof start.value === 'number' && typeof step.value === 'number' && Object.keys(v).length === 2) return slice(start.value, step.value);
+    return err('errorevery: { start, step } must be two integers');
+  }
+  if (Array.isArray(v) && v.length === n && v.every((b) => typeof b === 'boolean')) return ok(Uint8Array.from(v, (b) => (b === true ? 1 : 0)));
+  if (Array.isArray(v) && v.every((i) => typeof i === 'number' && Number.isInteger(i))) {
+    const m = new Uint8Array(n);
+    for (const i of v) {
+      const j = Number(i) < 0 ? n + Number(i) : Number(i);
+      if (j < 0 || j >= n) return err(`errorevery=${pyRepr(v)} is iterable but not a valid NumPy fancy index to match 'xerr'/'yerr'`);
+      m[j] = 1;
+    }
+    return ok(m);
+  }
+  return err(`errorevery=${pyRepr(v)} is not a recognized value`);
+}
+
+/** What hist() returns per dataset: the BarContainer of a bar histogram, or the Polygon of a step one. */
+export type HistPatches = { readonly kind: 'bars'; readonly bars: BarArtist } | { readonly kind: 'polygons'; readonly polygons: readonly PolygonArtist[] };
+/** hist(x) of one dataset: [n, bins, patches] */
+export type HistResult = readonly [Float64Array, Float64Array, HistPatches];
+/** hist([x0, x1, …]): one n row and one patches entry per dataset, sharing the bin edges */
+export type HistResultMulti = readonly [readonly Float64Array[], Float64Array, readonly HistPatches[]];
+export type HistType = 'bar' | 'barstacked' | 'step' | 'stepfilled';
+/** ErrorbarContainer: (data_line, caplines, barlinecols) plus the legend artist. data_line is none for fmt='none'. */
+export type ErrorbarContainer = {
+  readonly artist: ErrorbarArtist; readonly data_line: Option<LineArtist>; readonly caplines: readonly LineArtist[];
+  readonly barlinecols: readonly SegmentsArtist[]; readonly has_xerr: boolean; readonly has_yerr: boolean;
+};
+
 type Units = { readonly kind: 'numeric' } | { readonly kind: 'category'; readonly names: readonly string[] } | { readonly kind: 'datetime' };
 
 class Axis {
   units: Units = { kind: 'numeric' };
   scale: Scale = { kind: 'linear' };
-  limits: Limits = { kind: 'auto' };
+  /** matplotlib's viewLim (0, 1) with autoscale on and nothing pending, until data arrives */
+  limits: Limits = { kind: 'view', lo: 0, hi: 1 };
   ticks: TickSpec = { kind: 'auto' };
   labels: LabelSpec = { kind: 'auto' };
   /** StrCategoryConverter: strings map to 0..n-1 in first-seen order; the axis becomes categorical. */
@@ -144,7 +285,12 @@ class Axis {
     if (v === 'linear') this.scale = { kind: 'linear' };
     else if (v === 'log') this.scale = { kind: 'log', base: 10 };
     else throw new TypeError(`unsupported scale ${JSON.stringify(v)}; supported: 'linear', 'log'`);
+    this.request();   // _set_axes_scale -> _request_autoscale_view
   }
+  /** get_inverted: the view limits run high to low */
+  inverted(): boolean { return (this.limits.kind === 'fixed' || this.limits.kind === 'view') && this.limits.lo > this.limits.hi; }
+  /** _request_autoscale_view: a no-op once set_*lim turned autoscaling off */
+  request(): void { if (this.limits.kind === 'view') this.limits = { kind: 'auto' }; }
   setLimits(args: readonly unknown[], fn: string): void {
     const pair: readonly unknown[] = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
     if (pair.length !== 2) throw new TypeError(`${fn}() takes (lo, hi) or ([lo, hi])`);
@@ -237,42 +383,465 @@ export class Axes {
   }
   private paint = (v: unknown): Result<Paint> => parsePaint(v, this.theme.axes.cycle);
 
-  /** plot(y) | plot(x, y) | plot(x, y, fmt), with an optional trailing kwargs object. */
-  plot(...args: readonly unknown[]): LineArtist {
+  /** plot(y) | plot(x, y) | plot(x, y, fmt), with an optional trailing kwargs object ({ drawstyle | ds, … }). */
+  plot(...args: readonly unknown[]): LineArtist { return this.plotArgs('plot', args); }
+
+  /** step(x, y, [fmt], { where: 'pre' | 'post' | 'mid', … }) — plot() with drawstyle 'steps-<where>'. */
+  step(...args: readonly unknown[]): LineArtist {
     const rest = [...args];
     const kwRaw = rest.length > 0 && isPlainObject(rest[rest.length - 1]) ? rest.pop() : {};
-    const kw = new KwReader(isPlainObject(kwRaw) ? kwRaw : {}, 'plot');
+    const kwObj: Kwargs = isPlainObject(kwRaw) ? kwRaw : {};
+    const whereV = prop(kwObj, 'where');
+    const where = whereV.kind === 'some' && !isNullish(whereV.value) ? whereV.value : 'pre';
+    if (where !== 'pre' && where !== 'post' && where !== 'mid') throw new RangeError(unwrapErr(oneOf('where', ['pre', 'post', 'mid'])(where)));
+    const dataArgs = rest.filter((v) => typeof v !== 'string');
+    if (dataArgs.length !== 2) throw new TypeError(`step() takes x and y, then an optional fmt; got ${dataArgs.length} data arguments`);
+    const others = Object.fromEntries(Object.entries(kwObj).filter(([k]) => k !== 'where'));
+    return this.plotArgs('step', [...rest, { ...others, drawstyle: `steps-${where}` }]);
+  }
+
+  private plotArgs(fn: string, args: readonly unknown[]): LineArtist {
+    const rest = [...args];
+    const kwRaw = rest.length > 0 && isPlainObject(rest[rest.length - 1]) ? rest.pop() : {};
+    const kw = new KwReader(isPlainObject(kwRaw) ? kwRaw : {}, fn);
     const fmtRaw = rest.length > 0 && typeof rest[rest.length - 1] === 'string' ? rest.pop() : '';
     const fmt = unwrap(parseFmt(str(fmtRaw)));
-    if (rest.length !== 1 && rest.length !== 2) throw new TypeError(`plot() takes y, or x and y, then an optional fmt; got ${rest.length} data arguments`);
+    if (rest.length !== 1 && rest.length !== 2) throw new TypeError(`${fn}() takes y, or x and y, then an optional fmt; got ${rest.length} data arguments`);
     const ys = unwrap(parseSeries(rest[rest.length - 1], 'y'));
     const xs: Series = rest.length === 2 ? unwrap(parseSeries(rest[0], 'x')) : { kind: 'numeric', values: Float64Array.from({ length: ys.values.length }, (_, i) => i) };
     if (xs.values.length !== ys.values.length) throw new RangeError(`x and y must have the same length, got ${xs.values.length} and ${ys.values.length}`);
+    const p = this.lineProps(kw, fmt, () => ({ kind: 'solid', color: this.next('line') }));
+    kw.done();
+    const line: LineArtist = { kind: 'line', x: this.xaxis.convert(xs), y: this.yaxis.convert(ys), stroke: p.stroke, markers: p.markers, label: p.label,
+                               clip: p.clip, drawstyle: p.drawstyle, coords: DATA_COORDS, zorder: p.zorder };
+    this.artists.push(line);
+    this.xaxis.request(); this.yaxis.request();
+    return line;
+  }
 
+  /**
+   * The Line2D properties: the fmt string first, then kwargs, which win. `color` gives the colour when
+   * neither names one (the line prop cycle for plot(), lines.color for axhline/axline).
+   */
+  private lineProps(kw: KwReader, fmt: Fmt, color: () => Paint): LineProps {
     const T = this.theme.lines;
-    const color0: Paint = kw.read(['color', 'c'], this.paint, () => (fmt.color.kind === 'some' ? unwrap(this.paint(fmt.color.value)) : { kind: 'solid', color: this.next('line') }));
+    const color0: Paint = kw.read(['color', 'c'], this.paint, () => (fmt.color.kind === 'some' ? unwrap(this.paint(fmt.color.value)) : color()));
     // Line2D.set_alpha replaces the alpha of the line colour and of the marker face and edge
-    const alpha = kw.read(['alpha'], (v): Result<Option<number>> => (typeof v === 'number' && v >= 0 && v <= 1 ? ok(some(v)) : err('alpha must be in [0, 1]')), (): Option<number> => none);
-    const withAlpha = (p: Paint): Paint => (p.kind === 'solid' && alpha.kind === 'some' ? { kind: 'solid', color: { hex: p.color.hex, alpha: alpha.value } } : p);
-    const color = withAlpha(color0);
+    const alpha = kw.read(['alpha'], alphaOf, (): Option<number> => none);
+    const color1 = withAlphaOpt(color0, alpha);
     const dflt = shapeDefaults(fmt.shape, this.theme);
     const style = kw.read(['linestyle', 'ls'], parseLinestyle, () => dflt.line);
     const marker = kw.read(['marker'], parseMarker, () => dflt.marker);
-    const widthPt = kw.read(['linewidth', 'lw'], num('linewidth'), () => T.widthPt);
+    const lwGiven = kw.read(['linewidth', 'lw'], (v) => (typeof v === 'number' ? ok(some(v)) : err('linewidth must be a number')), (): Option<number> => none);
+    const widthPt = lwGiven.kind === 'some' ? lwGiven.value : T.widthPt;
     const sizePt = kw.read(['markersize', 'ms'], num('markersize'), () => T.markerSizePt);
-    const edgeWidthPt = kw.read(['markeredgewidth', 'mew'], num('markeredgewidth'), () => T.markerEdgeWidthPt);
-    const face = withAlpha(kw.read(['markerfacecolor', 'mfc'], this.paint, () => (T.markerFace.kind === 'some' ? T.markerFace.value : color0)));
-    const edge = withAlpha(kw.read(['markeredgecolor', 'mec'], this.paint, () => (T.markerEdge.kind === 'some' ? T.markerEdge.value : color0)));
+    const mewGiven = kw.read(['markeredgewidth', 'mew'], (v) => (typeof v === 'number' ? ok(some(v)) : err('markeredgewidth must be a number')), (): Option<number> => none);
+    const edgeWidthPt = mewGiven.kind === 'some' ? mewGiven.value : T.markerEdgeWidthPt;
+    const face = withAlphaOpt(kw.read(['markerfacecolor', 'mfc'], this.paint, () => (T.markerFace.kind === 'some' ? T.markerFace.value : color0)), alpha);
+    const edge = withAlphaOpt(kw.read(['markeredgecolor', 'mec'], this.paint, () => (T.markerEdge.kind === 'some' ? T.markerEdge.value : color0)), alpha);
+    const drawstyle = kw.read(['drawstyle', 'ds'], parseDrawStyle, (): DrawStyle => 'default');
+    const zorder = kw.read(['zorder'], num('zorder'), () => 2);
+    const lbl = kw.read(['label'], label, (): Label => ({ kind: 'none' }));
+    const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => true);
+    const stroke: LineStroke = style.kind === 'some' && color1.kind === 'solid' && widthPt > 0
+      ? { kind: 'on', color: color1.color, widthPt, style: style.value } : { kind: 'none' };
+    const markers: LineMarkers = marker.kind === 'some' ? { kind: 'on', shape: marker.value, sizePt, edgeWidthPt, face, edge } : { kind: 'none' };
+    return { stroke, markers, color: color0, alpha, lw: lwGiven, mew: mewGiven, drawstyle, zorder, label: lbl, clip };
+  }
+
+  /** get_ybound / get_xbound: unstale the view limits, as matplotlib does when asked for them. */
+  private settle(): void {
+    const which: readonly ('x' | 'y')[] = ['x', 'y'];
+    for (const w of which) {
+      const axis = w === 'x' ? this.xaxis : this.yaxis;
+      if (axis.limits.kind !== 'auto') continue;
+      const group = this.fig.axes.filter((a) => (w === 'x' ? a.xaxis : a.yaxis) === axis);
+      const ext = unionExtent(group.map((a) => dataExtents(a.artists)[w]));
+      const spec = axis.spec();
+      const [lo, hi] = viewLimits(spec, scaleOf(spec), ext, w === 'x' ? this.theme.axes.xmargin : this.theme.axes.ymargin);
+      axis.limits = { kind: 'view', lo, hi };
+    }
+  }
+
+  /** axhline(y = 0, { xmin = 0, xmax = 1, …Line2D }) — xmin/xmax are axes fractions. Autoscales y only when y is outside the current bounds. */
+  axhline(y: unknown = 0, kwargs: Kwargs = {}): LineArtist { return isPlainObject(y) ? this.refLine('axhline', 0, y) : this.refLine('axhline', y, kwargs); }
+  /** axvline(x = 0, { ymin = 0, ymax = 1, …Line2D }) — ymin/ymax are axes fractions. Autoscales x only when x is outside the current bounds. */
+  axvline(x: unknown = 0, kwargs: Kwargs = {}): LineArtist { return isPlainObject(x) ? this.refLine('axvline', 0, x) : this.refLine('axvline', x, kwargs); }
+
+  private refLine(fn: 'axhline' | 'axvline', vRaw: unknown, kwargs: Kwargs): LineArtist {
+    const kw = new KwReader(kwargs, fn);
+    if (prop(kwargs, 'transform').kind === 'some') throw new RangeError(`'transform' is not allowed as a keyword argument; ${fn} generates its own transform.`);
+    const horiz = fn === 'axhline';
+    const [n0, n1] = horiz ? ['xmin', 'xmax'] : ['ymin', 'ymax'];
+    const f0 = kw.read([n0], num(n0), () => 0);
+    const f1 = kw.read([n1], num(n1), () => 1);
+    this.settle();
+    const axis = horiz ? this.yaxis : this.xaxis;
+    const v = axis.convert(unwrap(parseSeries([vRaw], horiz ? 'y' : 'x')))[0];
+    const lim = axis.limits;
+    const [b0, b1] = lim.kind === 'auto' ? [v, v] : [Math.min(lim.lo, lim.hi), Math.max(lim.lo, lim.hi)];
+    const p = this.lineProps(kw, NO_FMT, () => ({ kind: 'solid', color: this.theme.lines.color }));
+    kw.done();
+    const line: LineArtist = {
+      kind: 'line', x: horiz ? Float64Array.of(f0, f1) : Float64Array.of(v, v), y: horiz ? Float64Array.of(v, v) : Float64Array.of(f0, f1),
+      stroke: p.stroke, markers: p.markers, label: p.label, clip: p.clip, drawstyle: p.drawstyle,
+      coords: horiz ? { x: 'axes', y: 'data' } : { x: 'data', y: 'axes' }, zorder: p.zorder,
+    };
+    this.artists.push(line);
+    if (v < b0 || v > b1) axis.request();
+    return line;
+  }
+
+  /** axline(xy1, xy2) or axline(xy1, { slope }) — an infinite line through two points, or one point and a slope (linear scales only). */
+  axline(xy1: XY, xy2OrKw: XY | Kwargs = {}, kwargs: Kwargs = {}): AxLineArtist {
+    const xy2: Option<readonly [number, number]> = Array.isArray(xy2OrKw) ? some(pt(xy2OrKw, 'xy2')) : none;
+    const kw = new KwReader(Array.isArray(xy2OrKw) ? kwargs : (isPlainObject(xy2OrKw) ? xy2OrKw : {}), 'axline');
+    const slope = kw.read(['slope'], (v) => (typeof v === 'number' ? ok(some(v)) : err('slope must be a number')), (): Option<number> => none);
+    if (slope.kind === 'some' && (this.xaxis.scale.kind !== 'linear' || this.yaxis.scale.kind !== 'linear')) throw new TypeError("'slope' cannot be used with non-linear scales");
+    if ((xy2.kind === 'none') === (slope.kind === 'none')) throw new TypeError("Exactly one of 'xy2' and 'slope' must be given");
+    const p1 = pt(xy1, 'xy1');
+    const through: AxLineThrough = xy2.kind === 'some' ? { kind: 'point', x2: xy2.value[0], y2: xy2.value[1] } : { kind: 'slope', slope: slope.kind === 'some' ? slope.value : 0 };
+    if (through.kind === 'point' && through.x2 === p1[0] && through.y2 === p1[1]) throw new RangeError('Cannot draw a line through two identical points');
+    // AxLineArtist is a stroke only: say so rather than drop marker, drawstyle or zorder kwargs
+    const unsupported = ['marker', 'markersize', 'ms', 'markeredgewidth', 'mew', 'markerfacecolor', 'mfc', 'markeredgecolor', 'mec', 'drawstyle', 'ds', 'zorder'].filter((k) => prop(kw.kw, k).kind === 'some');
+    if (unsupported.length > 0) throw new TypeError(`axline() does not support '${unsupported[0]}' in mpljs`);
+    const p = this.lineProps(kw, NO_FMT, () => ({ kind: 'solid', color: this.theme.lines.color }));
+    kw.done();
+    const a: AxLineArtist = { kind: 'axline', x1: p1[0], y1: p1[1], through, stroke: p.stroke, label: p.label, clip: p.clip };
+    this.artists.push(a);
+    this.xaxis.request(); this.yaxis.request();
+    return a;
+  }
+
+  /** hlines(y, xmin, xmax, { colors, linestyles, label, linewidth|lw, alpha, zorder, clip_on }) — a LineCollection of horizontal segments. */
+  hlines(y: unknown, xmin: unknown, xmax: unknown, kwargs: Kwargs = {}): SegmentsArtist { return this.lines('hlines', y, xmin, xmax, kwargs); }
+  /** vlines(x, ymin, ymax, { colors, linestyles, label, linewidth|lw, alpha, zorder, clip_on }) — a LineCollection of vertical segments. */
+  vlines(x: unknown, ymin: unknown, ymax: unknown, kwargs: Kwargs = {}): SegmentsArtist { return this.lines('vlines', x, ymin, ymax, kwargs); }
+
+  private lines(fn: 'hlines' | 'vlines', posRaw: unknown, loRaw: unknown, hiRaw: unknown, kwargs: Kwargs): SegmentsArtist {
+    const kw = new KwReader(kwargs, fn);
+    const horiz = fn === 'hlines';
+    const posAxis = horiz ? this.yaxis : this.xaxis, spanAxis = horiz ? this.xaxis : this.yaxis;
+    const lo0 = spanAxis.convert(unwrap(parseSeries(loRaw, horiz ? 'xmin' : 'ymin')));
+    const hi0 = spanAxis.convert(unwrap(parseSeries(hiRaw, horiz ? 'xmax' : 'ymax')));
+    const pos = posAxis.convert(unwrap(parseSeries(posRaw, horiz ? 'y' : 'x')));
+    const n = pos.length;
+    const lo = unwrap(broadcast(lo0, n, horiz ? 'xmin' : 'ymin')), hi = unwrap(broadcast(hi0, n, horiz ? 'xmax' : 'ymax'));
+    const rgbs = (v: unknown): Result<readonly Rgb[]> => {
+      const one = parseRgb(v, this.theme.axes.cycle);
+      if (one.ok) return ok([one.value]);
+      if (!Array.isArray(v) || v.length === 0) return one;
+      const out: Rgb[] = [];
+      for (const c of v) { const r = parseRgb(c, this.theme.axes.cycle); if (!r.ok) return r; out.push(r.value); }
+      return ok(out);
+    };
+    const colors0 = kw.read(['colors', 'color', 'c'], rgbs, (): readonly Rgb[] => [this.theme.lines.color]);
+    const styles = kw.read(['linestyles', 'linestyle', 'ls'], (v): Result<readonly LineStyleName[]> => {
+      const one = parseLinestyle(v);
+      if (one.ok) return one.value.kind === 'some' ? ok([one.value.value]) : err('linestyles: none is not supported');
+      if (!Array.isArray(v) || v.length === 0) return err('linestyles must be a line style or a list of them');
+      const out: LineStyleName[] = [];
+      for (const s of v) { const r = parseLinestyle(s); if (!r.ok) return r; if (r.value.kind === 'some') out.push(r.value.value); }
+      return out.length === v.length ? ok(out) : err('linestyles: none is not supported');
+    }, (): readonly LineStyleName[] => ['solid']);
+    const widthPt = kw.read(['linewidths', 'linewidth', 'lw'], num('linewidth'), () => this.theme.lines.widthPt);
+    const alpha = kw.read(['alpha'], alphaOf, (): Option<number> => none);
+    const zorder = kw.read(['zorder'], num('zorder'), () => 2);
     const lbl = kw.read(['label'], label, (): Label => ({ kind: 'none' }));
     const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => true);
     kw.done();
+    const colors = colors0.map((c) => (alpha.kind === 'some' ? { hex: c.hex, alpha: alpha.value } : c));
+    const pos2 = Float64Array.from(pos);
+    const a: SegmentsArtist = horiz
+      ? { kind: 'segments', x0: lo, y0: pos, x1: hi, y1: pos2, colors, widthPt, styles, label: lbl, clip, zorder }
+      : { kind: 'segments', x0: pos, y0: lo, x1: pos2, y1: hi, colors, widthPt, styles, label: lbl, clip, zorder };
+    this.artists.push(a);
+    if (n > 0) { this.xaxis.request(); this.yaxis.request(); }
+    return a;
+  }
 
-    const stroke: LineStroke = style.kind === 'some' && color.kind === 'solid' && widthPt > 0
-      ? { kind: 'on', color: color.color, widthPt, style: style.value } : { kind: 'none' };
-    const markers: LineMarkers = marker.kind === 'some' ? { kind: 'on', shape: marker.value, sizePt, edgeWidthPt, face, edge } : { kind: 'none' };
-    const line: LineArtist = { kind: 'line', x: this.xaxis.convert(xs), y: this.yaxis.convert(ys), stroke, markers, label: lbl, clip };
-    this.artists.push(line);
-    return line;
+  /**
+   * errorbar(x, y, { yerr, xerr, fmt, ecolor, elinewidth, elinestyle, capsize, capthick, barsabove, lolims, uplims,
+   * xlolims, xuplims, errorevery, label, …Line2D }) — errors are a scalar, one value per point, or [lower, upper].
+   */
+  errorbar(xRaw: unknown, yRaw: unknown, kwargs: Kwargs = {}): ErrorbarContainer {
+    const kw = new KwReader(kwargs, 'errorbar');
+    const xs = this.xaxis.convert(unwrap(parseSeries(xRaw, 'x')));
+    const ys = this.yaxis.convert(unwrap(parseSeries(yRaw, 'y')));
+    if (xs.length !== ys.length) throw new RangeError("'x' and 'y' must have the same size");
+    const n = xs.length;
+    const yerr = kw.read(['yerr'], (v) => parseErr(v, n, 'y'), (): Option<ErrPair> => none);
+    const xerr = kw.read(['xerr'], (v) => parseErr(v, n, 'x'), (): Option<ErrPair> => none);
+    const fmtS = kw.read(['fmt'], (v) => (typeof v === 'string' ? ok(v) : err('fmt must be a string')), () => '');
+    const fmtNone = fmtS.toLowerCase() === 'none';
+    const fmt = fmtNone ? NO_FMT : unwrap(parseFmt(fmtS));
+    const ecolorK = kw.read(['ecolor'], (v) => mapResult(parseRgb(v, this.theme.axes.cycle), some), (): Option<Rgb> => none);
+    const elw = kw.read(['elinewidth'], (v) => (typeof v === 'number' ? ok(some(v)) : err('elinewidth must be a number')), () => this.theme.errorbar.elinewidthPt);
+    const elstyle = kw.read(['elinestyle'], (v) => mapResult(parseLinestyle(v), (s) => s), (): Option<LineStyleName> => none);
+    const capsize = kw.read(['capsize'], num('capsize'), () => this.theme.errorbar.capsizePt);
+    const capthick = kw.read(['capthick'], (v) => (typeof v === 'number' ? ok(some(v)) : err('capthick must be a number')), () => this.theme.errorbar.capthickPt);
+    const barsabove = kw.read(['barsabove'], bool('barsabove'), () => false);
+    const noLims = (): Uint8Array => new Uint8Array(n);
+    const lolims = kw.read(['lolims'], (v) => boolMask(v, n, 'lolims'), noLims), uplims = kw.read(['uplims'], (v) => boolMask(v, n, 'uplims'), noLims);
+    const xlolims = kw.read(['xlolims'], (v) => boolMask(v, n, 'xlolims'), noLims), xuplims = kw.read(['xuplims'], (v) => boolMask(v, n, 'xuplims'), noLims);
+    const every = kw.read(['errorevery'], (v) => everyMask(v, n), () => unwrap(everyMask(1, n)));
+    const lbl = kw.read(['label'], label, (): Label => ({ kind: 'none' }));
+    const kwColor = prop(kwargs, 'color').kind === 'some' || prop(kwargs, 'c').kind === 'some';
+    // fmt='none' parses to colour 'none', so the line prop cycle does not advance
+    const lp = this.lineProps(kw, fmt, (): Paint => (fmtNone ? { kind: 'solid', color: this.theme.axes.cycle[0] } : { kind: 'solid', color: this.next('line') }));
+    kw.done();
+    const zorder = lp.zorder;
+    // fmt='none' drops the data line; the colour then comes from color= or 'C0'
+    const base: Paint = fmtNone && !kwColor ? { kind: 'solid', color: this.theme.axes.cycle[0] } : lp.color;
+    const baseRgb: Rgb = base.kind === 'solid' ? base.color : { hex: '#000000', alpha: 0 };
+    const ecolor = ecolorK.kind === 'some' ? ecolorK.value : baseRgb;
+    const alphaRgb = (c: Rgb): Rgb => (lp.alpha.kind === 'some' ? { hex: c.hex, alpha: lp.alpha.value } : c);
+    const dataLine: Option<LineArtist> = fmtNone ? none : some({
+      kind: 'line', x: xs, y: ys, stroke: lp.stroke, markers: lp.markers, label: { kind: 'none' }, clip: lp.clip,
+      drawstyle: lp.drawstyle, coords: DATA_COORDS, zorder: barsabove ? zorder - 0.1 : zorder + 0.1,
+    });
+    if (dataLine.kind === 'some') this.artists.push(dataLine.value);
+    const barWidth = elw.kind === 'some' ? elw.value : lp.lw.kind === 'some' ? lp.lw.value : this.theme.lines.widthPt;
+    const barStyle: LineStyleName = elstyle.kind === 'some' ? elstyle.value : 'solid';
+    const capSizePt = capsize > 0 ? 2 * capsize : this.theme.lines.markerSizePt;
+    const capMew = lp.mew.kind === 'some' ? lp.mew.value : capthick.kind === 'some' ? capthick.value : this.theme.lines.markerEdgeWidthPt;
+    const capEdge: Paint = { kind: 'solid', color: alphaRgb(ecolor) };
+    const capFace: Paint = withAlphaOpt(base, lp.alpha);
+    const capLine = (x: Float64Array, y: Float64Array, shape: MarkerName): LineArtist => ({
+      kind: 'line', x, y, stroke: { kind: 'none' }, markers: { kind: 'on', shape, sizePt: capSizePt, edgeWidthPt: capMew, face: capFace, edge: capEdge },
+      label: { kind: 'none' }, clip: lp.clip, drawstyle: 'default', coords: DATA_COORDS, zorder,
+    });
+    const bars: SegmentsArtist[] = [];
+    const caps: LineArtist[] = [];
+    const dirs: readonly ErrDir[] = [
+      { dep: 'x', err: xerr, lo: xlolims, up: xuplims, marker: '|', lomarker: 'caretrightbase', himarker: 'caretleftbase' },
+      { dep: 'y', err: yerr, lo: lolims, up: uplims, marker: '_', lomarker: 'caretupbase', himarker: 'caretdownbase' },
+    ];
+    for (const d of dirs) {
+      if (d.err.kind === 'none') continue;
+      const e = d.err.value;
+      const dep = d.dep === 'x' ? xs : ys, indep = d.dep === 'x' ? ys : xs;
+      const low = dep.map((v, i) => v + -(1 - d.lo[i]) * e.lo[i]);
+      const high = dep.map((v, i) => v + (1 - d.up[i]) * e.hi[i]);
+      const [ii, ll, hh] = [pick(indep, every), pick(low, every), pick(high, every)];
+      const seg: SegmentsArtist = d.dep === 'x'
+        ? { kind: 'segments', x0: ll, y0: ii, x1: hh, y1: Float64Array.from(ii), colors: [alphaRgb(ecolor)], widthPt: barWidth, styles: [barStyle], label: { kind: 'none' }, clip: lp.clip, zorder }
+        : { kind: 'segments', x0: ii, y0: ll, x1: Float64Array.from(ii), y1: hh, colors: [alphaRgb(ecolor)], widthPt: barWidth, styles: [barStyle], label: { kind: 'none' }, clip: lp.clip, zorder };
+      bars.push(seg);
+      this.artists.push(seg);
+      const nolims = d.lo.map((v, i) => (v === 1 || d.up[i] === 1 ? 0 : 1));
+      if (nolims.some((v) => v === 1) && capsize > 0) {
+        const m = and(nolims, every);
+        for (const lh of [pick(low, m), pick(high, m)]) {
+          const im = pick(indep, m);
+          caps.push(d.dep === 'x' ? capLine(lh, im, d.marker) : capLine(im, lh, d.marker));
+        }
+      }
+      const limsList: readonly (readonly [Uint8Array, Float64Array])[] = [[d.lo, high], [d.up, low]];
+      limsList.forEach(([lm, hl], idx) => {
+        if (!lm.some((v) => v === 1)) return;
+        const axis = d.dep === 'x' ? this.xaxis : this.yaxis;
+        this.settle();
+        const inv = axis.inverted();
+        const shape = (inv ? idx === 0 : idx === 1) ? d.himarker : d.lomarker;
+        const m = and(lm, every);
+        const xm = pick(xs, m), ym = pick(ys, m), hm = pick(hl, m);
+        caps.push(d.dep === 'x' ? capLine(hm, ym, shape) : capLine(xm, hm, shape));
+        if (capsize > 0) caps.push(capLine(xm, ym, d.marker));
+      });
+    }
+    for (const c of caps) this.artists.push(c);
+    this.xaxis.request(); this.yaxis.request();
+    const firstCap: Option<LineArtist> = caps.length > 0 ? some(caps[0]) : none;
+    const handle: ErrorbarHandle = {
+      line: dataLine.kind === 'some' ? some({ stroke: dataLine.value.stroke, markers: dataLine.value.markers }) : none,
+      bar: { color: alphaRgb(ecolor), widthPt: barWidth, style: barStyle },
+      caps: firstCap.kind === 'some' && firstCap.value.markers.kind === 'on'
+        ? some({ sizePt: firstCap.value.markers.sizePt, edgeWidthPt: firstCap.value.markers.edgeWidthPt, edge: firstCap.value.markers.edge, face: firstCap.value.markers.face })
+        : none,
+      hasX: xerr.kind === 'some', hasY: yerr.kind === 'some',
+    };
+    const container: ErrorbarArtist = { kind: 'errorbar', label: lbl, handle, clip: lp.clip };
+    this.artists.push(container);
+    return { artist: container, data_line: dataLine, caplines: caps, barlinecols: bars, has_xerr: xerr.kind === 'some', has_yerr: yerr.kind === 'some' };
+  }
+
+  /**
+   * hist(x, { bins, range, density, weights, cumulative, bottom, histtype, align, orientation, rwidth, log, color,
+   * label, stacked, facecolor|fc, edgecolor|ec, linewidth|lw, alpha, clip_on }) — one dataset or a list of them.
+   * Returns [n, bins, patches] as matplotlib does: per-dataset arrays when x is a list of datasets.
+   */
+  hist(x: number | readonly number[] | Float64Array | NumericTypedArray | readonly Date[] | readonly string[]): HistResult;
+  hist(x: number | readonly number[] | Float64Array | NumericTypedArray | readonly Date[] | readonly string[], kwargs: Kwargs): HistResult;
+  hist(x: readonly (readonly number[] | Float64Array | NumericTypedArray)[]): HistResultMulti;
+  hist(x: readonly (readonly number[] | Float64Array | NumericTypedArray)[], kwargs: Kwargs): HistResultMulti;
+  hist(x: unknown): HistResult | HistResultMulti;
+  hist(x: unknown, kwargs: Kwargs): HistResult | HistResultMulti;
+  hist(xRaw: unknown, kwargs: Kwargs = {}): HistResult | HistResultMulti {
+    const kw = new KwReader(kwargs, 'hist');
+    const histtype = kw.read(['histtype'], oneOf('histtype', ['bar', 'barstacked', 'step', 'stepfilled']), (): HistType => 'bar');
+    const align = kw.read(['align'], oneOf('align', ['left', 'mid', 'right']), (): 'left' | 'mid' | 'right' => 'mid');
+    const orientation = kw.read(['orientation'], oneOf('orientation', ['horizontal', 'vertical']), (): Orientation => 'vertical');
+    const stacked = kw.read(['stacked'], bool('stacked'), () => false) || histtype === 'barstacked';
+    const vertical = orientation === 'vertical';
+    const vAxis = vertical ? this.yaxis : this.xaxis, bAxis = vertical ? this.xaxis : this.yaxis;
+    // _reshape_2D: a list of arrays is several datasets; anything else is one
+    const multi = Array.isArray(xRaw) && xRaw.length > 0 && xRaw.every((el) => Array.isArray(el) || ArrayBuffer.isView(el));
+    const raws: readonly unknown[] = multi && Array.isArray(xRaw) ? xRaw : [typeof xRaw === 'number' ? [xRaw] : xRaw];
+    const data: readonly Sample[] = raws.map((r, i) => ({ values: bAxis.convert(unwrap(parseSeries(r, `x[${i}]`))), integer: isIntegerData(r) }));
+    const nx = data.length;
+    const bins: Bins = kw.read(['bins'], (v) => this.parseBins(v, bAxis), (): Bins => {
+      const b = this.theme.histBins;
+      return b.kind === 'count' ? b : unwrap(this.parseBins(b.name, bAxis));
+    });
+    const binRange0 = kw.read(['range'], (v): Result<Option<readonly [number, number]>> => {
+      if (!Array.isArray(v) || v.length !== 2) return err('range must be [lo, hi]');
+      const c = bAxis.convert(unwrap(parseSeries(v, 'range')));
+      return ok(some([c[0], c[1]]));
+    }, (): Option<readonly [number, number]> => none);
+    const density = kw.read(['density'], bool('density'), () => false);
+    const weights = kw.read(['weights'], (v): Result<Option<readonly Float64Array[]>> => {
+      const wm = Array.isArray(v) && v.length > 0 && v.every((el) => Array.isArray(el) || ArrayBuffer.isView(el));
+      const ws: readonly unknown[] = wm && Array.isArray(v) ? v : [v];
+      const out: Float64Array[] = [];
+      for (const w of ws) { const s = parseSeries(w, 'weights'); if (!s.ok) return s; if (s.value.kind === 'strings') return err('weights must be numeric'); out.push(s.value.values); }
+      return ok(some(out));
+    }, (): Option<readonly Float64Array[]> => none);
+    const cumulative = kw.read(['cumulative'], (v): Result<number> => (typeof v === 'boolean' ? ok(v ? 1 : 0) : typeof v === 'number' ? ok(v) : err('cumulative must be a bool or a number')), () => 0);
+    const bottomK = kw.read(['bottom'], (v): Result<Option<Float64Array>> => mapResult(parseSeries(v, 'bottom'), (s) => some(s.kind === 'strings' ? new Float64Array(0) : s.values)), (): Option<Float64Array> => none);
+    const rwidth = kw.read(['rwidth'], (v) => (typeof v === 'number' ? ok(some(v)) : err('rwidth must be a number')), (): Option<number> => none);
+    const log = kw.read(['log'], bool('log'), () => false);
+    const colorK = kw.read(['color'], (v): Result<Option<readonly Paint[]>> => {
+      const one = this.paint(v);
+      if (one.ok) return ok(some([one.value]));
+      if (!Array.isArray(v)) return one;
+      const out: Paint[] = [];
+      for (const c of v) { const p = this.paint(c); if (!p.ok) return p; out.push(p.value); }
+      return ok(some(out));
+    }, (): Option<readonly Paint[]> => none);
+    const labels = kw.read(['label'], (v): Result<readonly string[]> => (Array.isArray(v) ? ok(v.map(str)) : typeof v === 'string' || typeof v === 'number' ? ok([str(v)]) : err('label must be a string or a list of strings')), (): readonly string[] => []);
+    const paints = (v: unknown): Result<readonly Paint[]> => {
+      const one = this.paint(v);
+      if (one.ok) return ok([one.value]);
+      if (!Array.isArray(v) || v.length === 0) return one;
+      const out: Paint[] = [];
+      for (const c of v) { const p = this.paint(c); if (!p.ok) return p; out.push(p.value); }
+      return ok(out);
+    };
+    const fcK = kw.read(['facecolor', 'fc'], (v) => mapResult(paints(v), some), (): Option<readonly Paint[]> => none);
+    const ecK = kw.read(['edgecolor', 'ec'], (v) => mapResult(paints(v), some), (): Option<readonly Paint[]> => none);
+    const lwK = kw.read(['linewidth', 'lw'], (v): Result<Option<readonly number[]>> => {
+      if (typeof v === 'number') return ok(some([v]));
+      return Array.isArray(v) && v.length > 0 && v.every((e) => typeof e === 'number') ? ok(some(v.map(Number))) : err('linewidth must be a number or a list of numbers');
+    }, (): Option<readonly number[]> => none);
+    const alpha = kw.read(['alpha'], alphaOf, (): Option<number> => none);
+    const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => true);
+    kw.done();
+
+    // np.histogram_bin_edges refuses estimators for weighted data (a TypeError, before any counting)
+    if (weights.kind === 'some' && bins.kind === 'estimator') throw new TypeError('Automated estimation of the number of bins is not supported for weighted data');
+    const w = weights.kind === 'some' ? weights.value : [];
+    if (weights.kind === 'some' && w.length !== nx) throw new RangeError('weights should have the same shape as x');
+    if (weights.kind === 'some' && data.some((d, i) => w[i].length !== d.values.length)) throw new RangeError('weights should have the same shape as x');
+    const inputEmpty = data.every((d) => d.values.length === 0);
+    const colors: readonly Paint[] = ((): readonly Paint[] => {
+      if (colorK.kind === 'none') return data.map((): Paint => ({ kind: 'solid', color: this.next('line') }));
+      const cs = colorK.value.length === 1 ? data.map(() => colorK.value[0]) : colorK.value;
+      if (cs.length !== nx) throw new RangeError(`The 'color' keyword argument must have one color per dataset, but ${nx} datasets and ${cs.length} colors were provided`);
+      return cs;
+    })();
+
+    const counts = tracer.span('hist.counts', { datasets: nx, bins: bins.kind }, () => histTops({ data, weights: weights.kind === 'some' ? some(w) : none, bins, range: binRange0, density, cumulative, stacked, inputEmpty }));
+    const { tops, edges } = unwrap(counts);
+    const nb = edges.length;
+    const style = (i: number): { readonly face: Option<Paint>; readonly edge: Option<Paint>; readonly lw: Option<number> } => ({
+      face: fcK.kind === 'some' ? some(fcK.value[i % fcK.value.length]) : none,
+      edge: ecK.kind === 'some' ? some(ecK.value[i % ecK.value.length]) : none,
+      lw: lwK.kind === 'some' ? some(lwK.value[i % lwK.value.length]) : none,
+    });
+    const forced: Paint = this.theme.patch.forceEdge ? { kind: 'solid', color: this.theme.patch.edge } : { kind: 'none' };
+    const lblOf = (i: number): Label => (i < labels.length ? unwrap(label(labels[i])) : { kind: 'none' });
+    const bottomAt = (i: number): number => (bottomK.kind === 'none' ? 0 : bottomK.value.length === 1 ? bottomK.value[0] : bottomK.value[i]);
+    if (bottomK.kind === 'some' && bottomK.value.length !== 1 && bottomK.value.length !== nb - 1) throw new RangeError(`bottom has ${bottomK.value.length} values, expected 1 or ${nb - 1}`);
+
+    let patches: HistPatches[] = [];
+    if (histtype === 'bar' || histtype === 'barstacked') {
+      if (log) vAxis.setScale('log');
+      const totwidth = edges.slice(1).map((e, i) => e - edges[i]);
+      const dr = rwidth.kind === 'some' ? Math.min(1, Math.max(0, rwidth.value)) : nx > 1 && !stacked ? 0.8 : 1.0;
+      const sideBySide = histtype === 'bar' && !stacked;
+      const width = totwidth.map((t) => (sideBySide ? dr * t / nx : dr * t));
+      const dw = sideBySide ? width : new Float64Array(nb - 1);
+      let boffset = totwidth.map((t) => (sideBySide ? -0.5 * dr * t * (1 - 1 / nx) : 0.0));
+      boffset = boffset.map((b, i) => (align === 'mid' ? b + 0.5 * totwidth[i] : align === 'right' ? b + totwidth[i] : b));
+      let bottom = Float64Array.from({ length: nb - 1 }, (_, i) => bottomAt(i));
+      tops.forEach((top, k) => {
+        const height = stacked ? top.map((t, i) => t - bottom[i]) : top;
+        const pos = edges.slice(0, -1).map((e, i) => e + boffset[i]);
+        const lo = pos.map((p, i) => p - width[i] / 2);
+        const st = style(k);
+        const face = withAlphaOpt(st.face.kind === 'some' ? st.face.value : colors[k], alpha);
+        const lw = st.lw.kind === 'some' ? st.lw.value : this.theme.patch.linewidthPt;
+        const edge = edgeOf(withAlphaOpt(st.edge.kind === 'some' ? st.edge.value : forced, alpha), lw);
+        const faces = Array.from({ length: nb - 1 }, () => face);
+        const base = Float64Array.from(bottom);
+        const bar: BarArtist = vertical
+          ? { kind: 'bar', orientation: 'vertical', x: lo, y: base, w: Float64Array.from(width), h: height, face, faces, edge, label: lblOf(k), clip, sticky: k === 0, legend: 'child' }
+          : { kind: 'bar', orientation: 'horizontal', x: base, y: lo, w: height, h: Float64Array.from(width), face, faces, edge, label: lblOf(k), clip, sticky: k === 0, legend: 'child' };
+        this.artists.push(bar);
+        patches.push({ kind: 'bars', bars: bar });
+        if (stacked) bottom = Float64Array.from(top);
+        boffset = boffset.map((b, i) => b + dw[i]);
+      });
+    } else {
+      const L = 4 * nb - 3;
+      const X = new Float64Array(L), Y = new Float64Array(L);
+      for (let i = 0; i < nb; i++) X[2 * i] = edges[i];
+      for (let i = 0; i + 1 < nb; i++) X[2 * i + 1] = edges[i];
+      const mirror = (A: Float64Array): void => { for (let k = 0; k < 2 * nb - 2; k++) A[2 * nb - 1 + k] = A[2 * nb - 2 - k]; };
+      mirror(X);
+      for (let i = 0; i + 1 < nb; i++) { Y[2 * i + 1] = bottomAt(i); Y[2 * i + 2] = bottomAt(i); }
+      mirror(Y);
+      if (log) vAxis.setScale('log');
+      const shift = align === 'left' ? -0.5 * (edges[1] - edges[0]) : align === 'right' ? 0.5 * (edges[1] - edges[0]) : 0;
+      if (align !== 'mid') for (let i = 0; i < L; i++) X[i] += shift;
+      const fill = histtype === 'stepfilled';
+      const outlines = tops.map((top) => {
+        if (stacked) mirror(Y);
+        for (let i = 0; i + 1 < nb; i++) { const v = top[i] + bottomAt(i); Y[2 * i + 1] = v; Y[2 * i + 2] = v; }
+        Y[0] = Y[L - 1];
+        return { x: Float64Array.from(X), y: Float64Array.from(Y) };
+      });
+      const split = fill ? L - 1 : 2 * nb;
+      const polys: PolygonArtist[] = [];
+      for (let k = nx - 1; k >= 0; k--) {
+        this.next('patch');   // each fill() draws from the patch cycler, though facecolor is given
+        const o = outlines[k];
+        const st = style(k);
+        const lw = st.lw.kind === 'some' ? st.lw.value : this.theme.patch.linewidthPt;
+        // 'step': edgecolor defaults to the dataset colour and the polygon is not filled
+        const edgeP = st.edge.kind === 'some' ? st.edge.value : fill ? forced : colors[k];
+        const face: Paint = fill ? withAlphaOpt(st.face.kind === 'some' ? st.face.value : colors[k], alpha) : { kind: 'none' };
+        const px = (vertical ? o.x : o.y).slice(0, split), py = (vertical ? o.y : o.x).slice(0, split);
+        const poly: PolygonArtist = { kind: 'polygon', x: px, y: py, closed: fill, face, edge: edgeOf(withAlphaOpt(edgeP, alpha), lw), label: lblOf(k), clip, zorder: fill ? 1 : 2, orientation };
+        this.artists.push(poly);
+        polys.unshift(poly);
+      }
+      patches = polys.map((p): HistPatches => ({ kind: 'polygons', polygons: [p] }));
+    }
+    this.xaxis.request(); this.yaxis.request();
+    return multi ? [tops, edges, patches] : [tops[0], edges, patches[0]];
+  }
+
+  private parseBins(v: unknown, axis: Axis): Result<Bins> {
+    if (typeof v === 'number') return Number.isInteger(v) && v >= 1 ? ok({ kind: 'count', n: v }) : err('`bins` must be positive, when an integer');
+    if (typeof v === 'string') {
+      for (const e of BIN_ESTIMATORS) if (e === v) return ok({ kind: 'estimator', name: e });
+      return err(`'${v}' is not a valid estimator for \`bins\``);
+    }
+    const s = parseSeries(v, 'bins');
+    if (!s.ok) return s;
+    return ok({ kind: 'edges', edges: axis.convert(s.value) });
   }
 
   /** bar(x, height, { width, bottom, align, color|facecolor|fc, edgecolor|ec, linewidth|lw, alpha, label, clip_on }) — vertical bars. */
@@ -316,9 +885,10 @@ export class Axes {
     const edge: BarEdge = edgePaint.kind === 'solid' && edgePaint.color.alpha > 0 && lw > 0 ? { kind: 'on', color: edgePaint.color, widthPt: lw } : { kind: 'none' };
     // (x, y) is the corner at the base: vertical bars grow along y from `base`
     const bar: BarArtist = o === 'vertical'
-      ? { kind: 'bar', orientation: o, x: lo, y: base, w: thick, h: size, face, faces, edge, label: lbl, clip }
-      : { kind: 'bar', orientation: o, x: base, y: lo, w: size, h: thick, face, faces, edge, label: lbl, clip };
+      ? { kind: 'bar', orientation: o, x: lo, y: base, w: thick, h: size, face, faces, edge, label: lbl, clip, sticky: true, legend: 'container' }
+      : { kind: 'bar', orientation: o, x: base, y: lo, w: size, h: thick, face, faces, edge, label: lbl, clip, sticky: true, legend: 'container' };
     this.artists.push(bar);
+    this.xaxis.request(); this.yaxis.request();
     return bar;
   }
 
@@ -350,6 +920,7 @@ export class Axes {
     const edge: BarEdge = edgeP.kind === 'solid' && edgeP.color.alpha > 0 ? { kind: 'on', color: edgeP.color, widthPt: Math.max(0, lw) } : { kind: 'none' };
     const fill: FillArtist = { kind: 'fill', x, y1, y2, face, edge, label: lbl, clip };
     this.artists.push(fill);
+    this.xaxis.request(); this.yaxis.request();
     return fill;
   }
 
@@ -450,8 +1021,10 @@ export class Axes {
       return ok(out);
     };
     const colorList0 = kw.read(['c', 'color'], (v) => parsePaintOrList(v), (): readonly Paint[] => [{ kind: 'solid', color: this.next('patch') }]);
-    const edgecolorsList = kw.read(['edgecolors', 'edgecolor'], (v) => parsePaintOrList(v), (): readonly Paint[] => [{ kind: 'none' }]);
-    const linewidths = kw.read(['linewidths', 'linewidth'], num('linewidths'), () => 0.5);
+    // edgecolors='face' (rc scatter.edgecolors) strokes each marker in its own face colour
+    const se = this.theme.scatterEdge;
+    const edgecolorsList = kw.read(['edgecolors', 'edgecolor'], (v) => (v === 'face' ? ok(colorList0) : parsePaintOrList(v)), (): readonly Paint[] => (se.kind === 'face' ? colorList0 : [se.paint]));
+    const linewidths = kw.read(['linewidths', 'linewidth', 'lw'], num('linewidths'), () => this.theme.patch.linewidthPt);
     const lbl = kw.read(['label'], label, (): Label => ({ kind: 'none' }));
     const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => true);
     kw.done();
@@ -460,6 +1033,7 @@ export class Axes {
     const edges = Array.from({ length: n }, (_, i) => withAlpha(edgecolorsList[(i) % edgecolorsList.length]));
     const sc: ScatterArtist = { kind: 'scatter', x: xs, y: ys, sizePt2: s, shape: marker.kind === 'some' ? marker.value : 'o', faces, edges, edgeWidthPt: linewidths, label: lbl, clip };
     this.artists.push(sc);
+    this.xaxis.request(); this.yaxis.request();
     return sc;
   }
 
@@ -483,7 +1057,7 @@ export class Axes {
     if (ec.kind === 'solid') { const ea = withAlpha(ec); if (ea.kind === 'solid') edgeColor = ea.color; }
     const edge: BarEdge = ec.kind === 'solid' && lw > 0 ? { kind: 'on', color: edgeColor, widthPt: lw } : { kind: 'none' };
     const sp: SpanArtist = { kind: 'span', orientation: 'vertical', a0: this.xaxis.convert(x0)[0], a1: this.xaxis.convert(x1)[0], f0: ymin, f1: ymax, face, edge, label: lbl, clip };
-    this.artists.push(sp); return sp;
+    this.artists.push(sp); this.xaxis.request(); return sp;
   }
   /** axhspan: horizontal span in data y and axes-fraction x */
   axhspan(ymin: unknown, ymax: unknown, kwargs: Kwargs = {}): SpanArtist {
@@ -504,7 +1078,7 @@ export class Axes {
     if (ec.kind === 'solid') { const ea = withAlpha(ec); if (ea.kind === 'solid') edgeColorH = ea.color; }
     const edge: BarEdge = ec.kind === 'solid' && lw > 0 ? { kind: 'on', color: edgeColorH, widthPt: lw } : { kind: 'none' };
     const sp: SpanArtist = { kind: 'span', orientation: 'horizontal', a0: this.yaxis.convert(y0)[0], a1: this.yaxis.convert(y1)[0], f0: xmin, f1: xmax, face, edge, label: lbl, clip };
-    this.artists.push(sp); return sp;
+    this.artists.push(sp); this.yaxis.request(); return sp;
   }
 
   /** set_title(s, { loc: 'left' | 'center' | 'right' }) */

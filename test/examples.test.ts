@@ -12,8 +12,8 @@ for (const name of ['quickstart', 'twinx_theme']) {
   const made = readFileSync(new URL(`examples/out/${name}.png`, ROOT)), shown = readFileSync(new URL(`docs/images/${name}.png`, ROOT));
   if (!made.equals(shown)) { bad++; console.log(`docs/images/${name}.png differs from examples/${name}.ts output; refresh it`); }
 }
-// docs/images/{gantt,small_multiples}.svg are shown in the README exactly as the examples write them (fig.toSVG())
-for (const name of ['gantt', 'small_multiples']) {
+// docs/images/{gantt,small_multiples,histogram_errorbar}.svg are shown in the README exactly as the examples write them (fig.toSVG())
+for (const name of ['gantt', 'small_multiples', 'histogram_errorbar']) {
   if (!readFileSync(new URL(`examples/out/${name}.svg`, ROOT)).equals(readFileSync(new URL(`docs/images/${name}.svg`, ROOT)))) {
     bad++; console.log(`docs/images/${name}.svg differs from examples/${name}.ts output; refresh it`);
   }

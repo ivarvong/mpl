@@ -5,7 +5,7 @@ import type { Box } from './legend-index.ts';
 import { buildObstacleIndex } from './legend-index.ts';
 import { lineStroke, markersNode } from './marks.ts';
 import type { XY } from './path.ts';
-import { inkOf, pathNode, rectNode, snap } from './scene.ts';
+import { inkOf, pathNode, rectNode, snap, snapOffset } from './scene.ts';
 import { lpAscent, measure, pxPerPt, strokePx } from './text.ts';
 import { resolveFace } from './fonts.ts';
 import type { AnchorCode, Handle, LegendEntry, LegendLoc, Node, Option, Seg, Stroke, Theme } from './types.ts';
@@ -149,7 +149,7 @@ export function layoutLegend(inp: LegendInput, tracer: Tracer): LegendOutput {
       const [ix, iy] = cp.offsets[ii];
       const bx = ox + hbx + cx + ix, by = oy + hby + cy + iy;
       const [hx, hy] = item.offsets[0], [txo, tyo] = item.offsets[1];
-      nodes.push(...handleNodes(item.entry.handle, bx + hx, by + hy, hWidthPt * k, hHeightPt * k, descentPt * k, theme, k, tl));
+      nodes.push(...handleNodes(item.entry.handle, bx + hx, by + hy, hWidthPt * k, hHeightPt * k, descentPt * k, theme, k, tl, fsPt * k, H));
       nodes.push({ kind: 'text', text: item.entry.label, x: bx + txo, y: tl(by + tyo), sizePx: fs, sizePt: fsPt, glyphs: measure(item.entry.label, fsPt, dpi, face).runs[0].glyphs, face: face.id, color: L.labelColor, rotation: 'horizontal' });
     });
   });
@@ -179,7 +179,7 @@ function frameNode(box: Box, fs: number, theme: Theme, k: number, tl: (y: number
 
 // HandlerLine2D / HandlerPatch inside a DrawingArea whose origin is (ox, oy), y up
 function handleNodes(h: Handle, ox: number, oy: number, wPx: number, hPx: number, ydPx: number, theme: Theme, k: number,
-                     tl: (y: number) => number): readonly Node[] {
+                     tl: (y: number) => number, fsPx: number, H: number): readonly Node[] {
   switch (h.kind) {
     case 'patch': {
       const stroke: Option<Stroke> = h.edge.kind === 'on' && h.edge.widthPt > 0
@@ -191,6 +191,15 @@ function handleNodes(h: Handle, ox: number, oy: number, wPx: number, hPx: number
       const x0 = snap(ox, lw), x1 = snap(ox + wPx, lw);
       const yTop = snap(tl(oy - ydPx + hPx), lw), yBot = snap(tl(oy - ydPx), lw);
       return [rectNode(x0, yTop, x1 - x0, yBot - yTop, ink.value)];
+    }
+    case 'collection': {
+      const y = tl(oy + (hPx - ydPx) / 2);
+      const s0 = lineStroke(theme, h.color, h.widthPt, h.style, k);
+      const s = { ...s0, cap: theme.lines.dashCap, join: theme.lines.dashJoin };
+      if (h.widthPt <= 0 || s.color.alpha <= 0) return [];
+      const xs = Float64Array.of(ox, ox + wPx).map((v) => snap(v, s.width));
+      const ys = Float64Array.of(y, y).map((v) => snap(v, s.width));
+      return [{ kind: 'polyline', xs, ys, stroke: s }];
     }
     case 'line': {
       // xdata [0, w], ydata (h - yd) / 2; numpoints = 1: a 3-point line, marker at the middle
@@ -208,6 +217,50 @@ function handleNodes(h: Handle, ox: number, oy: number, wPx: number, hPx: number
       }
       return out;
     }
+    case 'errorbar': {
+      // HandlerErrorbar: bar segments (LineCollections), cap markers, then the data line and its marker
+      const e = h.errorbar;
+      const yUp = oy + (hPx - ydPx) / 2, xm = ox + 0.5 * wPx, err = 0.5 * fsPx;
+      const out: Node[] = [];
+      const bar = { ...lineStroke(theme, e.bar.color, e.bar.widthPt, e.bar.style, k), cap: 'butt' as const, join: 'round' as const };
+      if (e.hasX) out.push(...segmentNode(xm - err, yUp, xm + err, yUp, bar, e.bar.style === 'solid', H));
+      if (e.hasY) out.push(...segmentNode(xm, yUp - err, xm, yUp + err, bar, e.bar.style === 'solid', H));
+      if (e.caps.kind === 'some') {
+        const c = e.caps.value;
+        const cap = (shape: '|' | '_', x: number, y: number): void => {
+          const m = markersNode({ kind: 'on', shape, sizePt: c.sizePt, edgeWidthPt: c.edgeWidthPt, face: c.face, edge: c.edge }, Float64Array.of(x), Float64Array.of(tl(y)), k);
+          if (m.kind === 'some') out.push(m.value);
+        };
+        if (e.hasX) { cap('|', xm - err, yUp); cap('|', xm + err, yUp); }
+        if (e.hasY) { cap('_', xm, yUp - err); cap('_', xm, yUp + err); }
+      }
+      if (e.line.kind === 'some') {
+        const ln = e.line.value;
+        if (ln.stroke.kind === 'on') {
+          const st = lineStroke(theme, ln.stroke.color, ln.stroke.widthPt, ln.stroke.style, k);
+          if (st.color.alpha > 0) out.push({ kind: 'polyline', xs: Float64Array.of(ox, ox + wPx).map((v) => snap(v, st.width)), ys: Float64Array.of(tl(yUp), tl(yUp)).map((v) => snap(v, st.width)), stroke: st });
+        }
+        if (ln.markers.kind === 'on') {
+          const m = markersNode(ln.markers, Float64Array.of(xm), Float64Array.of(tl(yUp)), k);
+          if (m.kind === 'some') out.push(m.value);
+        }
+      }
+      return out;
+    }
     default: return assertNever(h);
   }
+}
+
+/** One LineCollection segment (display y-up endpoints): a solid one goes through draw_markers at pixel
+ *  (0, H), a dashed one through draw_path_collection; axis-aligned segments snap either way. */
+function segmentNode(x0: number, y0: number, x1: number, y1: number, stroke: Stroke, single: boolean, H: number): readonly Node[] {
+  if (stroke.color.alpha <= 0 || stroke.width <= 0) return [];
+  const off = snapOffset(stroke.width);
+  const ys = single ? [-y0, -y1] : [H - y0, H - y1];
+  const rect = Math.abs(x1 - x0) < 1e-4 || Math.abs(ys[1] - ys[0]) < 1e-4;
+  const fix = (v: number): number => (rect ? Math.floor(v + 0.5) + off : single ? v + 0.5 : v);
+  const segs: Seg[] = [['M', fix(x0), fix(ys[0])], ['L', fix(x1), fix(ys[1])]];
+  return single
+    ? [{ kind: 'markers', shape: segs, xs: Float64Array.of(0), ys: Float64Array.of(H), ink: { kind: 'stroke', stroke } }]
+    : [pathNode(segs, { kind: 'stroke', stroke })];
 }

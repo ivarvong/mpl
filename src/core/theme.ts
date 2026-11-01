@@ -6,7 +6,7 @@ import { parseWeight } from './fonts.ts';
 import { parseLinestyle, parseMarker } from './fmt.ts';
 import type { RcLayer, RcValue } from './rc.ts';
 import { lookup } from './std.ts';
-import type { AnchorCode, AxisBelow, Cap, GridWhich, HAlign, Join, LegendLoc, LineStyleName, Paint, Result, Rgb, Theme, TickDirection, TickTheme } from './types.ts';
+import type { AnchorCode, AxisBelow, Cap, GridWhich, HAlign, Join, LegendLoc, LineStyleName, Option, Paint, Result, Rgb, Theme, TickDirection, TickTheme } from './types.ts';
 import { err, none, ok, some } from './types.ts';
 
 const FONT_SCALES: ReadonlyMap<string, number> = new Map([
@@ -63,6 +63,13 @@ class Reader {
   num(key: string): number {
     const v = this.raw(key);
     return typeof v === 'number' && Number.isFinite(v) ? v : this.fail(key, `expected a number, got ${JSON.stringify(v)}`, 0);
+  }
+  /** A number, or 'None' (absent). */
+  optNum(key: string): Option<number> {
+    const v = this.raw(key);
+    if (v === 'None' || v === 'none') return none;
+    if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) return some(Number(v));   // from a style sheet
+    return some(this.num(key));
   }
   bool(key: string): boolean {
     const v = this.raw(key);
@@ -193,6 +200,7 @@ export function parseTheme(rc: RcLayer): Result<Theme> {
       dashCap: r.cap('lines.dash_capstyle'), dashJoin: r.join('lines.dash_joinstyle'),
       patterns: { dashed: r.numList('lines.dashed_pattern', 0), dashdot: r.numList('lines.dashdot_pattern', 0), dotted: r.numList('lines.dotted_pattern', 0) },
       scaleDashes: r.bool('lines.scale_dashes'),
+      color: r.rgb('lines.color', cycle),
     },
     simplify: r.bool('path.simplify') ? { kind: 'on', thresholdPx: r.num('path.simplify_threshold') } : { kind: 'off' },
     patch: { linewidthPt: r.num('patch.linewidth'), edge: r.rgb('patch.edgecolor', cycle), forceEdge: r.bool('patch.force_edgecolor') },
@@ -209,6 +217,9 @@ export function parseTheme(rc: RcLayer): Result<Theme> {
       handleTextPad: r.num('legend.handletextpad'), borderAxesPad: r.num('legend.borderaxespad'), columnSpacing: r.num('legend.columnspacing'),
     },
     offsetTextPadPt: 3,   // Axis.OFFSETTEXTPAD (class constant)
+    errorbar: { capsizePt: r.num('errorbar.capsize'), capthickPt: r.optNum('errorbar.capthick'), elinewidthPt: r.optNum('errorbar.elinewidth') },
+    scatterEdge: r.raw('scatter.edgecolors') === 'face' ? { kind: 'face' } : { kind: 'paint', paint: r.paint('scatter.edgecolors', cycle) },
+    histBins: ((): Theme['histBins'] => { const v = r.raw('hist.bins'); return typeof v === 'string' ? { kind: 'estimator', name: v } : { kind: 'count', n: r.num('hist.bins') }; })(),
   };
   return r.errors.length > 0 ? err(`invalid rcParams:\n  ${r.errors.join('\n  ')}`) : ok(theme);
 }

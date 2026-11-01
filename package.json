@@ -45,7 +45,7 @@
     "example": "node examples/quickstart.ts",
     "examples": "for f in examples/[a-z]*.ts; do node $f || exit 1; done",
     "test": "npm run check && npm run test:oracle",
-    "test:oracle": "node test/compare.ts && node test/libm.test.ts && node test/fonts.test.ts && node test/png.test.ts && node test/glyphcache.test.ts && node test/view.test.ts && node test/fuzz-ticker.ts && node test/fuzz-dates.ts && node test/trace.test.ts && node test/rc-svg.test.ts && node test/layout-cache.test.ts && node test/issue7.test.ts && node test/grid.test.ts && node test/api-docs.test.ts && node test/examples.test.ts",
+    "test:oracle": "node test/compare.ts && node test/libm.test.ts && node test/fonts.test.ts && node test/png.test.ts && node test/glyphcache.test.ts && node test/view.test.ts && node test/fuzz-ticker.ts && node test/fuzz-dates.ts && node test/trace.test.ts && node test/rc-svg.test.ts && node test/layout-cache.test.ts && node test/issue7.test.ts && node test/grid.test.ts && node test/histogram.test.ts && node test/plots.test.ts && node test/api-docs.test.ts && node test/examples.test.ts",
     "check": "npm run typecheck && npm run strict && npm run lint",
     "typecheck": "tsc -p .",
     "strict": "node scripts/check_strict.ts",

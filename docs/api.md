@@ -120,9 +120,57 @@ set_yscale('linear' | 'log')
 
 ### `Axes.plot(...args)`
 
-plot(y) | plot(x, y) | plot(x, y, fmt), with an optional trailing kwargs object.
+plot(y) | plot(x, y) | plot(x, y, fmt), with an optional trailing kwargs object ({ drawstyle | ds, … }).
 
-Keyword arguments (unknown keys throw): `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `label`, `clip_on | clipon | clip`
+Keyword arguments (unknown keys throw): `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `drawstyle | ds`, `zorder`, `label`, `clip_on | clipon | clip`
+
+### `Axes.step(...args)`
+
+step(x, y, [fmt], { where: 'pre' | 'post' | 'mid', … }) — plot() with drawstyle 'steps-<where>'.
+
+Keyword arguments (unknown keys throw): `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `drawstyle | ds`, `zorder`, `label`, `clip_on | clipon | clip`
+
+### `Axes.axhline(y?, kwargs?)`
+
+axhline(y = 0, { xmin = 0, xmax = 1, …Line2D }) — xmin/xmax are axes fractions. Autoscales y only when y is outside the current bounds.
+
+Keyword arguments (unknown keys throw): `n0`, `n1`, `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `drawstyle | ds`, `zorder`, `label`, `clip_on | clipon | clip`
+
+### `Axes.axvline(x?, kwargs?)`
+
+axvline(x = 0, { ymin = 0, ymax = 1, …Line2D }) — ymin/ymax are axes fractions. Autoscales x only when x is outside the current bounds.
+
+Keyword arguments (unknown keys throw): `n0`, `n1`, `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `drawstyle | ds`, `zorder`, `label`, `clip_on | clipon | clip`
+
+### `Axes.axline(xy1, xy2OrKw?, kwargs?)`
+
+axline(xy1, xy2) or axline(xy1, { slope }) — an infinite line through two points, or one point and a slope (linear scales only).
+
+Keyword arguments (unknown keys throw): `slope`, `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `drawstyle | ds`, `zorder`, `label`, `clip_on | clipon | clip`
+
+### `Axes.hlines(y, xmin, xmax, kwargs?)`
+
+hlines(y, xmin, xmax, { colors, linestyles, label, linewidth|lw, alpha, zorder, clip_on }) — a LineCollection of horizontal segments.
+
+Keyword arguments (unknown keys throw): `colors | color | c`, `linestyles | linestyle | ls`, `linewidths | linewidth | lw`, `alpha`, `zorder`, `label`, `clip_on | clipon | clip`
+
+### `Axes.vlines(x, ymin, ymax, kwargs?)`
+
+vlines(x, ymin, ymax, { colors, linestyles, label, linewidth|lw, alpha, zorder, clip_on }) — a LineCollection of vertical segments.
+
+Keyword arguments (unknown keys throw): `colors | color | c`, `linestyles | linestyle | ls`, `linewidths | linewidth | lw`, `alpha`, `zorder`, `label`, `clip_on | clipon | clip`
+
+### `Axes.errorbar(xRaw, yRaw, kwargs?)`
+
+errorbar(x, y, { yerr, xerr, fmt, ecolor, elinewidth, elinestyle, capsize, capthick, barsabove, lolims, uplims, xlolims, xuplims, errorevery, label, …Line2D }) — errors are a scalar, one value per point, or [lower, upper].
+
+Keyword arguments (unknown keys throw): `yerr`, `xerr`, `fmt`, `ecolor`, `elinewidth`, `elinestyle`, `capsize`, `capthick`, `barsabove`, `lolims`, `uplims`, `xlolims`, `xuplims`, `errorevery`, `label`, `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `drawstyle | ds`, `zorder`, `clip_on | clipon | clip`
+
+### `Axes.hist(xRaw, kwargs?)`
+
+hist(x, { bins, range, density, weights, cumulative, bottom, histtype, align, orientation, rwidth, log, color, label, stacked, facecolor|fc, edgecolor|ec, linewidth|lw, alpha, clip_on }) — one dataset or a list of them. Returns [n, bins, patches] as matplotlib does: per-dataset arrays when x is a list of datasets.
+
+Keyword arguments (unknown keys throw): `histtype`, `align`, `orientation`, `stacked`, `bins`, `range`, `density`, `weights`, `cumulative`, `bottom`, `rwidth`, `log`, `color`, `label`, `facecolor | fc`, `edgecolor | ec`, `linewidth | lw`, `alpha`, `clip_on | clipon | clip`
 
 ### `Axes.bar(x, height, kwargs?)`
 
@@ -166,7 +214,7 @@ Keyword arguments (unknown keys throw): `xytext`, `xycoords`, `textcoords`, `arr
 
 scatter(x, y, { s, c, marker, alpha, edgecolors, linewidths, zorder, clip_on })
 
-Keyword arguments (unknown keys throw): `s`, `marker`, `alpha`, `c | color`, `edgecolors | edgecolor`, `linewidths | linewidth`, `label`, `clip_on | clipon | clip`
+Keyword arguments (unknown keys throw): `s`, `marker`, `alpha`, `c | color`, `edgecolors | edgecolor`, `linewidths | linewidth | lw`, `label`, `clip_on | clipon | clip`
 
 ### `Axes.axvspan(xmin, xmax, kwargs?)`
 

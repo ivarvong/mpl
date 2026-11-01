@@ -11,53 +11,153 @@ import { MARKERS } from './data/markers.ts';
 import { yaArrowPath } from './arrow.ts';
 import { lookup } from './std.ts';
 import { forward, forwardAll } from './scale.ts';
-import type { BarArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, AnnotationCoords, Paint } from './types.ts';
+import type { AxLineArtist, BarArtist, PolygonArtist, SegmentsArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, AnnotationCoords, Paint } from './types.ts';
 import { labelNodes } from './draw-axis.ts';
 import { placeText, pxPerPt, strokePx } from './text.ts';
 import type { Face } from './fonts.ts';
 import { resolveFace } from './fonts.ts';
 import { assertNever, none, some } from './types.ts';
+import { stepped } from './steps.ts';
 import type { SpanHandle } from '../trace.ts';
 
 export type Drawn = { readonly nodes: readonly Node[]; readonly lines: readonly XY[]; readonly boxes: readonly Box[]; readonly handle: Option<Handle> };
 
-/** Scale transform (one pass per axis; identity for linear), then the affine map to device px. */
-function transform(a: LineArtist, f: Frame): { readonly xs: Float64Array; readonly ys: Float64Array; readonly ysUp: Float64Array } {
-  const n = Math.min(a.x.length, a.y.length);
+/** Scale transform (one pass per axis; identity for linear), then the affine map to device px. An axes-fraction
+ *  coordinate (axhline's x, axvline's y) goes through transAxes instead: v·w + x0 (the blended transform's row). */
+function transform(x: Float64Array, y: Float64Array, coords: LineArtist['coords'], f: Frame): { readonly xs: Float64Array; readonly ys: Float64Array; readonly ysUp: Float64Array } {
+  const n = Math.min(x.length, y.length);
   const xs = new Float64Array(n), ys = new Float64Array(n), ysUp = new Float64Array(n);
-  const dx = forwardAll(f.xscale, a.x), dy = forwardAll(f.yscale, a.y);
+  const dataX = coords.x === 'data', dataY = coords.y === 'data';
+  const dx = dataX ? forwardAll(f.xscale, x) : x, dy = dataY ? forwardAll(f.yscale, y) : y;
   // Agg folds the y flip into the affine (trans_affine::multiply): y_dev = y·(−ay) + (H − cy).
-  const ax = f.ax, cx = f.cx, ay = f.ay, cy = f.cy, nay = -f.ay, tyDev = f.H - f.cy;
+  const ax = dataX ? f.ax : f.box.w, cx = dataX ? f.cx : f.box.x0;
+  const ay = dataY ? f.ay : f.box.h, cy = dataY ? f.cy : f.box.b;
+  const nay = -ay, tyDev = f.H - cy;
   for (let i = 0; i < n; i++) {
     xs[i] = dx[i] * ax + cx; ys[i] = dy[i] * nay + tyDev; ysUp[i] = dy[i] * ay + cy;
   }
   return { xs, ys, ysUp };
 }
 
-export function drawLine(a: LineArtist, f: Frame, theme: Theme, k: number, clip: Clip, span: SpanHandle): Drawn {
-  const { xs, ys, ysUp } = transform(a, f);
-  const nodes: Node[] = [];
-  if (a.stroke.kind === 'on' && xs.length > 0) {
-    const stroke = lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k);
-    let px = xs, py = ys;
-    if (isRectilinear(xs, ys)) {
-      px = xs.map((v) => snap(v, stroke.width)); py = ys.map((v) => snap(v, stroke.width));
-    } else if (theme.simplify.kind === 'on' && xs.length >= 128) {   // Path.should_simplify
-      const s = simplifyPolyline(xs, ys, theme.simplify.thresholdPx);
-      px = s.xs; py = s.ys;
-      span.setAttribute('simplified', px.length);
-    }
-    if (stroke.color.alpha > 0) nodes.push({ kind: 'polyline', xs: px, ys: py, stroke });
+/** A Line2D stroke (already in device px): snapped when rectilinear, else simplified when long. */
+function strokeNodes(xs: Float64Array, ys: Float64Array, stroke: Stroke, theme: Theme, span: SpanHandle): readonly Node[] {
+  if (xs.length === 0 || stroke.color.alpha <= 0) return [];
+  let px = xs, py = ys;
+  if (isRectilinear(xs, ys)) {
+    px = xs.map((v) => snap(v, stroke.width)); py = ys.map((v) => snap(v, stroke.width));
+  } else if (theme.simplify.kind === 'on' && xs.length >= 128) {   // Path.should_simplify
+    const s = simplifyPolyline(xs, ys, theme.simplify.thresholdPx);
+    px = s.xs; py = s.ys;
+    span.setAttribute('simplified', px.length);
   }
+  return [{ kind: 'polyline', xs: px, ys: py, stroke }];
+}
+
+export function drawLine(a: LineArtist, f: Frame, theme: Theme, k: number, clip: Clip, span: SpanHandle): Drawn {
+  // the stroke follows the drawstyle's step vertices; markers sit on the data points (Line2D.draw)
+  const path = stepped(a.x, a.y, a.drawstyle);
+  const line = transform(path.x, path.y, a.coords, f);
+  const pts = a.drawstyle === 'default' ? line : transform(a.x, a.y, a.coords, f);
+  const nodes: Node[] = [];
+  if (a.stroke.kind === 'on') nodes.push(...strokeNodes(line.xs, line.ys, lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k), theme, span));
   if (a.markers.kind === 'on') {
-    const m = markersNode(a.markers, xs, ys, k);
+    const m = markersNode(a.markers, pts.xs, pts.ys, k);
     if (m.kind === 'some') { nodes.push(m.value); span.setAttribute('markerCount', m.value.kind === 'markers' ? m.value.xs.length : 0); }
   }
   return {
     nodes: nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [],
-    lines: [{ xs, ys: ysUp }], boxes: [],
+    lines: [{ xs: line.xs, ys: line.ysUp }], boxes: [],
     handle: some({ kind: 'line', stroke: a.stroke, markers: a.markers }),
   };
+}
+
+/**
+ * axline (lines.AxLine.get_transform): in scaled coordinates, intersect the line with the four view-limit
+ * edges, sort the points and keep the middle two; Line2D's unit path [(0, 0), (1, 1)] maps onto them.
+ */
+export function drawAxLine(a: AxLineArtist, f: Frame, theme: Theme, k: number, clip: Clip, span: SpanHandle): Drawn {
+  const handle = some<Handle>({ kind: 'line', stroke: a.stroke, markers: { kind: 'none' } });
+  const x1 = forward(f.xscale, a.x1), y1 = forward(f.yscale, a.y1);
+  let slope: number;
+  if (a.through.kind === 'point') {
+    const dx = forward(f.xscale, a.through.x2) - x1, dy = forward(f.yscale, a.through.y2) - y1;
+    slope = dx === 0 ? Infinity : dy / dx;   // identical points are rejected by axline()
+  } else slope = a.through.slope;
+  const vxlo = forward(f.xscale, f.xlim[0]), vxhi = forward(f.xscale, f.xlim[1]);
+  const vylo = forward(f.yscale, f.ylim[0]), vyhi = forward(f.yscale, f.ylim[1]);
+  let start: readonly [number, number], stop: readonly [number, number];
+  if (slope === 0) { start = [vxlo, y1]; stop = [vxhi, y1]; }
+  else if (!Number.isFinite(slope)) { start = [x1, vylo]; stop = [x1, vyhi]; }
+  else {
+    const pts: (readonly [number, number])[] = [
+      [vxlo, y1 + (vxlo - x1) * slope], [vxhi, y1 + (vxhi - x1) * slope],
+      [x1 + (vylo - y1) / slope, vylo], [x1 + (vyhi - y1) / slope, vyhi],
+    ];
+    pts.sort((p, q) => (p[0] !== q[0] ? p[0] - q[0] : p[1] - q[1]));   // Python tuple order
+    start = pts[1]; stop = pts[2];
+  }
+  const xs = Float64Array.of(start[0] * f.ax + f.cx, stop[0] * f.ax + f.cx);
+  const ys = Float64Array.of(start[1] * -f.ay + (f.H - f.cy), stop[1] * -f.ay + (f.H - f.cy));
+  const up = Float64Array.of(start[1] * f.ay + f.cy, stop[1] * f.ay + f.cy);
+  const nodes = a.stroke.kind === 'on' ? strokeNodes(xs, ys, lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k), theme, span) : [];
+  return { nodes: nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [], lines: [{ xs, ys: up }], boxes: [], handle };
+}
+
+/**
+ * A LineCollection (Collection.draw). One solid segment takes the single-path optimization, draw_markers
+ * with the segment as the marker at display (0, 0), i.e. pixel (0, H); otherwise draw_path_collection
+ * strokes each segment with its own colour and dashes, in order. Either way Agg's PathSnapper snaps
+ * an axis-aligned segment to floor(v + 0.5) + (odd width ? 0.5 : 0). GC defaults: butt caps, round joins.
+ */
+export function drawSegments(a: SegmentsArtist, f: Frame, theme: Theme, k: number, clip: Clip): Drawn {
+  const n = Math.min(a.x0.length, a.y0.length, a.x1.length, a.y1.length);
+  const first = a.colors[0], style0 = a.styles[0];
+  const handle = some<Handle>({ kind: 'collection', color: first, widthPt: a.widthPt, style: style0 });
+  const strokeOf = (i: number): Stroke => {
+    const st = lineStroke(theme, a.colors[i % a.colors.length], a.widthPt, a.styles[i % a.styles.length], k);
+    return { ...st, cap: 'butt', join: 'round' };
+  };
+  const X0 = forwardAll(f.xscale, a.x0), X1 = forwardAll(f.xscale, a.x1), Y0 = forwardAll(f.yscale, a.y0), Y1 = forwardAll(f.yscale, a.y1);
+  const single = n === 1 && a.colors.length === 1 && a.styles.length === 1 && style0 === 'solid';
+  const nodes: Node[] = [];
+  for (let i = 0; i < n; i++) {
+    const stroke = strokeOf(i);
+    if (stroke.color.alpha <= 0 || stroke.width <= 0) continue;
+    const tyDev = single ? -f.cy : f.H - f.cy;
+    const xs = Float64Array.of(X0[i] * f.ax + f.cx, X1[i] * f.ax + f.cx);
+    const ys = Float64Array.of(Y0[i] * -f.ay + tyDev, Y1[i] * -f.ay + tyDev);
+    if (!xs.every(Number.isFinite) || !ys.every(Number.isFinite)) continue;
+    const off = snapOffset(stroke.width);
+    const fix = (v: number): number => (isRectilinear(xs, ys) ? Math.floor(v + 0.5) + off : single ? v + 0.5 : v);
+    const segs: Seg[] = [['M', fix(xs[0]), fix(ys[0])], ['L', fix(xs[1]), fix(ys[1])]];
+    nodes.push(single
+      ? { kind: 'markers', shape: segs, xs: Float64Array.of(0), ys: Float64Array.of(f.H), ink: { kind: 'stroke', stroke } }
+      : pathNode(segs, { kind: 'stroke', stroke }));
+  }
+  return { nodes: nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [], lines: [], boxes: [], handle };
+}
+
+/** A Polygon patch: filled and/or stroked (miter joins, butt caps), snapped when rectilinear. */
+export function drawPolygon(a: PolygonArtist, f: Frame, k: number, clip: Clip): Drawn {
+  const handle = some<Handle>({ kind: 'patch', face: a.face, edge: a.edge });
+  const stroke: Option<Stroke> = a.edge.kind === 'on' && a.edge.widthPt > 0
+    ? some({ color: a.edge.color, width: strokePx(a.edge.widthPt, k), cap: 'butt', join: 'miter', dash: { kind: 'solid' } }) : none;
+  const n = Math.min(a.x.length, a.y.length);
+  const X = forwardAll(f.xscale, a.x), Y = forwardAll(f.yscale, a.y);
+  const xs = new Float64Array(n), ys = new Float64Array(n), up = new Float64Array(n);
+  for (let i = 0; i < n; i++) { xs[i] = X[i] * f.ax + f.cx; ys[i] = Y[i] * -f.ay + (f.H - f.cy); up[i] = Y[i] * f.ay + f.cy; }
+  const lines = [{ xs, ys: up }];
+  // an unfilled, open outline fills nothing (Patch fill=False)
+  const ink = inkOf(a.closed ? a.face : { kind: 'none' }, stroke);
+  if (n === 0 || ink.kind === 'none') return { nodes: [], lines, boxes: [], handle };
+  // Polygon(closed=True) appends the first vertex, which becomes the CLOSEPOLY
+  const cx = a.closed ? Float64Array.of(...xs, xs[0]) : xs, cy = a.closed ? Float64Array.of(...ys, ys[0]) : ys;
+  const off = stroke.kind === 'some' ? snapOffset(stroke.value.width) : 0;
+  const rect = isRectilinear(cx, cy);
+  const fix = (v: number): number => (rect ? Math.floor(v + 0.5) + off : v);
+  const segs: Seg[] = Array.from(xs, (x, i): Seg => [i === 0 ? 'M' : 'L', fix(x), fix(ys[i])]);
+  if (a.closed) segs.push(['Z']);
+  return { nodes: [{ kind: 'group', clip, nodes: [pathNode(segs, ink.value)], tag: '' }], lines, boxes: [], handle };
 }
 
 type Pending = { readonly x: number; readonly w: number; y: number; h: number; readonly i: number };

@@ -193,6 +193,78 @@ for i, (city, temps) in enumerate(CITIES):
 case("example_small_multiples", ("$subplots", [2, 3], {"sharex": True, "sharey": True, "figsize": [9, 5]}), *SM,
      ("fig.suptitle", ["Monthly mean temperature"]), ("fig.supxlabel", ["month"]), ("fig.supylabel", ["°C"]), ("fig.tight_layout", []))
 
+# plots-1: hist, step, errorbar, axhline/axvline/axline, hlines/vlines (data is synthetic, seeded)
+R = np.random.default_rng(20261101)
+HN = L(R.normal(0, 1, 400)); HE = L(R.exponential(1.5, 300)); HA = L(R.normal(-1, 0.8, 200)); HB = L(R.normal(1, 1.2, 250)); HC = L(R.normal(0.3, 0.5, 150))
+HW = L(R.uniform(0.2, 2.0, 400))
+case("hist_basic", ("hist", [HN]))
+case("hist_log", ("hist", [HE], {"bins": 20, "log": True, "color": "C1", "edgecolor": "k", "linewidth": 0.5}))
+case("hist_density_weights", ("hist", [HN], {"bins": 15, "density": True, "weights": HW, "color": "C2", "alpha": 0.7, "label": "weighted"}),
+     ("hist", [HN], {"bins": 15, "density": True, "histtype": "step", "label": "unweighted"}), ("legend", []))
+case("hist_cumulative", ("hist", [HN], {"bins": 25, "cumulative": True, "histtype": "step", "label": "cumulative"}),
+     ("hist", [HN], {"bins": 25, "cumulative": -1, "histtype": "step", "density": True, "label": "reversed, density"}), ("legend", [], {"loc": "center right"}))
+case("hist_stepfilled_stacked", ("hist", [[HA, HB, HC]], {"bins": 20, "histtype": "stepfilled", "stacked": True, "label": ["a", "b", "c"], "alpha": 0.8}), ("legend", []))
+case("hist_step_stacked_density", ("hist", [[HA, HB]], {"bins": 18, "histtype": "step", "stacked": True, "density": True, "label": ["a", "b"], "linewidth": [1, 2.5]}), ("legend", []))
+case("hist_horizontal", ("hist", [HN], {"bins": "auto", "orientation": "horizontal", "rwidth": 0.8, "color": "C4", "edgecolor": "k"}))
+case("hist_horizontal_step", ("hist", [[HA, HB]], {"bins": 12, "orientation": "horizontal", "histtype": "stepfilled", "label": ["a", "b"], "alpha": 0.5}), ("legend", []))
+case("hist_side_by_side", ("hist", [[HA, HB, HC]], {"bins": 12, "label": ["a", "b", "c"]}), ("legend", []))
+case("hist_barstacked_edges", ("hist", [[HA, HB]], {"bins": [-4, -2, -1, -0.5, 0, 0.5, 1, 2, 4], "histtype": "barstacked", "rwidth": 0.9,
+     "color": ["C3", "C5"], "label": ["first", "second"]}), ("legend", []))
+case("hist_align_range_bottom", ("hist", [HN], {"bins": 8, "range": [-2, 2], "align": "left", "histtype": "step", "bottom": 5, "label": "left"}),
+     ("hist", [HN], {"bins": 8, "range": [-2, 2], "align": "right", "rwidth": 0.5, "label": "right"}), ("legend", []))
+case("hist_estimators", ("$subplots", [2, 4], {"figsize": [10, 5]}),
+     *[c for i, est in enumerate(["auto", "fd", "doane", "scott", "stone", "rice", "sturges", "sqrt"]) for c in [("sca", [i]), ("hist", [HE], {"bins": est}), ("set_title", [est])]],
+     ("fig.tight_layout", []))
+SX = list(range(10)); SY = [math.sin(i / 1.7) + 0.1 * i for i in SX]
+case("step_where", ("step", [SX, SY], {"where": "pre", "label": "pre"}), ("step", [SX, [v + 1 for v in SY]], {"where": "post", "label": "post"}),
+     ("step", [SX, [v + 2 for v in SY], "o--"], {"where": "mid", "label": "mid"}), ("plot", [SX, [v + 3 for v in SY]], {"drawstyle": "steps-mid", "label": "drawstyle"}),
+     ("plot", [SX, [v + 4 for v in SY]], {"ds": "steps", "color": "k", "lw": 2}), ("legend", []))
+EX = [0.5 * i for i in range(1, 11)]; EY = [math.exp(-v / 3) * 4 + 0.2 * math.sin(3 * v) for v in EX]
+ELO = [0.1 + 0.03 * i for i in range(10)]; EHI = [0.3 - 0.02 * i for i in range(10)]
+case("errorbar_asym_caps", ("errorbar", [EX, EY], {"yerr": [ELO, EHI], "xerr": 0.15, "fmt": "o", "capsize": 4, "ecolor": "C3", "elinewidth": 1, "label": "asymmetric"}),
+     ("errorbar", [EX, [v + 1 for v in EY]], {"yerr": 0.2, "label": "default"}), ("legend", []))
+case("errorbar_lims_every", ("errorbar", [EX, EY], {"yerr": 0.4, "lolims": [i % 3 == 0 for i in range(10)], "uplims": [i % 3 == 1 for i in range(10)], "errorevery": 2, "fmt": "s", "label": "lims, every 2"}),
+     ("errorbar", [EX, [v + 2 for v in EY]], {"xerr": 0.2, "xlolims": True, "fmt": "none", "capsize": 3, "errorevery": [1, 3], "label": "fmt none"}),
+     ("errorbar", [EX, [v + 4 for v in EY]], {"yerr": 0.3, "uplims": True, "capsize": 2, "errorevery": [i < 5 for i in range(10)], "fmt": "^-", "label": "mask"}),
+     ("legend", [], {"loc": "upper right"}))
+case("errorbar_inverted_lims", ("set_ylim", [6, -1]), ("errorbar", [EX, EY], {"yerr": 0.5, "lolims": True, "uplims": [i % 2 == 0 for i in range(10)], "fmt": "o", "label": "inverted"}), ("legend", []))
+case("errorbar_barsabove_style", ("errorbar", [EX, EY], {"yerr": [ELO, EHI], "fmt": "s-", "markersize": 8, "markerfacecolor": "white", "lw": 2, "capsize": 5, "capthick": 2,
+     "barsabove": True, "elinestyle": "--", "alpha": 0.8, "label": "styled"}), ("errorbar", [EX, [v - 1 for v in EY]], {"xerr": [ELO, EHI], "yerr": 0.1, "fmt": ".", "mew": 3, "capsize": 3, "label": "mew"}), ("legend", []))
+case("errorbar_rc", ("$rc", [], {"errorbar.capsize": 3, "lines.linewidth": 2.5}), ("errorbar", [EX, EY], {"yerr": 0.25, "xerr": [0.1] * 10, "label": "rc caps"}), ("legend", []))
+case("axlines", ("plot", [x, sx], {"label": "sin"}), ("axhline", [0.5], {"color": "C1", "ls": "--", "label": "axhline"}), ("axvline", [3], {"ymin": 0.1, "ymax": 0.9, "color": "k", "lw": 2}),
+     ("axline", [[0, 0], [1, 0.2]], {"color": "C2", "label": "two points"}), ("axline", [[0, 1]], {"slope": -0.1, "ls": ":", "label": "slope"}),
+     ("axhline", [], {"xmin": 0.25, "xmax": 0.75}), ("legend", []))
+case("axline_autoscale", ("axhline", [5]), ("axvline", [-2], {"color": "C3"}))
+case("axline_inside_bounds", ("plot", [[0, 10], [0, 10]]), ("axhline", [2]), ("axvline", [12]), ("axline", [[1, 1], [2, 3]], {"color": "C4"}))
+case("axline_log", ("plot", [lin(20, 1, 100), L(np.geomspace(1, 1000, 20))]), ("set_xscale", ["log"]), ("set_yscale", ["log"]),
+     ("axline", [[1, 1], [100, 1000]], {"color": "C1"}), ("axhline", [30], {"color": "C2"}), ("axvline", [10], {"color": "C3"}))
+case("hlines_vlines", ("hlines", [[1, 2, 3], 0, [2, 4, 6]], {"colors": ["C0", "C1", "C2"], "linestyles": ["solid", "dashed", "dotted"], "label": "hlines"}),
+     ("vlines", [[1, 2, 3, 4, 5], 0, [0.5, 1.5, 2.5, 3.5, 2.5]], {"colors": "k", "lw": 2, "label": "vlines"}), ("legend", []))
+case("hlines_single", ("hlines", [0.5, 0.1, 0.9]), ("vlines", [[0.3], [0.2], [0.8]], {"color": "C3", "linestyles": "dashed", "alpha": 0.5}))
+case("hist_integer_auto", ("hist", [[int(v) for v in np.round(R.normal(10, 3, 120))]], {"bins": "auto", "histtype": "step", "log": True}))
+case("hist_rc_bins", ("$rc", [], {"hist.bins": "sturges", "patch.force_edgecolor": True}), ("hist", [HB], {"color": "C6"}))
+case("scatter_under_line", ("plot", [[0, 1, 2, 3], [0, 1, 0, 1]], {"lw": 6}), ("scatter", [[0.5, 1.5, 2.5], [0.5, 0.5, 0.5]], {"s": 300, "c": "C1"}))
+case("plots_grid", ("$subplots", [2, 2], {"figsize": [8, 6]}),
+     ("hist", [[HA, HB]], {"bins": 15, "histtype": "stepfilled", "alpha": 0.6, "label": ["a", "b"]}), ("legend", []), ("set_title", ["hist"]),
+     ("sca", [1]), ("errorbar", [EX, EY], {"yerr": [ELO, EHI], "fmt": "o", "capsize": 3, "label": "data"}), ("legend", []), ("set_title", ["errorbar"]),
+     ("sca", [2]), ("step", [SX, SY], {"where": "mid", "label": "step"}), ("axhline", [0], {"color": "0.5", "lw": 0.8}), ("legend", []),
+     ("sca", [3]), ("vlines", [SX, 0, SY], {"label": "stems"}), ("plot", [SX, SY, "o"]), ("axline", [[0, 0]], {"slope": 0.2, "color": "C3", "label": "trend"}), ("legend", []),
+     ("fig.tight_layout", []))
+
+# examples/histogram_errorbar.ts, call for call (docs/images/histogram_errorbar.svg); the data is illustrative
+LAT_BEFORE = [144, 166, 61, 136, 129, 173, 133, 152, 147, 173, 122, 192, 112, 155, 149, 249, 109, 159, 125, 97, 166, 85, 103, 135, 172, 162, 143, 76, 110, 118,   95, 69, 137, 164, 115, 172, 81, 93, 136, 112, 160, 151, 115, 84, 110, 152, 162, 112, 69, 80, 148, 114, 115, 93, 92, 171, 150, 105, 133, 141,   214, 90, 140, 170, 206, 104, 114, 160, 75, 144, 240, 149, 57, 97, 105, 183, 123, 69, 128, 136, 109, 92, 248, 171, 176, 123, 103, 111, 81, 213,   125, 197, 113, 150, 138, 78, 222, 114, 87, 161, 130, 145, 134, 59, 96, 95, 175, 131, 153, 116, 155, 123, 120, 138, 134, 276, 96, 75, 144, 100]
+LAT_AFTER = [45, 71, 203, 76, 53, 199, 70, 244, 92, 178, 96, 120, 99, 96, 112, 122, 110, 106, 81, 101, 170, 79, 114, 152, 122, 140, 69, 114, 94, 95,   165, 96, 115, 53, 178, 138, 102, 93, 126, 151, 179, 136, 106, 143, 134, 107, 133, 132, 102, 87, 128, 72, 67, 115, 127, 115, 119, 47, 126, 165,   137, 135, 112, 114, 99, 118, 71, 166, 78, 137, 158, 137, 210, 48, 89, 157, 66, 78, 124, 106, 121, 109, 112, 81, 111, 91, 95, 136, 65, 41,   133, 111, 158, 79, 101, 107, 84, 76, 135, 62, 71, 99, 140, 86, 83, 97, 117, 92, 146, 149, 99, 189, 106, 147, 116, 115, 57, 69, 94, 148]
+DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+case("example_histogram_errorbar", ("$subplots", [1, 2], {"figsize": [10, 4]}),
+     ("hist", [[LAT_BEFORE, LAT_AFTER]], {"bins": "auto", "histtype": "stepfilled", "alpha": 0.5, "label": ["before", "after"]}),
+     ("axvline", [130.5], {"color": "C0", "linestyle": "--", "label": "median before"}),
+     ("axvline", [111], {"color": "C1", "linestyle": "--", "label": "median after"}),
+     ("set_xlabel", ["latency (ms)"]), ("set_ylabel", ["requests"]), ("set_title", ["Latency distribution (illustrative)"]), ("legend", []),
+     ("sca", [1]), ("errorbar", [DAYS, [131, 128, 125, 112, 109, 104, 102]], {"yerr": [[38, 35, 36, 30, 29, 27, 28], [52, 61, 49, 44, 47, 39, 41]], "fmt": "o-", "capsize": 4, "label": "p50 with p10–p90"}),
+     ("axhline", [100], {"color": "0.5", "linewidth": 0.8, "linestyle": ":"}),
+     ("set_ylabel", ["latency (ms)"]), ("set_title", ["Daily median (illustrative)"]), ("legend", [], {"loc": "upper right"}),
+     ("fig.tight_layout", []))
+
 def run_case(name, calls):
     style = None
     rc_layer = {}

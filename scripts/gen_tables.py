@@ -25,11 +25,13 @@ def write(name, body):
 # (fonts: see scripts/gen_fonts.py)
 
 # ---- markers
-names = ['o', 's', '^', 'v', '<', '>', 'D', 'd', 'x', '+', '*', '.', 'p', 'h', 'X', 'P']
+names = ['o', 's', '^', 'v', '<', '>', 'D', 'd', 'x', '+', '*', '.', 'p', 'h', 'X', 'P', '|', '_']
+# errorbar's limit markers: matplotlib.lines.CARET*BASE (marker codes 8..11), named here
+CODES = {'caretleftbase': 8, 'caretrightbase': 9, 'caretupbase': 10, 'caretdownbase': 11}
 CODE = {1: "M", 2: "L", 3: "Q", 4: "C", 79: "Z"}
 marks = {}
-for m in names:
-    ms = MarkerStyle(m)
+for m in names + list(CODES):
+    ms = MarkerStyle(CODES.get(m, m))
     p = ms.get_transform().transform_path(ms.get_path())
     v = np.round(p.vertices, 6).tolist()
     codes = p.codes.tolist() if p.codes is not None else [1] + [2] * (len(v) - 1)

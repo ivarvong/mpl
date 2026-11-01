@@ -31,6 +31,7 @@ function coerce(key: string, raw: string): Result<RcValue> {
   }
   if (typeof dv === 'number') {
     if (key.endsWith('size') && /^[a-z-]+$/i.test(v)) return ok(v);   // font size aliases
+    if (key === 'hist.bins' && /^[a-z]+$/.test(v)) return ok(v);      // an estimator name
     const n = Number(v);
     return Number.isFinite(n) ? ok(n) : err(`${key}: expected number, got ${v}`);
   }
