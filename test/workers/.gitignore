@@ -1,0 +1,4 @@
+node_modules/
+.cloudflare/
+dist/
+src/cases.gen.json

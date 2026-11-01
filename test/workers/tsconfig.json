@@ -1,0 +1,7 @@
+{
+  // typechecked by ../workers.test.ts after dist/browser is built (the root tsconfig excludes this folder)
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "resolveJsonModule": true },
+  "include": ["src", "*.ts"],
+  "exclude": []
+}

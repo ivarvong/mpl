@@ -20,5 +20,5 @@
     "types": ["node"]
   },
   "include": ["src", "test", "tools", "scripts", "bench"],
-  "exclude": ["bench/bench_live.ts", "tools/live", "**/scratch"]
+  "exclude": ["bench/bench_live.ts", "tools/live", "**/scratch", "test/workers"]
 }
