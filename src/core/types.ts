@@ -95,7 +95,9 @@ export type Placement =
   | { readonly kind: 'vertical'; readonly ha: HAlign; readonly va: VAlign };
 
 // ---------------------------------------------------------------- artists
-export type MarkerName = 'o' | 's' | '^' | 'v' | '<' | '>' | 'D' | 'd' | 'x' | '+' | '*' | '.' | 'p' | 'h' | 'X' | 'P';
+export type MarkerName = 'o' | 's' | '^' | 'v' | '<' | '>' | 'D' | 'd' | 'x' | '+' | '*' | '.' | 'p' | 'h' | 'X' | 'P' | '|' | '_'
+  /** matplotlib.lines.CARET{LEFT,RIGHT,UP,DOWN}BASE (marker codes 8..11): errorbar's limit arrows */
+  | 'caretleftbase' | 'caretrightbase' | 'caretupbase' | 'caretdownbase';
 export type LineStyleName = 'solid' | 'dashed' | 'dashdot' | 'dotted';
 export type Label = { readonly kind: 'none' } | { readonly kind: 'text'; readonly text: string };
 
@@ -106,11 +108,49 @@ export type LineMarkers =
 export type BarEdge = { readonly kind: 'none' } | { readonly kind: 'on'; readonly color: Rgb; readonly widthPt: number };
 export type Orientation = 'vertical' | 'horizontal';
 
+/** Line2D.set_drawstyle: how consecutive points connect (cbook.pts_to_{pre,mid,post}step). */
+export type DrawStyle = 'default' | 'steps-pre' | 'steps-mid' | 'steps-post';
+/** Which coordinate system each of a line's coordinates is in: axhline is (axes, data), axvline (data, axes).
+ *  Only data coordinates update the data limits. */
+export type LineCoords = { readonly x: 'data' | 'axes'; readonly y: 'data' | 'axes' };
 export type LineArtist = {
   readonly kind: 'line'; readonly x: Float64Array; readonly y: Float64Array;
   readonly stroke: LineStroke; readonly markers: LineMarkers; readonly label: Label;
-  readonly clip: boolean;
+  readonly clip: boolean; readonly drawstyle: DrawStyle; readonly coords: LineCoords;
+  /** Artist zorder: 2 for Line2D; errorbar's data line is 2.1 (1.9 with barsabove) */
+  readonly zorder: number;
 };
+/** axline: an infinite straight line through p1 and p2, or through p1 with a slope (linear scales only),
+ *  clipped to the view limits at draw time (lines.AxLine.get_transform). */
+export type AxLineThrough = { readonly kind: 'point'; readonly x2: number; readonly y2: number } | { readonly kind: 'slope'; readonly slope: number };
+export type AxLineArtist = {
+  readonly kind: 'axline'; readonly x1: number; readonly y1: number; readonly through: AxLineThrough;
+  readonly stroke: LineStroke; readonly label: Label; readonly clip: boolean;
+};
+/** A LineCollection of straight segments (hlines, vlines, errorbar bars). Colours and line styles cycle
+ *  over the segments; `zorder` is 2 (LineCollection's default). */
+export type SegmentsArtist = {
+  readonly kind: 'segments'; readonly x0: Float64Array; readonly y0: Float64Array; readonly x1: Float64Array; readonly y1: Float64Array;
+  readonly colors: readonly Rgb[]; readonly widthPt: number; readonly styles: readonly LineStyleName[];
+  readonly label: Label; readonly clip: boolean; readonly zorder: number;
+};
+/** A Polygon patch (hist's step and stepfilled outlines): closed or open, filled or not.
+ *  `stickyBase` is the value appended to sticky_edges along the value axis (orientation). */
+export type PolygonArtist = {
+  readonly kind: 'polygon'; readonly x: Float64Array; readonly y: Float64Array; readonly closed: boolean;
+  readonly face: Paint; readonly edge: BarEdge; readonly label: Label; readonly clip: boolean; readonly zorder: number;
+  readonly orientation: Orientation;
+};
+/** The look of an errorbar's legend entry (HandlerErrorbar): the data line (absent for fmt='none'), the bar
+ *  lines, and the first cap line's marker style (absent without caps or limit markers). */
+export type ErrorbarHandle = {
+  readonly line: Option<{ readonly stroke: LineStroke; readonly markers: LineMarkers }>;
+  readonly bar: { readonly color: Rgb; readonly widthPt: number; readonly style: LineStyleName };
+  readonly caps: Option<{ readonly sizePt: number; readonly edgeWidthPt: number; readonly edge: Paint; readonly face: Paint }>;
+  readonly hasX: boolean; readonly hasY: boolean;
+};
+/** ErrorbarContainer: draws nothing itself (its lines are separate artists); it carries the legend entry. */
+export type ErrorbarArtist = { readonly kind: 'errorbar'; readonly label: Label; readonly handle: ErrorbarHandle; readonly clip: boolean };
 /** Rects in data coords; (x, y) is the corner at the base. The base axis is y for vertical bars (sticky edges). */
 export type BarArtist = {
   readonly kind: 'bar'; readonly orientation: Orientation;
@@ -118,6 +158,10 @@ export type BarArtist = {
   /** face is the legend handle's (matplotlib uses the first patch); faces[i] paints bar i */
   readonly face: Paint; readonly faces: readonly Paint[]; readonly edge: BarEdge; readonly label: Label;
   readonly clip: boolean;
+  /** whether the bases are sticky edges (hist clears them on every dataset after the first) */
+  readonly sticky: boolean;
+  /** hist's bars: each labelled bar is a legend child (Rectangle), not a BarContainer entry */
+  readonly legend: 'container' | 'child';
 };
 /** fill_between: the polygon start → (x, y1)… → end → (x, y2) reversed. `color=` paints the edge too (Collection.set_color). */
 export type FillArtist = {
@@ -166,17 +210,27 @@ export type SpanArtist = {
   readonly f0: number; readonly f1: number;
   readonly face: Paint; readonly edge: BarEdge; readonly label: Label; readonly clip: boolean;
 };
-export type Artist = LineArtist | BarArtist | FillArtist | TextArtist | ScatterArtist | AnnotationArtist | SpanArtist;
+export type Artist = LineArtist | BarArtist | FillArtist | TextArtist | ScatterArtist | AnnotationArtist | SpanArtist
+  | AxLineArtist | SegmentsArtist | PolygonArtist | ErrorbarArtist;
 
 /** What a legend entry draws. */
 export type Handle =
   | { readonly kind: 'line'; readonly stroke: LineStroke; readonly markers: LineMarkers }
-  | { readonly kind: 'patch'; readonly face: Paint; readonly edge: BarEdge };
+  | { readonly kind: 'patch'; readonly face: Paint; readonly edge: BarEdge }
+  | { readonly kind: 'errorbar'; readonly errorbar: ErrorbarHandle }
+  /** HandlerLineCollection: a 2-point Line2D given the collection's dash tuple, so it counts as dashed
+   *  (dash cap and join) even when solid */
+  | { readonly kind: 'collection'; readonly color: Rgb; readonly widthPt: number; readonly style: LineStyleName };
 export type LegendEntry = { readonly label: string; readonly handle: Handle };
 
 // ---------------------------------------------------------------- axes
 export type Scale = { readonly kind: 'linear' } | { readonly kind: 'log'; readonly base: number };
-export type Limits = { readonly kind: 'auto' } | { readonly kind: 'fixed'; readonly lo: number; readonly hi: number };
+/**
+ * auto: autoscale at draw (a request is pending); fixed: set_xlim, autoscaling off; view: autoscaling on but
+ * no request since the view was last computed (matplotlib's viewLim when not stale), e.g. (0, 1) on an Axes
+ * nothing has asked to autoscale, or the limits axhline read before adding a line inside them.
+ */
+export type Limits = { readonly kind: 'auto' } | { readonly kind: 'fixed'; readonly lo: number; readonly hi: number } | { readonly kind: 'view'; readonly lo: number; readonly hi: number };
 export type TickSpec = { readonly kind: 'auto' } | { readonly kind: 'fixed'; readonly locs: readonly number[] };
 export type LabelSpec = { readonly kind: 'auto' } | { readonly kind: 'fixed'; readonly labels: readonly string[] };
 /** 'auto' ticks/labels mean "what matplotlib's converter picks for this kind of axis". */
@@ -277,6 +331,8 @@ export type Theme = {
     readonly solidCap: Cap; readonly solidJoin: Join; readonly dashCap: Cap; readonly dashJoin: Join;
     readonly patterns: { readonly dashed: readonly number[]; readonly dashdot: readonly number[]; readonly dotted: readonly number[] };
     readonly scaleDashes: boolean;
+    /** lines.color: Line2D's own default (axhline, axline, LineCollections), not the prop cycle */
+    readonly color: Rgb;
   };
   readonly simplify: Simplify;
   readonly patch: { readonly linewidthPt: number; readonly edge: Rgb; readonly forceEdge: boolean };
@@ -290,6 +346,12 @@ export type Theme = {
     readonly handleTextPad: number; readonly borderAxesPad: number; readonly columnSpacing: number;
   };
   readonly offsetTextPadPt: number;
+  /** errorbar.capsize (pt), errorbar.capthick and errorbar.elinewidth (pt; none = follow the lines) */
+  readonly errorbar: { readonly capsizePt: number; readonly capthickPt: Option<number>; readonly elinewidthPt: Option<number> };
+  /** hist.bins: a bin count or an estimator name */
+  /** scatter.edgecolors: 'face' (each marker's edge is its face colour) or one colour */
+  readonly scatterEdge: { readonly kind: 'face' } | { readonly kind: 'paint'; readonly paint: Paint };
+  readonly histBins: { readonly kind: 'count'; readonly n: number } | { readonly kind: 'estimator'; readonly name: string };
 };
 
 // ---------------------------------------------------------------- layout output

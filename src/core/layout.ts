@@ -5,7 +5,7 @@ import { dataExtents, unionExtent, viewLimits } from './autoscale.ts';
 import type { AxisDrawn, Sides } from './draw-axis.ts';
 import { drawAxis, labelNodes } from './draw-axis.ts';
 import type { Drawn } from './draw-artists.ts';
-import { drawBar, drawFill, drawLine, drawText, drawScatter, drawSpan, drawAnnotation } from './draw-artists.ts';
+import { drawAxLine, drawBar, drawFill, drawLine, drawPolygon, drawSegments, drawText, drawScatter, drawSpan, drawAnnotation } from './draw-artists.ts';
 import type { Frame } from './frame.ts';
 import { axesBox, frame } from './frame.ts';
 import { layoutLegend } from './legend.ts';
@@ -77,8 +77,23 @@ function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tr
       case 'scatter': return tracer.span('artist.scatter', { points: a.x.length }, () => drawScatter(a, f, theme, k, clip));
       case 'annotation': return tracer.span('artist.annotation', { }, () => drawAnnotation(a, f, f.W, k * 72, theme, k, clip));
       case 'span': return tracer.span('artist.span', { orientation: a.orientation }, () => drawSpan(a, f, k, clip));
+      case 'axline': return tracer.span('artist.axline', { through: a.through.kind }, (sp) => drawAxLine(a, f, theme, k, clip, sp));
+      case 'segments': return tracer.span('artist.segments', { segments: a.x0.length }, () => drawSegments(a, f, theme, k, clip));
+      case 'polygon': return tracer.span('artist.polygon', { vertices: a.x.length, closed: a.closed }, () => drawPolygon(a, f, k, clip));
+      case 'errorbar': return { nodes: [], lines: [], boxes: [], handle: some({ kind: 'errorbar', errorbar: a.handle }) };
       default: return assertNever(a);
     }
+  }
+}
+
+/** Artist.zorder: patches and path/fill collections 1, lines and line collections 2 (or what the artist says), text 3. */
+function zorder(a: Artist): number {
+  switch (a.kind) {
+    case 'bar': case 'fill': case 'span': case 'scatter': return 1;   // PathCollection: Collection.zorder
+    case 'axline': return 2;
+    case 'line': case 'segments': case 'polygon': return a.zorder;
+    case 'text': case 'annotation': case 'errorbar': return 3;
+    default: return assertNever(a);
   }
 }
 
@@ -92,8 +107,10 @@ function legendEntries(ax: AxesSpec, drawn: readonly Drawn[]): readonly LegendEn
     if (h.kind === 'none') return;
     const e: LegendEntry = { label: a.label.text, handle: h.value };
     switch (a.kind) {
-      case 'line': case 'fill': case 'scatter': children.push(e); break;     // collections are Axes children too
-      case 'bar': case 'span': containers.push(e); break;
+      // Line2D, patches and collections are Axes children; hist's labelled bar is a child Rectangle
+      case 'line': case 'fill': case 'scatter': case 'axline': case 'segments': case 'polygon': children.push(e); break;
+      case 'bar': (a.legend === 'child' ? children : containers).push(e); break;
+      case 'span': case 'errorbar': containers.push(e); break;
       default: assertNever(a);
     }
   });
@@ -289,14 +306,8 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
   const bx0 = snap(box.x0, 0), bx1 = snap(box.x1, 0), by0 = snap(box.yTop, 0), by1 = snap(box.yBot, 0);
   const background: readonly Node[] = face.kind === 'some' ? [rectNode(bx0, by0, bx1 - bx0, by1 - by0, face.value)] : [];
   const drawn = tracer.span('artists', { count: ax.artists.length }, () => drawArtists(ax, f, theme, k, clip, tracer));
-  // z-order 1: patches and collections, in the order added; 2: lines; 3: texts (before the titles)
-  const zOf = (i: number): number => {
-    const kd = ax.artists[i].kind;
-    return kd === 'bar' || kd === 'fill' || kd === 'span' ? 1 : kd === 'line' || kd === 'scatter' ? 2 : 3;
-  };
-  const patches = drawn.flatMap((d, i) => (zOf(i) === 1 ? d.nodes : []));
-  const lines = drawn.flatMap((d, i) => (zOf(i) === 2 ? d.nodes : []));
-  const userTexts = drawn.flatMap((d, i) => (zOf(i) === 3 ? d.nodes : []));
+  const userTexts = drawn.flatMap((d, i) => (zorder(ax.artists[i]) === 3 ? d.nodes : []));
+  const artistLayers = drawn.flatMap((d, i): (readonly [number, readonly Node[]])[] => { const z = zorder(ax.artists[i]); return z === 3 ? [] : [[z, d.nodes]]; });
   // Spine outward offsets move the axis baseline (ticks and labels follow)
   const offPx = (side: 'left' | 'right' | 'top' | 'bottom'): number => {
     const p = ax.spines[side].position;
@@ -328,7 +339,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
   // stable and ties keep matplotlib's get_children order (children, spines, then the axes), which
   // matters for axisbelow=False: the axis (2.5) then draws over the spines (2.5).
   const layers: ReadonlyArray<readonly [number, readonly Node[]]> = [
-    [1, patches], [2, lines], [2.5, spinesForAxes(ax, theme, f, k)],
+    ...artistLayers, [2.5, spinesForAxes(ax, theme, f, k)],
     [axisZ(theme.axes.axisBelow), [...clipped(xa.grid), ...xa.marks, ...clipped(ya.grid), ...ya.marks]],
     [3, [...userTexts, ...deco.nodes]], [5, legend.kind === 'some' ? legend.value.out.nodes : []],
   ];

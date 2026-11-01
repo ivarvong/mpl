@@ -55,7 +55,8 @@ export function markersNode(m: Extract<LineMarkers, { kind: 'on' }>, xs: Float64
   const stroke: Option<Stroke> = m.edge.kind === 'solid' && ew > 0
     ? some({ color: m.edge.color, width: ew, cap: def.cap, join: def.join, dash: { kind: 'solid' } })
     : none;
-  const ink = inkOf(def.filled ? m.face : { kind: 'none' }, stroke);
+  // Line2D fills every marker path with its face colour (unfillable ones such as 'x' and '|' enclose no area; the carets do)
+  const ink = inkOf(m.face, stroke);
   if (ink.kind === 'none') return none;
   const fillAlpha = ink.value.kind === 'stroke' ? 1 : ink.value.fill.alpha;
   const strokeAlpha = ink.value.kind === 'fill' ? 1 : ink.value.stroke.color.alpha;

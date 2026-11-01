@@ -4,6 +4,7 @@
 import { logNonsingular } from './log.ts';
 import { forward, inverse } from './scale.ts';
 import { nonsingular } from './ticker.ts';
+import { stepped } from './steps.ts';
 import { dateNonsingular } from './dates.ts';
 import type { Artist, AxisSpec, Scale } from './types.ts';
 import { assertNever } from './types.ts';
@@ -31,15 +32,41 @@ function scanSpans(start: Float64Array, len: Float64Array, acc: Acc): void {
 const uniqSorted = (v: readonly number[]): readonly number[] => [...new Set(v)].toSorted((p, q) => p - q);
 const emptyAcc = (): Acc => ({ lo: Infinity, hi: -Infinity, minpos: Infinity, count: 0 });
 
+/** nanmin and nanmax over two arrays, as a 2-point extent (empty when all are NaN). */
+const nanExtent = (u: Float64Array, v: Float64Array): Float64Array => {
+  let lo = Infinity, hi = -Infinity;
+  for (const w of [u, v]) for (const t of w) if (!Number.isNaN(t)) { if (t < lo) lo = t; if (t > hi) hi = t; }
+  return lo <= hi ? Float64Array.of(lo, hi) : new Float64Array(0);
+};
+
 export function dataExtents(artists: readonly Artist[]): { readonly x: Extent; readonly y: Extent } {
   const X = emptyAcc(), Y = emptyAcc();
   const sx: number[] = [], sy: number[] = [];
   for (const a of artists) {
     switch (a.kind) {
-      case 'line': scan(a.x, X); scan(a.y, Y); break;
+      case 'line': {
+        // _update_line_limits: the drawn (stepped) path, only along the data-coordinate branches
+        const p = stepped(a.x, a.y, a.drawstyle);
+        if (a.coords.x === 'data') scan(p.x, X);
+        if (a.coords.y === 'data') scan(p.y, Y);
+        break;
+      }
+      case 'axline':                                 // update_datalim([xy1, xy2])
+        scan(a.through.kind === 'point' ? Float64Array.of(a.x1, a.through.x2) : Float64Array.of(a.x1), X);
+        scan(a.through.kind === 'point' ? Float64Array.of(a.y1, a.through.y2) : Float64Array.of(a.y1), Y);
+        break;
+      case 'segments': {                             // hlines/vlines: update_datalim of the two extreme corners
+        scan(nanExtent(a.x0, a.x1), X); scan(nanExtent(a.y0, a.y1), Y);
+        break;
+      }
+      case 'polygon':                                // every vertex; hist appends 0 to the sticky edges
+        scan(a.x, X); scan(a.y, Y);
+        if (a.orientation === 'vertical') sy.push(0); else sx.push(0);
+        break;
+      case 'errorbar': break;                        // a container: its lines are artists of their own
       case 'bar':
         scanSpans(a.x, a.w, X); scanSpans(a.y, a.h, Y);
-        switch (a.orientation) {                    // the base is a sticky edge
+        if (a.sticky) switch (a.orientation) {      // the base is a sticky edge
           case 'vertical': for (const v of a.y) sy.push(v); break;
           case 'horizontal': for (const v of a.x) sx.push(v); break;
           default: assertNever(a.orientation);
@@ -121,8 +148,9 @@ export function autoscaleExtent(e: Extent, spec: AxisSpec, s: Scale, margin: num
   const rules = rulesFor(spec);
   const [n0, n1] = locatorNonsingular(rules, e.count > 0 ? e.lo : -Infinity, e.count > 0 ? e.hi : Infinity, e.minpos);
   const tol = 1e-5 * Math.abs(n1 - n0);
-  const below = e.stickies.filter((v) => v < n0 + tol);         // searchsorted(x0 + tol) - 1
-  const above = e.stickies.filter((v) => v >= n1 - tol);        // searchsorted(x1 - tol)
+  const stickies = s.kind === 'log' ? e.stickies.filter((v) => v > 0) : e.stickies;   // log scales drop nonpositive stickies
+  const below = stickies.filter((v) => v < n0 + tol);         // searchsorted(x0 + tol) - 1
+  const above = stickies.filter((v) => v >= n1 - tol);        // searchsorted(x1 - tol)
   const [r0, r1] = limitRange(s, n0, n1, e.minpos);
   const t0 = forward(s, r0), t1 = forward(s, r1);
   let delta = (t1 - t0) * margin;
@@ -135,7 +163,7 @@ export function autoscaleExtent(e: Extent, spec: AxisSpec, s: Scale, margin: num
 
 export function viewLimits(spec: AxisSpec, s: Scale, e: Extent, margin: number): readonly [number, number] {
   switch (spec.limits.kind) {
-    case 'fixed': return [spec.limits.lo, spec.limits.hi];
+    case 'fixed': case 'view': return [spec.limits.lo, spec.limits.hi];
     case 'auto': return autoscaleExtent(e, spec, s, margin);
     default: return assertNever(spec.limits);
   }

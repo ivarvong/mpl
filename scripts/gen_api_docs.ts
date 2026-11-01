@@ -19,7 +19,7 @@ function members(cls: string): readonly Member[] {
   const end = SRC.indexOf('\n}\n', start);
   const lines = SRC.slice(start, end).split('\n').slice(1);
   const out: Member[] = [];
-  let doc: string[] = [], inDoc = false;
+  let doc: string[] = [], inDoc = false, overloadDoc: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (/^ {2}\/\*\*/.test(line)) { inDoc = true; doc = []; }
@@ -30,6 +30,10 @@ function members(cls: string): readonly Member[] {
     }
     const m = /^ {2}(private |readonly |static )*(get )?([A-Za-z_]\w*)\s*(<[^>]*>)?\(([^)]*)\)/.exec(line);
     if (m === null || m[3] === 'constructor') { if (!/^ {2}\s/.test(line) && line.trim() !== '') doc = []; continue; }
+    // an overload signature (no body): its doc comment carries over to the implementation
+    if (line.trimEnd().endsWith(';')) { if (doc.length > 0) overloadDoc = doc; doc = []; continue; }
+    if (doc.length === 0 && overloadDoc.length > 0) doc = overloadDoc;
+    overloadDoc = [];
     // the body runs until the next line at member indentation
     let j = i + 1;
     while (j < lines.length && !/^ {2}\S/.test(lines[j])) j++;

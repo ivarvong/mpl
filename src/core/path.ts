@@ -55,8 +55,12 @@ export function simplifyPolyline(xs: Float64Array, ys: Float64Array, thr: number
 }
 
 /** Every segment axis-aligned (Agg snaps such paths). */
+/**
+ * PathSnapper::should_snap for SNAP_AUTO: at most 1024 vertices, and every segment axis-aligned within
+ * 1e-4 px (|dx| < 1e-4 or |dy| < 1e-4). Such paths snap to pixel centres (or edges) in Agg.
+ */
 export function isRectilinear(xs: Float64Array, ys: Float64Array): boolean {
-  if (xs.length < 2) return false;
-  for (let i = 1; i < xs.length; i++) if (xs[i] !== xs[i - 1] && ys[i] !== ys[i - 1]) return false;
+  if (xs.length < 2 || xs.length > 1024) return false;
+  for (let i = 1; i < xs.length; i++) if (Math.abs(xs[i] - xs[i - 1]) >= 1e-4 && Math.abs(ys[i] - ys[i - 1]) >= 1e-4) return false;
   return true;
 }

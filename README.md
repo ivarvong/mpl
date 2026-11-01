@@ -95,6 +95,20 @@ fig.tight_layout();
 
 <img src="docs/images/small_multiples.svg" width="640" alt="A 2x3 grid of line charts of monthly temperature for six cities, sharing x and y axes, with a figure title and shared axis labels">
 
+Histograms and error bars follow `Axes.hist` and `Axes.errorbar` down to numpy: `bins` takes a count, explicit edges,
+or any `np.histogram_bin_edges` estimator (`'auto'`, `'fd'`, `'doane'`, …), and the counts and edges are numpy's,
+bit for bit. `hist` returns a typed `[n, bins, patches]`, with one row per dataset when you pass several:
+
+```ts
+const [n, bins] = ax.hist([before, after], { bins: 'auto', histtype: 'stepfilled', alpha: 0.5, label: ['before', 'after'] });
+ax.axvline(130.5, { color: 'C0', linestyle: '--' });
+ax2.errorbar(days, p50, { yerr: [below, above], fmt: 'o-', capsize: 4 });   // asymmetric errors
+```
+
+[`examples/histogram_errorbar.ts`](examples/histogram_errorbar.ts) (illustrative data) is also an oracle case (`fixtures/ref/example_histogram_errorbar`):
+
+<img src="docs/images/histogram_errorbar.svg" width="720" alt="Left: two overlaid semi-transparent stepfilled histograms of illustrative request latency with dashed median lines; right: daily median latency with asymmetric p10 to p90 error bars and caps">
+
 `npm run build` emits plain ES modules plus `.d.ts` into `dist/browser` for use from a browser, a Cloudflare Worker, or any
 project that cannot run `.ts` files (Node refuses to strip types inside `node_modules`).
 
@@ -114,9 +128,9 @@ fig.toScene();          // the renderer-independent Scene tree (JSON-able)
 fig.toPNGSync();        // Uint8Array, rasterized by mpljs' own port of Agg
 ```
 
-The API is matplotlib-shaped (`subplots`, `plot`, `bar`/`barh`, `fill_between`, `text`, `legend`, `grid`, `set_xlim`,
-`set_yscale('log')`, `twinx`, `tight_layout`, styled tick labels, date axes, 9+ bundled styles); unknown keyword arguments
-are errors, as in matplotlib. Subplot grids: `subplots(nrows, ncols, …)` with sharex/sharey, width/height ratios, `subplots_adjust` and grid `tight_layout`. Out of scope so far: hist, errorbar, spanning subplots (`subplot_mosaic`, gridspec slices), colormaps, general mathtext, constrained layout.
+The API is matplotlib-shaped (`subplots`, `plot`, `step`, `bar`/`barh`, `hist`, `errorbar`, `fill_between`, `axhline`/`axvline`/`axline`,
+`hlines`/`vlines`, `text`, `legend`, `grid`, `set_xlim`, `set_yscale('log')`, `twinx`, `tight_layout`, styled tick labels, date axes,
+9+ bundled styles); unknown keyword arguments are errors, as in matplotlib. Subplot grids: `subplots(nrows, ncols, …)` with sharex/sharey, width/height ratios, `subplots_adjust` and grid `tight_layout`. Out of scope so far: boxplot/violinplot/pie/stem/stairs, spanning subplots (`subplot_mosaic`, gridspec slices), images and colormaps, general mathtext, constrained layout.
 
 ## Commands
 
@@ -150,8 +164,7 @@ typecheck or CI.
 Calibration: matplotlib's *own* SVG backend, rasterized by the same rasterizer, scores RMS **14–16** against its Agg PNG
 (it works in 72-dpi points and does not pixel-snap). mpljs at ~2 is anti-aliasing fringe; the `*.cmp.png` diff panels are blank.
 
-Current suite (`npm test`): **130 fixtures, 126 pixel-exact against matplotlib's Agg PNG, 4 within ±1–2 levels** (log-scale fixtures) (libm ulp
-differences under log scales) — mpljs ships its own port of Agg and FreeType's text layout, so the rasterized output is
+Current suite (`npm test`): **216 fixtures, 216 pixel-exact against matplotlib's Agg PNG** — mpljs ships its own port of Agg and FreeType's text layout, so the rasterized output is
 compared byte for byte, not by RMS. The slice table above records how the oracle grew.
 
 
@@ -305,14 +318,16 @@ Things that had to be verified against Agg rather than reasoned about:
 
 ## Out of scope so far
 
-hist, errorbar, subplots grids (one `Axes`, plus `twinx`, per figure), colormaps, general mathtext (only the
-tick-label forms `10^{n}` / `2×10^{n}`), constrained layout.
+Other plot types (`boxplot`, `violinplot`, `pie`, `stem`, `stairs`, `fill`/`fill_betweenx`), spanning subplots
+(`subplot_mosaic`, gridspec slices), images and colormaps, general mathtext (only the tick-label forms `10^{n}` /
+`2×10^{n}`), constrained layout. Within the plotting calls: hist's `hatch` and per-dataset `linestyle`, `axline` with a
+`transform`, and errorbar on polar axes or with timedelta errors on date axes.
 Text uses DejaVu Sans/Serif (or Inter) with ASCII plus Latin-1, Latin Extended-A, Greek letters, general punctuation,
 super/subscripts, currency, arrows, math operators, box drawing, block elements, geometric shapes and ✓/✗ baked in
 (`scripts/gen_fonts.py`). Anything else draws matplotlib's empty .notdef box and warns once: `Glyph N (c) missing from
 font(s) …` when the font lacks it (as matplotlib does), or `… is in DejaVu Sans but not bundled with mpljs` when only the
 baked subset lacks it.
-Done and covered by the oracle: `plot`, `scatter`, `bar`/`barh`, `fill_between`, `text`/`annotate`, `legend`, `grid` with Line2D
+Done and covered by the oracle: `plot` (incl. `drawstyle`), `step`, `scatter`, `bar`/`barh`, `hist` (every `histtype`, stacked or side by side, horizontal, log, density, weights, cumulative, numpy's bin estimators), `errorbar` (symmetric/asymmetric, caps, limits, `errorevery`), `axhline`/`axvline`/`axline`, `hlines`/`vlines`, `fill_between`, `text`/`annotate`, `legend`, `grid` with Line2D
 kwargs (major/minor), `tight_layout`, per-tick label styling, multi-line text, log scales, date axes, `twinx`, 9+ bundled styles, PNG output (own Agg port), SVG with glyph outlines (matplotlib's `svg.fonttype='path'`) or `<text>`.
 Everything (`src/`, `test/`, `tools/`, `scripts/`, `bench/`, `examples/`) is TypeScript run directly by Node and typechecked by `tsc -p .`;
 `src/` additionally obeys the modeling rules below.

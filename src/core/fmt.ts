@@ -68,7 +68,12 @@ export function parseLinestyle(v: unknown): Result<Option<LineStyleName>> {
   }
 }
 
+/** Marker codes matplotlib accepts as integers (CARETLEFTBASE..CARETDOWNBASE). */
+const MARKER_CODES: ReadonlyArray<readonly [number, MarkerName]> = [[8, 'caretleftbase'], [9, 'caretrightbase'], [10, 'caretupbase'], [11, 'caretdownbase']];
+
 export function parseMarker(v: unknown): Result<Option<MarkerName>> {
+  const code = MARKER_CODES.find(([n]) => n === v);
+  if (code) return ok(some(code[1]));
   if (typeof v !== 'string') return err(`marker must be a string, got ${typeof v}`);
   if (v === 'None' || v === 'none' || v === '' || v === ' ') return ok(none);
   const m = markerFromChar(v);
