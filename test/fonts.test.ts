@@ -1,7 +1,9 @@
 // Shaping oracle: glyph ids (cmap + GSUB) and 26.6 pen positions (FT advances + HarfBuzz kerning)
 // against matplotlib's FT2Font._layout, per face, size and dpi.
 import { readFileSync } from 'node:fs';
-import { faceById, ftScale, penPositions, shapeGlyphs } from '../src/core/fonts.ts';
+import { faceById, ftScale, penPositions, registerFonts, shapeGlyphs } from '../src/core/fonts.ts';
+import { allFonts } from '../src/fonts/all.ts';
+registerFonts(...allFonts);
 const cases = JSON.parse(readFileSync(new URL('../fixtures/ref/_layout.json', import.meta.url), 'utf8'));
 const bad = new Map();
 for (const c of cases) {

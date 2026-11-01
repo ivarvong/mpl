@@ -3,7 +3,9 @@
 // The drawing itself is covered by the fixtures/ref/api_* oracle cases.
 import assert from 'node:assert/strict';
 import { setGlyphWarningSink } from '../src/core/fonts.ts';
-import { subplots } from '../src/index.ts';
+import { registerFonts, subplots } from '../src/index.ts';
+import { allFonts } from '../src/fonts/all.ts';
+registerFonts(...allFonts);
 
 const throwsKw = (f: () => unknown, key: string): void =>
   assert.throws(f, (e: Error) => e.message.includes(`unexpected keyword argument '${key}'`), `expected '${key}' to be rejected`);

@@ -3,7 +3,8 @@
 //   node bench/trace_png.ts out.png spans.jsonl # renders a flushed JSONL trace
 // Builds the picture directly on the Scene ADT, with mpljs' own AutoLocator for the time axis.
 import { readFileSync, writeFileSync } from 'node:fs';
-import { subplots, tracer, Tracer } from '../src/index.ts';
+import { registerFonts, subplots, tracer, Tracer } from '../src/index.ts';
+import { allFonts } from '../src/fonts/all.ts';
 import type { FinishedSpan, Ink, Node, Rgb, Scene, Seg } from '../src/index.ts';
 import { toSVG } from '../src/render/svg.ts';
 import { toPNGSync } from '../src/render/agg.ts';
@@ -20,6 +21,7 @@ const text = ({ text: t, x, y, size, color, weight = 400 }: { text: string; x: n
 const group = (nodes: Node[]): Node => ({ kind: 'group', clip: { kind: 'none' }, nodes, tag: '' });
 
 const PALETTE = ['#4e79a7', '#f28e2b', '#59a14f', '#e15759', '#b07aa1', '#76b7b2', '#edc948', '#ff9da7', '#9c755f', '#bab0ab', '#1f77b4', '#17becf'];
+registerFonts(...allFonts);   // a bench tool: every face
 const FONT = 'Inter', DPI = 72;                                 // layout in 1x px (1px = 1pt); scaleScene renders at S×
 const M = (s: string | number, size: number) => measure(String(s), size, DPI, resolveFace([FONT], 400));
 const W = 1500, LEFT = 330, RIGHT = 24, TOP = 78, ROW = 34, NAME = 12, ATTR = 9.5, GUTTER = 8;

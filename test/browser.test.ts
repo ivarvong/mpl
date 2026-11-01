@@ -38,11 +38,27 @@ try {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(origin + '/');
   const ua = await page.evaluate(() => navigator.userAgent);
+  // the plain import fetches one face; a face that is not registered fails, typed, instead of drawing another
+  const lazy = await page.evaluate(async () => {
+    const lib: string = '/lib/index.js';
+    const m = await import(lib) as typeof import('../src/index.ts');
+    const [fig, ax] = m.subplots(); ax.plot([1, 2, 3], [1, 4, 9]);
+    const ok = fig.toSVG().startsWith('<svg') && fig.toPNGSync().length > 100;
+    ax.set_title('bold', { fontweight: 'bold' });
+    let err = 'rendered';
+    try { fig.toSVG(); } catch (e) { err = e instanceof m.FontNotLoadedError ? `${e.name} ${e.face} ${e.module}` : String(e); }
+    const fetched = performance.getEntriesByType('resource').map((r) => new URL(r.name).pathname).filter((p) => p.startsWith('/lib/fonts/'));
+    return { ok, err, fetched };
+  });
+  const lazyOk = lazy.ok && lazy.err === 'FontNotLoadedError DejaVu Sans:700 mpljs/fonts/dejavu-sans-bold' && JSON.stringify(lazy.fetched) === '["/lib/fonts/dejavu-sans.js"]';
+  if (!lazyOk) fails++;
+  console.log(`${lazyOk ? 'PASS' : 'FAIL'} chromium default import: fetched ${lazy.fetched.join(', ')}; bold without its face → ${lazy.err}`);
   type Out = { name: string; svg: string; png64: string; ms: number };
   const outs: Out[] = await page.evaluate(async (fx: Record<string, unknown>) => {
     // served paths, typed as the sources they are built from
-    const lib: string = '/lib/index.js', core: string = '/replay-core.js';
+    const lib: string = '/lib/index.js', core: string = '/replay-core.js', fonts: string = '/lib/fonts/all.js';
     const m = await import(lib) as typeof import('../src/index.ts');
+    m.registerFonts(...(await import(fonts) as typeof import('../src/fonts/all.ts')).allFonts);
     const r = await import(core) as typeof import('../tools/replay-core.ts');
     // oxlint-disable-next-line unicorn/consistent-function-scoping -- this body runs in the page; it cannot see the outer scope
     const b64 = (u: Uint8Array): string => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };

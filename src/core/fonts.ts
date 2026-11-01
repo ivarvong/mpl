@@ -1,20 +1,15 @@
 // Font faces and text shaping, as matplotlib 3.11 does it through FreeType 2.14 + HarfBuzz (libraqm),
-// unhinted. Faces are baked by tools/gen_fonts.py; everything here is integer-exact against
+// unhinted. Faces are baked by scripts/gen_fonts.py and packed by scripts/encode_fonts.ts (src/fonts/); everything here is integer-exact against
 // FT2Font._layout for the supported character set:
 //   - char size: FT_Set_Char_Size(pt·64, dpi) → 16.16 x_scale = FT_DivFix(ppem26, upem)
 //   - advances: FT_MulFix(hAdvance, x_scale), in 26.6
 //   - kerning: HarfBuzz em_mult on the hb-ft font scale, in 26.6
 //   - substitutions: the GSUB lookups behind ccmp/locl/rlig/calt/clig/liga for Latin text
-import { DEJAVU_SANS } from './data/fonts/dejavu-sans.ts';
-import { DEJAVU_SANS_BOLD } from './data/fonts/dejavu-sans-bold.ts';
-import { DEJAVU_SERIF } from './data/fonts/dejavu-serif.ts';
-import { DEJAVU_SERIF_BOLD } from './data/fonts/dejavu-serif-bold.ts';
-import { INTER_REGULAR } from './data/fonts/inter-regular.ts';
-import { INTER_MEDIUM } from './data/fonts/inter-medium.ts';
-import { INTER_SEMIBOLD } from './data/fonts/inter-semibold.ts';
-import { INTER_BOLD } from './data/fonts/inter-bold.ts';
+import { dejavuSans } from '../fonts/dejavu-sans.ts';
+import { decodeFace, FACE_CATALOG, type BakedFace, type CatalogEntry, type FaceId } from './fontcodec.ts';
 import { lookup } from './std.ts';
 import { assertNever } from './types.ts';
+import { tracer } from '../trace.ts';
 
 const getOr = <K, V>(m: ReadonlyMap<K, V>, k: K, d: V): V => { const o = lookup(m, k); return o.kind === 'some' ? o.value : d; };
 
@@ -118,18 +113,66 @@ function load(d: FaceData): Face {
   };
 }
 
-/** When each face was built at module load (performance.now() ms). Faces load before any caller
- *  can enable a tracer, so they record plain timestamps and a startup trace turns them into spans. */
+// ------------------------------------------------------------------ the face registry
+// Each shipped face is its own module (mpljs/fonts/<name>), so a bundle carries only the faces an
+// application imports. DejaVu Sans, matplotlib's default face, is always registered; the others are
+// passed to registerFonts(). A face decodes on first use. Font selection always runs over the whole
+// catalog, as matplotlib's does over its installed fonts, so registering faces never changes which
+// face a text gets; selecting a face that is not registered throws FontNotLoadedError instead of
+// silently drawing another one.
+
+/** Rendering needed a shipped face that has not been passed to registerFonts(). */
+export class FontNotLoadedError extends Error {
+  readonly face: FaceId;
+  readonly family: string;
+  readonly weight: number;
+  /** the module that exports it, e.g. "mpljs/fonts/dejavu-sans-bold" */
+  readonly module: string;
+  /** its export name in that module, e.g. "dejavuSansBold" */
+  readonly binding: string;
+  constructor(e: CatalogEntry) {
+    super(`mpljs: font ${e.family} weight ${e.weight} is not loaded. Register it before rendering:\n` +
+      `  import { registerFonts } from 'mpljs';\n  import { ${e.binding} } from 'mpljs/fonts/${e.module}';\n  registerFonts(${e.binding});`);
+    this.name = 'FontNotLoadedError';
+    this.face = e.id; this.family = e.family; this.weight = e.weight; this.module = `mpljs/fonts/${e.module}`; this.binding = e.binding;
+  }
+}
+
+/** When each face was decoded (performance.now() ms), in order; the live demo turns these into spans. */
 export type FaceLoad = { readonly id: string; readonly startMs: number; readonly endMs: number; readonly glyphs: number };
 const faceLoads: FaceLoad[] = [];
-const timedLoad = (d: FaceData): Face => {
-  const t = performance.now(), f = load(d);
-  faceLoads.push({ id: f.id, startMs: t, endMs: performance.now(), glyphs: f.glyphs.size });
-  return f;
-};
-export const FACES: readonly Face[] = [DEJAVU_SANS, DEJAVU_SANS_BOLD, DEJAVU_SERIF, DEJAVU_SERIF_BOLD, INTER_REGULAR, INTER_MEDIUM, INTER_SEMIBOLD, INTER_BOLD].map(timedLoad);
 export const FACE_LOADS: readonly FaceLoad[] = faceLoads;
-export const DEFAULT_FACE: Face = FACES[0];
+
+type Slot = { readonly entry: CatalogEntry; readonly baked: BakedFace; face: { readonly kind: 'none' } | { readonly kind: 'some'; readonly value: Face } };
+const registry = new Map<FaceId, Slot>();
+const entryOf = (id: FaceId): CatalogEntry => {
+  for (const e of FACE_CATALOG) if (e.id === id) return e;
+  return FACE_CATALOG[0];
+};
+
+/** Make faces available to rendering. Registering a face twice is harmless. */
+export function registerFonts(...faces: readonly BakedFace[]): void {
+  for (const b of faces) if (!registry.has(b.id)) registry.set(b.id, { entry: entryOf(b.id), baked: b, face: { kind: 'none' } });
+}
+registerFonts(dejavuSans);
+
+/** The ids of the registered faces, in catalog order. */
+export const registeredFonts = (): readonly FaceId[] => FACE_CATALOG.filter((e) => registry.has(e.id)).map((e) => e.id);
+
+/** A shipped face, decoded on first use; FontNotLoadedError if it is not registered. */
+export function getFace(e: CatalogEntry): Face {
+  const o = lookup(registry, e.id);
+  if (o.kind === 'none') throw new FontNotLoadedError(e);
+  const slot = o.value;
+  if (slot.face.kind === 'some') return slot.face.value;
+  const f = tracer.span('font.decode', { face: e.id }, () => {
+    const t = performance.now(), face = load(decodeFace(slot.baked, e));
+    faceLoads.push({ id: face.id, startMs: t, endMs: performance.now(), glyphs: face.glyphs.size });
+    return face;
+  });
+  slot.face = { kind: 'some', value: f };
+  return f;
+}
 
 /** matplotlib's named weights. */
 const WEIGHTS: ReadonlyMap<string, number> = new Map([
@@ -139,17 +182,22 @@ const WEIGHTS: ReadonlyMap<string, number> = new Map([
 /** matplotlib's weights: a number, or a named weight (unknown names read as normal). */
 export const parseWeight = (v: unknown): number => (typeof v === 'number' ? v : typeof v === 'string' ? getOr(WEIGHTS, v, 400) : 400);
 
-/** font_manager.findfont, reduced: first family in the list that we have, then the nearest weight. */
+/** font_manager.findfont, reduced: first family in the list that we ship, then the nearest weight
+ *  (over every shipped face, registered or not); throws FontNotLoadedError if that face is not registered. */
 export function resolveFace(families: readonly string[], weight: number): Face {
   for (const fam of families) {
     // matplotlib's generic families resolve through font.sans-serif / font.serif, whose first entries we ship
     const name = fam === 'sans-serif' ? 'DejaVu Sans' : fam === 'serif' ? 'DejaVu Serif' : fam;
-    const cands = FACES.filter((f) => f.family.toLowerCase() === name.toLowerCase());
-    if (cands.length > 0) return cands.reduce((a, b) => (Math.abs(b.weight - weight) < Math.abs(a.weight - weight) ? b : a));
+    const cands = FACE_CATALOG.filter((f) => f.family.toLowerCase() === name.toLowerCase());
+    if (cands.length > 0) return getFace(cands.reduce((a, b) => (Math.abs(b.weight - weight) < Math.abs(a.weight - weight) ? b : a)));
   }
-  return weight >= 600 ? FACES[1] : DEFAULT_FACE;
+  return getFace(weight >= 600 ? FACE_CATALOG[1] : FACE_CATALOG[0]);
 }
-export const faceById = (id: string): Face => { const i = FACES.findIndex((f) => f.id === id); return i >= 0 ? FACES[i] : DEFAULT_FACE; };
+/** The face a laid-out text node names (its Face.id). */
+export function faceById(id: string): Face {
+  for (const e of FACE_CATALOG) if (e.id === id) return getFace(e);
+  throw new Error(`mpljs: unknown font face ${JSON.stringify(id)}`);
+}
 
 // ------------------------------------------------------------------ FreeType fixed point
 export function mulFix(a: number, b: number): number {
