@@ -10,6 +10,7 @@ matplotlib.use("Agg")
 matplotlib.rcdefaults()
 matplotlib.rcParams["font.family"] = "DejaVu Sans"
 import matplotlib.pyplot as plt
+import matplotlib.ft2font as ft
 
 ROOT = os.path.dirname(__file__)
 OUT = os.path.join(ROOT, "ref")
@@ -78,6 +79,12 @@ def run_case(name, calls):
     style = None
     rc_layer = {}
     with matplotlib.rc_context(), (plt.style.context(style) if style else contextlib.nullcontext()):
+        # Guardrail: these fixtures must be rendered with FreeType 2.6.1 to match the committed oracle PNGs.
+        ver = getattr(ft, "__freetype_version__", "")
+        if ver != "2.6.1":
+            raise RuntimeError(f"FreeType mismatch: expected 2.6.1, got {ver}. "
+                               "Build matplotlib from source with bundled FreeType 2.6.1 (matplotlib test setup) "
+                               "before regenerating these fixtures.")
         matplotlib.rcParams["font.family"] = "DejaVu Sans"
         fig, ax = plt.subplots()
         axes = [ax]
