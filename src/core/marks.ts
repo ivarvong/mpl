@@ -1,4 +1,5 @@
 // Line strokes, dash patterns and markers (pure).
+import { strokePx } from './text.ts';
 import { MARKERS } from './data/markers.ts';
 import { inkOf, snapOffset } from './scene.ts';
 import type { Cap, Dash, Join, LineMarkers, LineStyleName, MarkerName, Node, Option, Rgb, Seg, Stroke, Theme } from './types.ts';
@@ -23,7 +24,7 @@ export function lineStroke(theme: Theme, color: Rgb, widthPt: number, style: Lin
   const solid = dash.kind === 'solid';
   const cap: Cap = solid ? theme.lines.solidCap : theme.lines.dashCap;
   const join: Join = solid ? theme.lines.solidJoin : theme.lines.dashJoin;
-  return { color, width: widthPt * k, cap, join, dash };
+  return { color, width: strokePx(widthPt, k), cap, join, dash };
 }
 
 /** Marker outline at the origin in px (y down). Vertices snap to integers at/above the marker's threshold. */
@@ -50,7 +51,7 @@ export function markerShape(name: MarkerName, sizePx: number): readonly Seg[] {
  */
 export function markersNode(m: Extract<LineMarkers, { kind: 'on' }>, xs: Float64Array, ys: Float64Array, k: number, alwaysUnsnap: boolean = false): Option<Node> {
   const def = MARKERS[m.shape];
-  const ew = m.edgeWidthPt * k;
+  const ew = strokePx(m.edgeWidthPt, k);
   const stroke: Option<Stroke> = m.edge.kind === 'solid' && ew > 0
     ? some({ color: m.edge.color, width: ew, cap: def.cap, join: def.join, dash: { kind: 'solid' } })
     : none;

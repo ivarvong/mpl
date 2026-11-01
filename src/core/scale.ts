@@ -2,11 +2,12 @@
 // line goes through here, so a new Scale variant is a compile error at each site.
 import type { Scale } from './types.ts';
 import { assertNever } from './types.ts';
+import { exp, log10 } from './libm.ts';
 
 /** LogTransform (nonpositive='clip'): log_b, with v <= 0 sent to -1000. base 10 uses log10, as numpy does. */
 const logB = (base: number, v: number): number => {
   if (!(v > 0)) return Number.isNaN(v) ? NaN : -1000;
-  return base === 10 ? Math.log10(v) : base === 2 ? Math.log2(v) : Math.log(v) / Math.log(base);
+  return base === 10 ? log10(v) : base === 2 ? Math.log2(v) : Math.log(v) / Math.log(base);
 };
 
 export function forward(s: Scale, v: number): number {
@@ -21,7 +22,7 @@ export function forward(s: Scale, v: number): number {
 export function inverse(s: Scale, v: number): number {
   switch (s.kind) {
     case 'linear': return v;
-    case 'log': return s.base === 2 ? Math.pow(2, v) : Math.exp(v * Math.log(s.base));
+    case 'log': return s.base === 2 ? Math.pow(2, v) : exp(v * Math.log(s.base));
     default: return assertNever(s);
   }
 }
