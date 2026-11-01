@@ -132,23 +132,44 @@ The API is matplotlib-shaped (`subplots`, `plot`, `step`, `bar`/`barh`, `hist`, 
 `hlines`/`vlines`, `text`, `legend`, `grid`, `set_xlim`, `set_yscale('log')`, `twinx`, `tight_layout`, styled tick labels, date axes,
 9+ bundled styles); unknown keyword arguments are errors, as in matplotlib. Subplot grids: `subplots(nrows, ncols, …)` with sharex/sharey, width/height ratios, `subplots_adjust` and grid `tight_layout`. Out of scope so far: boxplot/violinplot/pie/stem/stairs, spanning subplots (`subplot_mosaic`, gridspec slices), images and colormaps, general mathtext, constrained layout.
 
+## Runs in
+
+Each runtime below renders the same 9 fixtures (both font families, log axes, a style sheet, grids,
+hist, errorbar, dates, annotate) with the published `dist/browser` build. CI checks that `toSVG()` and
+`toPNGSync()` are byte-identical to Node and that every PNG matches matplotlib's Agg pixel for pixel.
+
+| Runtime | How it is tested | Command |
+|---|---|---|
+| Node 24 | the full oracle suite | `npm test` |
+| Chromium (headless, via Playwright), in a non-UTC time zone and a non-English locale | unbundled ES modules loaded by the page | `npm run test:browser` |
+| Cloudflare Workers (workerd, local) | a small Worker in `test/workers`, run with `cf dev` and also from its `cf build` output | `npm run test:workers` |
+
+Nothing else (Firefox, Safari, Deno, Bun, deployed Workers) is tested yet.
+
+Bundle size (esbuild minified + gzip -9, checked against `size-budget.json` with a +2% limit by `npm run test:size`):
+about 495 KiB gzipped (2.1 MiB minified) for a typical import and for the full import alike. Embedded
+font data is about 89% of the minified bytes (DejaVu 65%, Inter 24%), so subsetting fonts is the lever.
+
 ## Commands
 
 | command | what it does |
 |---|---|
-| `npm ci` | install dev tooling (TypeScript 7, oxlint, `@types/node`); there are no runtime dependencies |
+| `npm ci` | install dev tooling (TypeScript 7, oxlint, `@types/node`, Playwright, esbuild); there are no runtime dependencies |
 | `npm run example` / `npm run examples` | render the quickstart / every example into `examples/out/` |
 | `npm test` | `check`, then every oracle, fuzz and unit suite (about 10 s) |
 | `npm run check` | `tsc` typecheck, the modeling rules (`strict`), and oxlint |
 | `npm run build` | `dist/browser`: ES modules plus declarations |
 | `npm run dev` | build the browser bundle and serve the interactive demo in `tools/live` on http://localhost:8080 |
+| `npm run test:browser` | the runtime cases in headless Chromium (first `npx playwright install chromium-headless-shell`) |
+| `npm run test:workers` | the runtime cases in workerd via `cf build` / `cf dev` (`test/workers` has its own lockfile) |
+| `npm run test:size` / `npm run size` | bundle budget check / print sizes and composition (`-- --update` rewrites the budget) |
 | `npm run bench` | warm per-span timings (see also `bench/`) |
 | `npm run fixtures` | regenerate the matplotlib oracle (needs Python; read [docs/fixtures.md](docs/fixtures.md) first) |
 
 Layout: `src/` the library; `test/` suites (TypeScript, run by Node); `examples/`; `bench/` performance tools;
 `scripts/` build, strict-rule and code-generation scripts; `tools/` oracle replay, diff panels, and the live demo;
 `fixtures/` the committed matplotlib 3.11.2 oracle and its Python generators.
-`bench/bench_live.ts` additionally needs Playwright and a Chromium (`npm install --no-save playwright`); it is not part of the
+`bench/bench_live.ts` additionally needs a Playwright Chromium (`npx playwright install chromium`); it is not part of the
 typecheck or CI.
 
 ## Status

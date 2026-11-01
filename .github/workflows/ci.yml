@@ -22,3 +22,57 @@ jobs:
         run: |
           npm run build
           node --input-type=module -e "const m = await import('./dist/browser/index.js'); const [f, ax] = m.subplots(); ax.plot([1,2,3],[1,4,9]); if (!f.toSVG().includes('<svg')) throw new Error('no svg'); if (f.toPNGSync().length < 100) throw new Error('no png')"
+
+  # dist/browser in headless Chromium: SVG + PNG identical to Node and pixel-exact against Agg
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('./node_modules/playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium-headless-shell
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium-headless-shell
+      - if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium-headless-shell
+      - run: npm run test:browser
+
+  # the same cases in workerd, built and served by the Cloudflare CLI `cf` (no wrangler)
+  workers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            test/workers/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: test/workers
+      - run: npm run test:workers
+
+  # minified + gzipped bundle within 2% of size-budget.json
+  size:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:size
