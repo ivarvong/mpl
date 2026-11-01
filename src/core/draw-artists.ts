@@ -155,18 +155,25 @@ export function drawAnnotation(a: AnnotationArtist, f: Frame, dpi: number, theme
     (cx === 'data' ? [tx(f, x), ty(f, y)] as const : [f.box.x0 + x * f.box.w, f.H - (f.box.yBot + y * f.box.h)] as const);
   const [x0, y0] = toPx(a.xycoords, a.x, a.y);
   const [x1, y1] = toPx(a.textcoords, a.tx, a.ty);
-  const dx = x0 - x1, dy = y0 - y1;
+  // Shrink at both ends by 2 pt each, as FancyArrowPatch default shrinkA/B ~ 2 (points).
+  const shrinkPx = 2 * k;
+  const dx0 = x0 - x1, dy0 = y0 - y1;
+  const L0 = Math.hypot(dx0, dy0) || 1;
+  const ux0 = dx0 / L0, uy0 = dy0 / L0;
+  const sx0 = x0 - ux0 * shrinkPx, sy0 = y0 - uy0 * shrinkPx;
+  const tx0 = x1 + ux0 * shrinkPx, ty0 = y1 + uy0 * shrinkPx;
+  const dx = sx0 - tx0, dy = sy0 - ty0;
   const L = Math.hypot(dx, dy) || 1;
   const ux = dx / L, uy = dy / L;
-  const shaftEndX = x0 - ux * (a.arrow.headLengthPt * k);
-  const shaftEndY = y0 - uy * (a.arrow.headLengthPt * k);
+  const shaftEndX = sx0 - ux * (a.arrow.headLengthPt * k);
+  const shaftEndY = sy0 - uy * (a.arrow.headLengthPt * k);
   const halfW = (a.arrow.headWidthPt * k) / 2;
   const nx = -uy, ny = ux;
-  const headP1x = x0, headP1y = y0;
+  const headP1x = sx0, headP1y = sy0;
   const headP2x = shaftEndX + nx * halfW, headP2y = shaftEndY + ny * halfW;
   const headP3x = shaftEndX - nx * halfW, headP3y = shaftEndY - ny * halfW;
   const stroke: Stroke = { color: a.arrow.color, width: a.arrow.widthPt * k, cap: 'butt', join: 'miter', dash: { kind: 'solid' } };
-  const segs: Seg[] = [['M', x1, y1], ['L', shaftEndX, shaftEndY]];
+  const segs: Seg[] = [['M', tx0, ty0], ['L', shaftEndX, shaftEndY]];
   const head: Seg[] = [['M', headP1x, headP1y], ['L', headP2x, headP2y], ['L', headP3x, headP3y], ['Z']];
   const lineNode: Node = { kind: 'path', segs, ink: { kind: 'stroke', stroke } };
   const headNode: Node = { kind: 'path', segs: head, ink: { kind: 'fill', fill: a.arrow.color } };
@@ -177,7 +184,7 @@ export function drawAnnotation(a: AnnotationArtist, f: Frame, dpi: number, theme
 }
 
 /** ax.scatter: markers-only collection with sizes in pt^2. */
-export function drawScatter(a: ScatterArtist, f: Frame, theme: Theme, k: number, clip: Clip): Drawn {
+export function drawScatter(a: ScatterArtist, f: Frame, _theme: Theme, k: number, clip: Clip): Drawn {
   const n = Math.min(a.x.length, a.y.length, a.sizePt2.length);
   if (n === 0) return { nodes: [], lines: [], boxes: [], handle: some({ kind: 'line', stroke: { kind: 'none' }, markers: { kind: 'none' } }) };
   const xs = new Float64Array(n), ys = new Float64Array(n);
@@ -196,7 +203,7 @@ export function drawScatter(a: ScatterArtist, f: Frame, theme: Theme, k: number,
   const groups = new Map<Key, { sizePt: number; face: Paint; edge: Paint; xs: number[]; ys: number[] }>();
   for (let i = 0; i < n; i++) {
     const sPt2 = Math.max(0, a.sizePt2[i]);
-    const sizePt = Math.sqrt(sPt2);
+    const sizePt = Math.sqrt(sPt2);   // points
     const kkey = keyOf(i);
     const g = groups.get(kkey);
     if (!g) {
@@ -207,11 +214,11 @@ export function drawScatter(a: ScatterArtist, f: Frame, theme: Theme, k: number,
   }
   const nodes: Node[] = [];
   for (const g of groups.values()) {
-    const stroke: Option<Stroke> = g.edge.kind === 'solid' && a.edgeWidthPt > 0 ? some({ color: g.edge.color, width: a.edgeWidthPt * k, cap: theme.lines.solidCap, join: theme.lines.solidJoin, dash: { kind: 'solid' } }) : none;
+    const stroke: Option<Stroke> = g.edge.kind === 'solid' && a.edgeWidthPt > 0 ? some({ color: g.edge.color, width: a.edgeWidthPt * k, cap: 'butt', join: 'round', dash: { kind: 'solid' } }) : none;
     const ink = inkOf(g.face, stroke);
     if (ink.kind === 'none') continue;
     const m = markersNode({ kind: 'on', shape: a.shape, sizePt: g.sizePt, edgeWidthPt: a.edgeWidthPt, face: g.face, edge: g.edge },
-                          Float64Array.from(g.xs), Float64Array.from(g.ys), k);
+                          Float64Array.from(g.xs), Float64Array.from(g.ys), k, true);  // PathCollection: no snapping, draw_markers offset
     if (m.kind === 'some') nodes.push(m.value);
   }
   const out: readonly Node[] = nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [];

@@ -48,7 +48,7 @@ export function markerShape(name: MarkerName, sizePx: number): readonly Seg[] {
  * One instanced Markers node. Agg draw_markers snaps each origin to the pixel centre;
  * opaque identical markers at the same snapped pixel are indistinguishable, so they dedupe.
  */
-export function markersNode(m: Extract<LineMarkers, { kind: 'on' }>, xs: Float64Array, ys: Float64Array, k: number): Option<Node> {
+export function markersNode(m: Extract<LineMarkers, { kind: 'on' }>, xs: Float64Array, ys: Float64Array, k: number, alwaysUnsnap: boolean = false): Option<Node> {
   const def = MARKERS[m.shape];
   const ew = m.edgeWidthPt * k;
   const stroke: Option<Stroke> = m.edge.kind === 'solid' && ew > 0
@@ -62,7 +62,7 @@ export function markersNode(m: Extract<LineMarkers, { kind: 'on' }>, xs: Float64
   const seen = new Set<number>();
   // a snapped marker path lands on PathSnapper's grid: +0.5 for odd edge widths, +0 for even
   // (including no edge); an unsnapped one gets draw_markers' plain +0.5 shift
-  const off = m.sizePt * k >= def.snapPx ? snapOffset(ew) : 0.5;
+  const off = alwaysUnsnap ? 0.5 : (m.sizePt * k >= def.snapPx ? snapOffset(ew) : 0.5);
   const ox = new Float64Array(xs.length), oy = new Float64Array(xs.length);
   let n = 0;
   for (let i = 0; i < xs.length; i++) {

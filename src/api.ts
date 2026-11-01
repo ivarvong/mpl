@@ -677,7 +677,7 @@ export class Figure {
     const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.titleWeight);
     kw.done();
     // Matplotlib default: layout-free placement near the top, aligned to the top.
-    this._suptitle = some({ text: str(s), x: 0.5, y: 0.985, ha: 'center', va: 'top', sizePt, weight, color });
+    this._suptitle = some({ text: str(s), x: 0.5, y: 0.98, ha: 'center', va: 'top', sizePt, weight, color });
     this.touch(); return this;
   }
   supxlabel(s: unknown, kwargs: Kwargs = {}): this {
@@ -697,7 +697,7 @@ export class Figure {
     const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.labelWeight);
     kw.done();
     // Matplotlib default: left of the figure area, rotated like a ylabel.
-    this._supy = some({ text: str(s), x: 0.015, y: 0.5, ha: 'center', va: 'center', sizePt, weight, color });
+    this._supy = some({ text: str(s), x: 0.02, y: 0.5, ha: 'left', va: 'center', sizePt, weight, color });
     this.touch(); return this;
   }
   subplots_adjust(kwargs: Kwargs = {}): this {
