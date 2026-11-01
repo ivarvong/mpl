@@ -436,16 +436,20 @@ export class Axes {
     const kw = new KwReader(kwargs, 'axvspan');
     const x0 = unwrap(parseSeries([xmin], 'xmin')); const x1 = unwrap(parseSeries([xmax], 'xmax'));
     const ymin = kw.read(['ymin'], num('ymin'), () => 0); const ymax = kw.read(['ymax'], num('ymax'), () => 1);
-    const face0 = kw.read(['facecolor', 'fc', 'color'], this.paint, (): Paint => ({ kind: 'solid', color: this.next('patch') }));
-    const ec = kw.read(['edgecolor', 'ec'], this.paint, (): Paint => ({ kind: 'none' }));
-    const lw = kw.read(['linewidth', 'lw'], num('linewidth'), () => 0);
+    // Patch semantics: 'color' sets both face and edge colour.
+    const both = kw.read(['color'], (v) => this.paint(v).ok ? ok(some(unwrap(this.paint(v)))) : err('bad color'), (): Option<Paint> => none);
+    const face0 = kw.read(['facecolor', 'fc'], this.paint, (): Paint => (both.kind === 'some' ? both.value : { kind: 'solid', color: this.next('patch') }));
+    const ec = kw.read(['edgecolor', 'ec'], this.paint, (): Paint => (both.kind === 'some' ? both.value : { kind: 'none' }));
+    const lw = kw.read(['linewidth', 'lw'], num('linewidth'), () => this.theme.patch.linewidthPt);
     const alpha = kw.read(['alpha'], unitInterval('alpha'), () => -1);
     const lbl = kw.read(['label'], label, (): Label => ({ kind: 'none' }));
     const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => true);
     kw.done();
     const withAlpha = (p: Paint): Paint => (p.kind === 'solid' && alpha >= 0 ? { kind: 'solid', color: { hex: p.color.hex, alpha } } : p);
     const face = withAlpha(face0);
-    const edge: BarEdge = ec.kind === 'solid' && lw > 0 ? { kind: 'on', color: ec.color, widthPt: lw } : { kind: 'none' };
+    let edgeColor = ec.kind === 'solid' ? ec.color : { hex: '#000000', alpha: 0 };
+    if (ec.kind === 'solid') { const ea = withAlpha(ec); if (ea.kind === 'solid') edgeColor = ea.color; }
+    const edge: BarEdge = ec.kind === 'solid' && lw > 0 ? { kind: 'on', color: edgeColor, widthPt: lw } : { kind: 'none' };
     const sp: SpanArtist = { kind: 'span', orientation: 'vertical', a0: this.xaxis.convert(x0)[0], a1: this.xaxis.convert(x1)[0], f0: ymin, f1: ymax, face, edge, label: lbl, clip };
     this.artists.push(sp); return sp;
   }
@@ -454,16 +458,19 @@ export class Axes {
     const kw = new KwReader(kwargs, 'axhspan');
     const y0 = unwrap(parseSeries([ymin], 'ymin')); const y1 = unwrap(parseSeries([ymax], 'ymax'));
     const xmin = kw.read(['xmin'], num('xmin'), () => 0); const xmax = kw.read(['xmax'], num('xmax'), () => 1);
-    const face0 = kw.read(['facecolor', 'fc', 'color'], this.paint, (): Paint => ({ kind: 'solid', color: this.next('patch') }));
-    const ec = kw.read(['edgecolor', 'ec'], this.paint, (): Paint => ({ kind: 'none' }));
-    const lw = kw.read(['linewidth', 'lw'], num('linewidth'), () => 0);
+    const both = kw.read(['color'], (v) => this.paint(v).ok ? ok(some(unwrap(this.paint(v)))) : err('bad color'), (): Option<Paint> => none);
+    const face0 = kw.read(['facecolor', 'fc'], this.paint, (): Paint => (both.kind === 'some' ? both.value : { kind: 'solid', color: this.next('patch') }));
+    const ec = kw.read(['edgecolor', 'ec'], this.paint, (): Paint => (both.kind === 'some' ? both.value : { kind: 'none' }));
+    const lw = kw.read(['linewidth', 'lw'], num('linewidth'), () => this.theme.patch.linewidthPt);
     const alpha = kw.read(['alpha'], unitInterval('alpha'), () => -1);
     const lbl = kw.read(['label'], label, (): Label => ({ kind: 'none' }));
     const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => true);
     kw.done();
     const withAlpha = (p: Paint): Paint => (p.kind === 'solid' && alpha >= 0 ? { kind: 'solid', color: { hex: p.color.hex, alpha } } : p);
     const face = withAlpha(face0);
-    const edge: BarEdge = ec.kind === 'solid' && lw > 0 ? { kind: 'on', color: ec.color, widthPt: lw } : { kind: 'none' };
+    let edgeColorH = ec.kind === 'solid' ? ec.color : { hex: '#000000', alpha: 0 };
+    if (ec.kind === 'solid') { const ea = withAlpha(ec); if (ea.kind === 'solid') edgeColorH = ea.color; }
+    const edge: BarEdge = ec.kind === 'solid' && lw > 0 ? { kind: 'on', color: edgeColorH, widthPt: lw } : { kind: 'none' };
     const sp: SpanArtist = { kind: 'span', orientation: 'horizontal', a0: this.yaxis.convert(y0)[0], a1: this.yaxis.convert(y1)[0], f0: xmin, f1: xmax, face, edge, label: lbl, clip };
     this.artists.push(sp); return sp;
   }
@@ -669,7 +676,8 @@ export class Figure {
     const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.axes.titleSizePt), () => this.theme.axes.titleSizePt);
     const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.titleWeight);
     kw.done();
-    this._suptitle = some({ text: str(s), x: 0.5, y: 1 - this.theme.axes.titlePadPt / (this.heightIn * this.dpi / 72), ha: 'center', va: 'baseline', sizePt, weight, color });
+    // Matplotlib default: layout-free placement near the top, aligned to the top.
+    this._suptitle = some({ text: str(s), x: 0.5, y: 0.985, ha: 'center', va: 'top', sizePt, weight, color });
     this.touch(); return this;
   }
   supxlabel(s: unknown, kwargs: Kwargs = {}): this {
@@ -678,7 +686,8 @@ export class Figure {
     const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.axes.labelSizePt), () => this.theme.axes.labelSizePt);
     const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.labelWeight);
     kw.done();
-    this._supx = some({ text: str(s), x: 0.5, y: this.theme.axes.labelPadPt / (this.heightIn * this.dpi / 72), ha: 'center', va: 'top', sizePt, weight, color });
+    // Matplotlib default: bottom of the figure area.
+    this._supx = some({ text: str(s), x: 0.5, y: 0.01, ha: 'center', va: 'bottom', sizePt, weight, color });
     this.touch(); return this;
   }
   supylabel(s: unknown, kwargs: Kwargs = {}): this {
@@ -687,12 +696,8 @@ export class Figure {
     const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.axes.labelSizePt), () => this.theme.axes.labelSizePt);
     const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.labelWeight);
     kw.done();
-    // Place like an axes ylabel at the left subplot margin, padded left by labelpad
-    const Wpx = this.widthIn * this.dpi;
-    const leftFrac = this.theme.figure.subplot[0];
-    const padPx = this.theme.axes.labelPadPt * (this.dpi / 72);
-    const xFrac = Math.max(0, (leftFrac * Wpx - padPx) / Wpx);
-    this._supy = some({ text: str(s), x: xFrac, y: 0.5, ha: 'left', va: 'center', sizePt, weight, color });
+    // Matplotlib default: left of the figure area, rotated like a ylabel.
+    this._supy = some({ text: str(s), x: 0.015, y: 0.5, ha: 'center', va: 'center', sizePt, weight, color });
     this.touch(); return this;
   }
   subplots_adjust(kwargs: Kwargs = {}): this {

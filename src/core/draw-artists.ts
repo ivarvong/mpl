@@ -223,15 +223,20 @@ export function drawSpan(a: SpanArtist, f: Frame, k: number, clip: Clip): Drawn 
   const stroke: Option<Stroke> = a.edge.kind === 'on' && a.edge.widthPt > 0 ? some({ color: a.edge.color, width: a.edge.widthPt * k, cap: 'butt', join: 'miter', dash: { kind: 'solid' } }) : none;
   const ink = inkOf(a.face, stroke);
   if (ink.kind === 'none') return { nodes: [], lines: [], boxes: [], handle: some({ kind: 'patch', face: a.face, edge: a.edge }) };
+  const off = stroke.kind === 'some' ? snapOffset(stroke.value.width) : 0;
   if (a.orientation === 'vertical') {
     const x0 = tx(f, a.a0), x1 = tx(f, a.a1);
     const y0 = f.H - (a.f0 * f.box.h + (f.H - f.box.yBot)), y1 = f.H - (a.f1 * f.box.h + (f.H - f.box.yBot));
-    const rect = rectNode(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0), ink.value);
+    const X0 = Math.floor(Math.min(x0, x1) + 0.5) + off, X1 = Math.floor(Math.max(x0, x1) + 0.5) + off;
+    const Y0 = Math.floor(Math.min(y0, y1) + 0.5) + off, Y1 = Math.floor(Math.max(y0, y1) + 0.5) + off;
+    const rect = rectNode(X0, Y0, X1 - X0, Y1 - Y0, ink.value);
     return { nodes: [{ kind: 'group', clip, nodes: [rect], tag: '' }], lines: [], boxes: [], handle: some({ kind: 'patch', face: a.face, edge: a.edge }) };
   } else {
     const y0 = ty(f, a.a0), y1 = ty(f, a.a1);
     const x0 = a.f0 * f.box.w + f.box.x0, x1 = a.f1 * f.box.w + f.box.x0;
-    const rect = rectNode(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0), ink.value);
+    const X0 = Math.floor(Math.min(x0, x1) + 0.5) + off, X1 = Math.floor(Math.max(x0, x1) + 0.5) + off;
+    const Y0 = Math.floor(Math.min(y0, y1) + 0.5) + off, Y1 = Math.floor(Math.max(y0, y1) + 0.5) + off;
+    const rect = rectNode(X0, Y0, X1 - X0, Y1 - Y0, ink.value);
     return { nodes: [{ kind: 'group', clip, nodes: [rect], tag: '' }], lines: [], boxes: [], handle: some({ kind: 'patch', face: a.face, edge: a.edge }) };
   }
 }
