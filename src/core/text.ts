@@ -39,13 +39,14 @@ function measureMultiline(text: string, sizePt: number, dpi: number, face: Face,
   if (lines.length === 1) return measurePlain(text, sizePt, dpi, face);
   const m = lines.map((t) => measurePlain(t, sizePt, dpi, face));
   const width = Math.max(...m.map((mm) => mm.width));
-  // Line box heights are ascent+descent; stack them with spacing (applied to full height, as in matplotlib).
-  const heights = m.map((mm) => mm.ascent + mm.descent);
-  const H = heights.reduce((s, h, i) => s + (i === 0 ? h : h * lineSpacing), 0);
-  // Baselines: first line baseline at y = m[0].ascent; each next line baseline increments by previous height*lineSpacing
+  // Matplotlib Text._get_layout: baseline-to-baseline distance is linespacing * size (in points),
+  // independent of each line's ink box. The block's ascent is the first line's ascent; its
+  // descent is the last line's descent.
+  const baselineStep = lineSpacing * sizePt;
   const baselines: number[] = [];
   let y = m.length > 0 ? m[0].ascent : 0;
-  for (let i = 0; i < m.length; i++) { baselines.push(y); y += (heights[i]) * lineSpacing; }
+  for (let i = 0; i < m.length; i++) { if (i > 0) y += baselineStep; baselines.push(y); }
+  const H = (m.length > 0 ? m[0].ascent : 0) + (m.length > 1 ? baselineStep * (m.length - 1) : 0) + (m.length > 0 ? m[m.length - 1].descent : 0);
   const runs: Run[] = [];
   for (let i = 0; i < lines.length; i++) {
     const mm = m[i];

@@ -28,6 +28,12 @@ export function build(fx: Fixture): Figure {
       F[ffn]?.(...args, ...(Object.keys(kwargs).length ? [kwargs] : []));
       continue;
     }
+    // Runtime rc updates are encoded as a pseudo-call "$rc". Our renderer's theme is built
+    // at Figure construction from fx.rc; fixtures that additionally emit a "$rc" step only
+    // need it to be accepted during replay. Ignore it here (theme already reflects fx.rc).
+    if (fn === '$rc') {
+      continue;
+    }
     if (fn === 'twinx') { ax = ax.twinx(); axes.push(ax); continue; }
     if (fn === 'sca') { ax = axes[args[0] as number] as Axes; continue; }
     // Spine edits: encoded as ['spine', [side, action, value]]

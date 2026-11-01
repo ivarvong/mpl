@@ -183,10 +183,34 @@ export function drawScatter(a: ScatterArtist, f: Frame, theme: Theme, k: number,
   const xs = new Float64Array(n), ys = new Float64Array(n);
   for (let i = 0; i < n; i++) { xs[i] = tx(f, a.x[i]); ys[i] = ty(f, a.y[i]); }
   // Group by (size, face, edge) to support per-point sizes and colours
+  // Matplotlib scatter 's' values are areas in pt^2, independent of marker shape. Our marker
+  // outlines are in marker units whose filled area at sizePx=1 varies by shape: compensate
+  // so that the visible area matches 's' across shapes (exact for common ones).
+  const areaFactor = (shape: typeof a.shape): number => {
+    switch (shape) {
+      case 'o': return Math.PI / 4;          // radius 0.5 circle
+      case 's': return 1;                    // 1×1 square
+      case '^': return 0.5;                  // right triangle base=1,height=1
+      case 'v': return 0.5;
+      case '<': return 0.5;
+      case '>': return 0.5;
+      case 'D': return 1;                    // diamond with diagonals sqrt2 => side 1, area 1
+      case 'd': return 0.6;                  // thin diamond: (1.4142 * 0.8485)/2 ≈ 0.6
+      case '.': return Math.PI / 16;         // radius 0.25 circle
+      case 'x': return 1;                    // outline-only; factor unused
+      case '+': return 1;                    // outline-only; factor unused
+      case '*': return 1;                    // filled star; treat as 1
+      case 'p': return 1;                    // pentagon (approx)
+      case 'h': return 1;                    // hexagon (approx)
+      case 'X': return 1;                    // filled X (approx)
+      case 'P': return 1;                    // plus-filled (approx)
+    }
+  };
+  const scaleFor = 1 / Math.sqrt(areaFactor(a.shape));   // sizePt multiplier so that area = s
   type Key = string;
   const keyOf = (i: number): Key => {
     const sPt = Math.max(0, a.sizePt2[i]);
-    const size = Math.sqrt(sPt);
+    const size = Math.sqrt(sPt) * scaleFor;
     const face = a.faces[i];
     const edge = a.edges[i];
     const fc = face.kind === 'solid' ? `${face.color.hex}/${face.color.alpha}` : 'none';
@@ -196,7 +220,7 @@ export function drawScatter(a: ScatterArtist, f: Frame, theme: Theme, k: number,
   const groups = new Map<Key, { sizePt: number; face: Paint; edge: Paint; xs: number[]; ys: number[] }>();
   for (let i = 0; i < n; i++) {
     const sPt2 = Math.max(0, a.sizePt2[i]);
-    const sizePt = Math.sqrt(sPt2);
+    const sizePt = Math.sqrt(sPt2) * scaleFor;
     const kkey = keyOf(i);
     const g = groups.get(kkey);
     if (!g) {

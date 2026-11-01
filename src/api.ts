@@ -669,7 +669,8 @@ export class Figure {
     const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.axes.titleSizePt), () => this.theme.axes.titleSizePt);
     const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.titleWeight);
     kw.done();
-    this._suptitle = some({ text: str(s), x: 0.5, y: 1 - this.theme.axes.titlePadPt / (this.heightIn * this.dpi / 72), ha: 'center', va: 'baseline', sizePt, weight, color });
+    // matplotlib Figure.suptitle default placement: center, near the top margin (y≈0.98), aligned to the top.
+    this._suptitle = some({ text: str(s), x: 0.5, y: 0.98, ha: 'center', va: 'top', sizePt, weight, color });
     this.touch(); return this;
   }
   supxlabel(s: unknown, kwargs: Kwargs = {}): this {
@@ -678,7 +679,8 @@ export class Figure {
     const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.axes.labelSizePt), () => this.theme.axes.labelSizePt);
     const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.labelWeight);
     kw.done();
-    this._supx = some({ text: str(s), x: 0.5, y: this.theme.axes.labelPadPt / (this.heightIn * this.dpi / 72), ha: 'center', va: 'top', sizePt, weight, color });
+    // matplotlib Figure.supxlabel default placement: centered near bottom margin (y≈0.02), aligned to the bottom.
+    this._supx = some({ text: str(s), x: 0.5, y: 0.02, ha: 'center', va: 'bottom', sizePt, weight, color });
     this.touch(); return this;
   }
   supylabel(s: unknown, kwargs: Kwargs = {}): this {
@@ -687,12 +689,9 @@ export class Figure {
     const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.axes.labelSizePt), () => this.theme.axes.labelSizePt);
     const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.labelWeight);
     kw.done();
-    // Place like an axes ylabel at the left subplot margin, padded left by labelpad
-    const Wpx = this.widthIn * this.dpi;
-    const leftFrac = this.theme.figure.subplot[0];
-    const padPx = this.theme.axes.labelPadPt * (this.dpi / 72);
-    const xFrac = Math.max(0, (leftFrac * Wpx - padPx) / Wpx);
-    this._supy = some({ text: str(s), x: xFrac, y: 0.5, ha: 'left', va: 'center', sizePt, weight, color });
+    // matplotlib Figure.supylabel default placement: vertically centered near the left margin (x≈0.02),
+    // drawn like a y-axis label (rotated 90°).
+    this._supy = some({ text: str(s), x: 0.02, y: 0.5, ha: 'center', va: 'center', sizePt, weight, color });
     this.touch(); return this;
   }
   subplots_adjust(kwargs: Kwargs = {}): this {
