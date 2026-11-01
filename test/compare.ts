@@ -1,7 +1,7 @@
 // Compare mpljs output against matplotlib fixtures.
 //  1. exact: xlim/ylim, tick locations, tick label strings, offset text, legend box
 //  2. pixels: our own Agg/FreeType rasterization vs matplotlib's Agg PNG, byte for byte.
-//     Allowed residual: max |Δ| ≤ 2 (libm ulp differences in log10 under log scales).
+//     No residual allowed: every case must be pixel-exact (log scales use correctly rounded log10/exp, src/core/libm.ts).
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { renderRGBA } from '../src/render/agg.ts';
 import type { Scene } from '../src/index.ts';
@@ -74,7 +74,7 @@ for (const name of names) {
   const png = encodePNGSync(ours), back = readPNG(Buffer.from(png));
   if (back.px.some((v, i) => v !== ours.px[i])) problems.push('encodePNGSync does not round-trip');
   writeFileSync(OUT + name + '.png', png);
-  if (px.maxd > 2) problems.push(`pixels: max |Δ| ${px.maxd}, ${px.diff} px differ, rms ${px.rms.toFixed(4)}`);
+  if (px.diff > 0) problems.push(`pixels: max |Δ| ${px.maxd}, ${px.diff} px differ, rms ${px.rms.toFixed(4)}`);
   const ok = problems.length === 0;
   if (ok) pass++; else fail++;
   rows.push({ name, ok, rms: px.rms, exact: px.diff === 0, diff: px.diff });
