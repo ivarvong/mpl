@@ -162,7 +162,9 @@ exactly; otherwise the palette is chosen deterministically (weighted k-means ove
 covering ≥ 0.05% of the pixels kept exact), so only antialiased edges move. On the six-line figure at the top of this README (640×480):
 42,336 B as RGBA, 13,178 B at 64 colors (11,970 B with `level: 9`), PSNR 54.4 dB. `level` (1–9, as zlib's; sync only)
 trades time for size as zlib's does (on the fixtures, level 9 is 8–10% smaller than the default at 5–12× the time,
-within about 1% of zlib -9); left out, the default chart-tuned encoder runs.
+within about 1% of zlib -9); left out, the default chart-tuned encoder runs. The encode is synchronous and its cost
+grows with the level's match-chain length, so level 9 can take many seconds on a large, noisy canvas (8 MB of 2-bit
+noise: 41 s at 9, 4 s at 6; a 3840×2880 chart: 1.7 s at 9).
 
 The API is matplotlib-shaped (`subplots`, `plot`, `step`, `bar`/`barh`, `hist`, `errorbar`, `fill_between`, `axhline`/`axvline`/`axline`,
 `hlines`/`vlines`, `text`, `legend`, `grid`, `set_xlim`, `set_yscale('log')`, `twinx`, `tight_layout`, styled tick labels, date axes,
