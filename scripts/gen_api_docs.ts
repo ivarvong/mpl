@@ -46,11 +46,24 @@ function members(cls: string): readonly Member[] {
   return out;
 }
 
+/** The KwReader keys a member body reads, aliases joined as `a | b`. The docs are only as true as this parse: a key
+ *  list that is not all string literals (a variable, a conditional, a spread) would print source text as a keyword
+ *  name, so it is an error, not a guess. */
+export function kwargKeys(name: string, body: string): readonly string[] {
+  const reads = [...body.matchAll(/kw\.(?:read|get)\(/g)].length;
+  const lists = [...body.matchAll(/kw\.(?:read|get)\(\[([^\]]*)\]/g)].map((x) => x[1].split(',').map((k) => k.trim()));
+  const bad = lists.flat().filter((k) => !/^'[A-Za-z_]\w*'$/.test(k));
+  if (lists.length !== reads || bad.length > 0) {
+    throw new Error(`${name}: every kw.read/kw.get must name its keys as string literals (got ${bad.length > 0 ? bad.join(', ') : 'a non-array key list'}); read orientation-specific keys in the public method`);
+  }
+  return lists.map((ks) => ks.map((k) => k.slice(1, -1)).join(' | '));
+}
+
 /** KwReader names read by a body, following calls into private helpers of the same class. */
 function kwargs(m: Member, all: readonly Member[], seen: Set<string> = new Set()): readonly string[] {
   if (seen.has(m.name)) return [];
   seen.add(m.name);
-  const own = [...m.body.matchAll(/kw\.(?:read|get)\(\[([^\]]*)\]/g)].map((x) => x[1].replace(/['\s]/g, '').split(',').join(' | '));
+  const own = kwargKeys(m.name, m.body);
   const helpers = [...m.body.matchAll(/this\.([A-Za-z_]\w*)\(/g)].map((x) => x[1]);
   const viaHelpers = all.filter((h) => h.isPrivate && helpers.includes(h.name)).flatMap((h) => kwargs(h, all, seen));
   return [...new Set([...own, ...viaHelpers])];
