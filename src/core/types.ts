@@ -193,10 +193,13 @@ export type ScatterCollection = { readonly sizesPt2: Float64Array; readonly face
 export type AnnotationRef = 'figure' | 'axes' | 'offset';
 export type AnnotationUnit = 'points' | 'pixels' | 'fontsize' | 'fraction';
 export type AnnotationCoords = { readonly kind: 'data' } | { readonly kind: 'relative'; readonly ref: AnnotationRef; readonly unit: AnnotationUnit };
+/** xycoords / textcoords per axis: a string sets both (pair false); a (x, y) tuple sets each, as
+ *  blended_transform_factory. Only the string 'data' hides an annotation whose xy leaves the axes (_check_xy). */
+export type AnnotationCoordPair = { readonly x: AnnotationCoords; readonly y: AnnotationCoords; readonly pair: boolean };
 export type AnnotationArtist = {
   readonly kind: 'annotation';
-  readonly x: number; readonly y: number; readonly xycoords: AnnotationCoords;
-  readonly tx: number; readonly ty: number; readonly textcoords: AnnotationCoords;
+  readonly x: number; readonly y: number; readonly xycoords: AnnotationCoordPair;
+  readonly tx: number; readonly ty: number; readonly textcoords: AnnotationCoordPair;
   readonly text: string; readonly sizePt: number; readonly weight: number; readonly color: Rgb; readonly ha: HAlign; readonly va: VAlign;
   /** arrowprops without an arrowstyle (FancyArrowPatch + ArrowStyle.Simple); none when arrowprops is absent */
   readonly arrow: Option<{

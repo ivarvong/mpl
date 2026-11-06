@@ -23,7 +23,7 @@ import { parseFontSize, parseLegendLoc, parseTheme, scatterPointsOf } from './co
 import type {
   Artist, AxesMeta, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
   AxLineArtist, AxLineThrough, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist,
-  LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords,
+  LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
 } from './core/types.ts';
 import { assertNever, err, none, ok, some, unwrap } from './core/types.ts';
 import { iolistToString } from './render/iolist.ts';
@@ -978,11 +978,11 @@ export class Axes {
     return t;
   }
 
-  /** annotate(text, xy, { xytext, xycoords, textcoords, arrowprops, ha, va, color, fontsize, fontweight, clip_on }) — coords are 'data' or '<figure|axes> <fraction|points|pixels|fontsize>', and textcoords may also be 'offset <points|pixels|fontsize>' from xy. */
+  /** annotate(text, xy, { xytext, xycoords, textcoords, arrowprops, ha, va, color, fontsize, fontweight, clip_on }) — coords are 'data' or '<figure|axes> <fraction|points|pixels|fontsize>', and textcoords may also be 'offset <points|pixels|fontsize>' from xy; either may be an [x, y] pair of systems, one per axis. In 'data' coordinates a value may be a Date or a category name. */
   annotate(text: unknown, xy: unknown, kwargs: Kwargs = {}): AnnotationArtist {
     const kw = new KwReader(kwargs, 'annotate');
     const xytextV = kw.get(['xytext']);
-    const xycoords = kw.read(['xycoords'], (v) => parseAnnotationCoords(v, 'xycoords'), (): AnnotationCoords => ({ kind: 'data' }));
+    const xycoords = kw.read(['xycoords'], (v) => parseAnnotationCoords(v, 'xycoords'), (): AnnotationCoordPair => ({ x: { kind: 'data' }, y: { kind: 'data' }, pair: false }));
     const textcoords = kw.read(['textcoords'], (v) => parseAnnotationCoords(v, 'textcoords'), () => xycoords);
     type Arrow = AnnotationArtist['arrow'];
     const arrow = kw.read(['arrowprops'], (v): Result<Arrow> => {
@@ -1009,18 +1009,12 @@ export class Axes {
     const va = kw.read(['va', 'verticalalignment'], parseVAlign, (): VAlign => 'baseline');
     const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => false);   // matplotlib default: annotations are not clipped
     kw.done();
-    // _AnnotationBase._get_xy: in 'data' coordinates each value goes through the axis converter (a Date on a date
-    // axis, a category name); every other coordinate system takes plain numbers
-    const point = (v: unknown, c: AnnotationCoords, name: 'xy' | 'xytext'): readonly [number, number] => {
+    // _AnnotationBase._get_xy: a value in 'data' coordinates goes through its axis' converter (a Date on a date axis,
+    // a category name); every other coordinate system takes plain numbers. Each axis follows its own system.
+    const point = (v: unknown, c: AnnotationCoordPair, name: 'xy' | 'xytext'): readonly [number, number] => {
       if (!Array.isArray(v) || v.length !== 2) throw new TypeError(`annotate: ${name} must be [x, y]`);
       const [x, y]: readonly unknown[] = v;
-      switch (c.kind) {
-        case 'data': return [unwrap(this.xaxis.position(x, `annotate: ${name}[0]`)), unwrap(this.yaxis.position(y, `annotate: ${name}[1]`))];
-        case 'relative':
-          if (typeof x === 'number' && typeof y === 'number') return [x, y];
-          throw new TypeError(`annotate: ${name} must be [x, y] numbers in '${c.ref} ${c.unit}' coordinates (a Date or category needs 'data')`);
-        default: return assertNever(c);
-      }
+      return [annotationValue(x, c.x, this.xaxis, `${name}[0]`), annotationValue(y, c.y, this.yaxis, `${name}[1]`)];
     };
     const xyOk = point(xy, xycoords, 'xy');
     const xytextOk = xytextV.kind === 'some' ? point(xytextV.value, textcoords, 'xytext') : xyOk;
@@ -1728,7 +1722,27 @@ const weightOf = (v: unknown): Result<number> => (typeof v === 'number' || typeo
 /** A palette PNG's color budget: an integer in 1..256 (a PNG palette holds at most 256 entries). */
 const paletteColors = (v: unknown): Result<Option<number>> =>
   (Number.isInteger(v) && Number(v) >= 1 && Number(v) <= 256 ? ok(some(Number(v))) : err(`colors must be an integer in 1..256, got ${JSON.stringify(v)}`));
-function parseAnnotationCoords(v: unknown, what: 'xycoords' | 'textcoords'): Result<AnnotationCoords> {
+/** One annotate() coordinate in its axis' system: 'data' through the axis converter, anything else a plain number. */
+function annotationValue(v: unknown, c: AnnotationCoords, axis: Axis, what: string): number {
+  switch (c.kind) {
+    case 'data': return unwrap(axis.position(v, `annotate: ${what}`));
+    case 'relative':
+      if (typeof v === 'number') return v;
+      throw new TypeError(`annotate: ${what} must be a number in '${c.ref} ${c.unit}' coordinates (a Date or category needs 'data')`);
+    default: return assertNever(c);
+  }
+}
+/** xycoords / textcoords: one coordinate system for both axes, or an [x, y] pair of them. */
+function parseAnnotationCoords(v: unknown, what: 'xycoords' | 'textcoords'): Result<AnnotationCoordPair> {
+  if (Array.isArray(v)) {
+    if (v.length !== 2) return err(`${what} as a pair must have two entries, got ${v.length}`);
+    const x = parseAnnotationSystem(v[0], what), y = parseAnnotationSystem(v[1], what);
+    return !x.ok ? x : !y.ok ? y : ok({ x: x.value, y: y.value, pair: true });
+  }
+  const c = parseAnnotationSystem(v, what);
+  return c.ok ? ok({ x: c.value, y: c.value, pair: false }) : c;
+}
+function parseAnnotationSystem(v: unknown, what: 'xycoords' | 'textcoords'): Result<AnnotationCoords> {
   if (v === 'data') return ok({ kind: 'data' });
   const parts = typeof v === 'string' ? v.split(' ') : [];
   const [ref, unit] = parts;
@@ -1736,7 +1750,7 @@ function parseAnnotationCoords(v: unknown, what: 'xycoords' | 'textcoords'): Res
   const unitOk = unit === 'points' || unit === 'pixels' || unit === 'fontsize' || (unit === 'fraction' && ref !== 'offset');
   return parts.length === 2 && refOk && unitOk
     ? ok({ kind: 'relative', ref, unit })
-    : err(`${what} must be 'data' or '<figure|axes${what === 'textcoords' ? '|offset' : ''}> <points|pixels|fontsize|fraction>', got ${JSON.stringify(v)}`);
+    : err(`${what} must be 'data' or '<figure|axes${what === 'textcoords' ? '|offset' : ''}> <points|pixels|fontsize|fraction>' (or a pair of them), got ${JSON.stringify(v)}`);
 }
 const parseHAlign = (v: unknown): Result<HAlign> => (v === 'left' || v === 'center' || v === 'right' ? ok(v) : err(`ha must be 'left', 'center' or 'right'`));
 const parseVAlign = (v: unknown): Result<VAlign> => (v === 'top' || v === 'bottom' || v === 'center' || v === 'baseline' || v === 'center_baseline' ? ok(v) : err(`va must be one of top, bottom, center, baseline, center_baseline`));

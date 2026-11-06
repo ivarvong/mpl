@@ -64,8 +64,8 @@ function kwargs(m: Member, all: readonly Member[], seen: Set<string> = new Set()
   if (seen.has(m.name)) return [];
   seen.add(m.name);
   const own = kwargKeys(m.name, m.body);
-  const helpers = [...m.body.matchAll(/this\.([A-Za-z_]\w*)\(/g)].map((x) => x[1]);
-  const viaHelpers = all.filter((h) => h.isPrivate && helpers.includes(h.name)).flatMap((h) => kwargs(h, all, seen));
+  const helpers = new Set([...m.body.matchAll(/this\.([A-Za-z_]\w*)\(/g)].map((x) => x[1]));
+  const viaHelpers = all.filter((h) => h.isPrivate && helpers.has(h.name)).flatMap((h) => kwargs(h, all, seen));
   return [...new Set([...own, ...viaHelpers])];
 }
 

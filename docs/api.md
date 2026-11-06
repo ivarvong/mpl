@@ -247,7 +247,7 @@ Keyword arguments (unknown keys throw): `transform`, `color | c`, `fontsize | si
 
 ### `Axes.annotate(text, xy, kwargs?)`
 
-annotate(text, xy, { xytext, xycoords, textcoords, arrowprops, ha, va, color, fontsize, fontweight, clip_on }) — coords are 'data' or '<figure|axes> <fraction|points|pixels|fontsize>', and textcoords may also be 'offset <points|pixels|fontsize>' from xy.
+annotate(text, xy, { xytext, xycoords, textcoords, arrowprops, ha, va, color, fontsize, fontweight, clip_on }) — coords are 'data' or '<figure|axes> <fraction|points|pixels|fontsize>', and textcoords may also be 'offset <points|pixels|fontsize>' from xy; either may be an [x, y] pair of systems, one per axis. In 'data' coordinates a value may be a Date or a category name.
 
 Keyword arguments (unknown keys throw): `xytext`, `xycoords`, `textcoords`, `arrowprops`, `color | c`, `fontsize | size`, `fontweight | weight`, `ha | horizontalalignment`, `va | verticalalignment`, `clip_on | clipon | clip`
 
