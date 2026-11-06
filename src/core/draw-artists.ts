@@ -11,7 +11,7 @@ import { MARKERS } from './data/markers.ts';
 import { arrowExtents, yaArrowPath } from './arrow.ts';
 import { lookup } from './std.ts';
 import { forward, forwardAll } from './scale.ts';
-import type { AxLineArtist, MarkerName, ScatterCollection, BarArtist, PolygonArtist, SegmentsArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, AnnotationCoords, AnnotationCoordPair, Paint } from './types.ts';
+import type { Artist, AxLineArtist, MarkerName, ScatterCollection, BarArtist, PolygonArtist, SegmentsArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, AnnotationCoords, AnnotationCoordPair, Paint } from './types.ts';
 import { labelNodes } from './draw-axis.ts';
 import { measure, placeLayout, pxPerPt, strokePx, windowExtent } from './text.ts';
 import type { Face } from './fonts.ts';
@@ -23,6 +23,21 @@ import type { SpanHandle } from '../trace.ts';
 /** What an artist draws, plus what loc='best' avoids: line vertices and paths, patch boxes, and collection offsets
  *  (points, display y up; they count when strictly inside but, unlike a line, do not intersect). */
 export type Drawn = { readonly nodes: readonly Node[]; readonly lines: readonly XY[]; readonly boxes: readonly Box[]; readonly points: readonly XY[]; readonly handle: Option<Handle> };
+
+/** The artist's legend handle. It depends on the artist alone (not the frame), so a layout that only measures
+ *  (tight_layout's first pass) can build legend entries without drawing. Every draw* returns this. */
+export function handleOf(a: Artist): Option<Handle> {
+  switch (a.kind) {
+    case 'line': return some({ kind: 'line', stroke: a.stroke, markers: a.markers });
+    case 'axline': return some({ kind: 'line', stroke: a.stroke, markers: { kind: 'none' } });
+    case 'segments': return some({ kind: 'collection', color: a.colors[0], widthPt: a.widthPt, style: a.styles[0] });
+    case 'bar': case 'fill': case 'polygon': case 'span': return some({ kind: 'patch', face: a.face, edge: a.edge });
+    case 'scatter': return some({ kind: 'scatter', shape: a.shape, collection: a.collection, edgeWidthPt: a.edgeWidthPt });
+    case 'errorbar': return some({ kind: 'errorbar', errorbar: a.handle });
+    case 'text': case 'annotation': return none;
+    default: return assertNever(a);
+  }
+}
 
 /** Scale transform (one pass per axis; identity for linear), then the affine map to device px. An axes-fraction
  *  coordinate (axhline's x, axvline's y) goes through transAxes instead: v·w + x0 (the blended transform's row). */
@@ -70,7 +85,7 @@ export function drawLine(a: LineArtist, f: Frame, theme: Theme, k: number, clip:
   return {
     nodes: nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [],
     lines: [{ xs: line.xs, ys: line.ysUp }], boxes: [], points: [],
-    handle: some({ kind: 'line', stroke: a.stroke, markers: a.markers }),
+    handle: handleOf(a),
   };
 }
 
@@ -79,7 +94,7 @@ export function drawLine(a: LineArtist, f: Frame, theme: Theme, k: number, clip:
  * edges, sort the points and keep the middle two; Line2D's unit path [(0, 0), (1, 1)] maps onto them.
  */
 export function drawAxLine(a: AxLineArtist, f: Frame, theme: Theme, k: number, clip: Clip, span: SpanHandle): Drawn {
-  const handle = some<Handle>({ kind: 'line', stroke: a.stroke, markers: { kind: 'none' } });
+  const handle = handleOf(a);
   const x1 = forward(f.xscale, a.x1), y1 = forward(f.yscale, a.y1);
   let slope: number;
   if (a.through.kind === 'point') {
@@ -114,8 +129,8 @@ export function drawAxLine(a: AxLineArtist, f: Frame, theme: Theme, k: number, c
  */
 export function drawSegments(a: SegmentsArtist, f: Frame, theme: Theme, k: number, clip: Clip): Drawn {
   const n = Math.min(a.x0.length, a.y0.length, a.x1.length, a.y1.length);
-  const first = a.colors[0], style0 = a.styles[0];
-  const handle = some<Handle>({ kind: 'collection', color: first, widthPt: a.widthPt, style: style0 });
+  const style0 = a.styles[0];
+  const handle = handleOf(a);
   const strokeOf = (i: number): Stroke => {
     const st = lineStroke(theme, a.colors[i % a.colors.length], a.widthPt, a.styles[i % a.styles.length], k);
     return { ...st, cap: 'butt', join: 'round' };
@@ -142,7 +157,7 @@ export function drawSegments(a: SegmentsArtist, f: Frame, theme: Theme, k: numbe
 
 /** A Polygon patch: filled and/or stroked (miter joins, butt caps), snapped when rectilinear. */
 export function drawPolygon(a: PolygonArtist, f: Frame, k: number, clip: Clip): Drawn {
-  const handle = some<Handle>({ kind: 'patch', face: a.face, edge: a.edge });
+  const handle = handleOf(a);
   const stroke: Option<Stroke> = a.edge.kind === 'on' && a.edge.widthPt > 0
     ? some({ color: a.edge.color, width: strokePx(a.edge.widthPt, k), cap: 'butt', join: 'miter', dash: { kind: 'solid' } }) : none;
   const n = Math.min(a.x.length, a.y.length);
@@ -200,7 +215,7 @@ export function drawBar(a: BarArtist, f: Frame, k: number, clip: Clip, span: Spa
   span.setAttribute('emitted', kept.length);
   const rects = kept.flatMap((r) => { const ink = inkOf(a.faces[r.i], stroke); return ink.kind === 'some' ? [rectNode(r.x, r.y, r.w, r.h, ink.value)] : []; });
   const nodes: readonly Node[] = rects.length > 0 ? [{ kind: 'group', clip, nodes: rects, tag: '' }] : [];   // patches clip to the axes, as lines do
-  return { nodes, lines: [], boxes, points: [], handle: some({ kind: 'patch', face: a.face, edge: a.edge }) };
+  return { nodes, lines: [], boxes, points: [], handle: handleOf(a) };
 }
 
 /**
@@ -209,7 +224,7 @@ export function drawBar(a: BarArtist, f: Frame, k: number, clip: Clip, span: Spa
  */
 export function drawFill(a: FillArtist, f: Frame, k: number, clip: Clip): Drawn {
   const n = Math.min(a.x.length, a.y1.length, a.y2.length);
-  const handle = some<Handle>({ kind: 'patch', face: a.face, edge: a.edge });
+  const handle = handleOf(a);
   // GraphicsContext defaults for collections: butt caps, round joins
   const stroke: Option<Stroke> = a.edge.kind === 'on' && a.edge.widthPt > 0 ? some({ color: a.edge.color, width: strokePx(a.edge.widthPt, k), cap: 'butt', join: 'round', dash: { kind: 'solid' } }) : none;
   const ink = inkOf(a.face, stroke);
@@ -317,7 +332,7 @@ export function drawAnnotation(a: AnnotationArtist, f: Frame, W: number, dpi: nu
 /** ax.scatter: markers-only collection with sizes in pt^2. */
 export function drawScatter(a: ScatterArtist, f: Frame, _theme: Theme, k: number, clip: Clip): Drawn {
   const n = Math.min(a.x.length, a.y.length);
-  const handle = some<Handle>({ kind: 'scatter', shape: a.shape, collection: a.collection, edgeWidthPt: a.edgeWidthPt });
+  const handle = handleOf(a);
   if (n === 0) return { nodes: [], lines: [], boxes: [], points: [], handle };
   const xs = new Float64Array(n), ys = new Float64Array(n);
   for (let i = 0; i < n; i++) { xs[i] = tx(f, a.x[i]); ys[i] = ty(f, a.y[i]); }
@@ -403,7 +418,7 @@ function snapRectilinear(segs: readonly Seg[], off: number): readonly Seg[] {
 export function drawSpan(a: SpanArtist, f: Frame, k: number, clip: Clip): Drawn {
   const stroke: Option<Stroke> = a.edge.kind === 'on' && a.edge.widthPt > 0 ? some({ color: a.edge.color, width: strokePx(a.edge.widthPt, k), cap: 'butt', join: 'miter', dash: { kind: 'solid' } }) : none;
   const ink = inkOf(a.face, stroke);
-  if (ink.kind === 'none') return { nodes: [], lines: [], boxes: [], points: [], handle: some({ kind: 'patch', face: a.face, edge: a.edge }) };
+  if (ink.kind === 'none') return { nodes: [], lines: [], boxes: [], points: [], handle: handleOf(a) };
   const off = stroke.kind === 'some' ? snapOffset(stroke.value.width) : 0;
   if (a.orientation === 'vertical') {
     const x0 = tx(f, a.a0), x1 = tx(f, a.a1);
@@ -411,13 +426,13 @@ export function drawSpan(a: SpanArtist, f: Frame, k: number, clip: Clip): Drawn 
     const X0 = Math.floor(Math.min(x0, x1) + 0.5) + off, X1 = Math.floor(Math.max(x0, x1) + 0.5) + off;
     const Y0 = Math.floor(Math.min(y0, y1) + 0.5) + off, Y1 = Math.floor(Math.max(y0, y1) + 0.5) + off;
     const rect = rectNode(X0, Y0, X1 - X0, Y1 - Y0, ink.value);
-    return { nodes: [{ kind: 'group', clip, nodes: [rect], tag: '' }], lines: [], boxes: [], points: [], handle: some({ kind: 'patch', face: a.face, edge: a.edge }) };
+    return { nodes: [{ kind: 'group', clip, nodes: [rect], tag: '' }], lines: [], boxes: [], points: [], handle: handleOf(a) };
   } else {
     const y0 = ty(f, a.a0), y1 = ty(f, a.a1);
     const x0 = a.f0 * f.box.w + f.box.x0, x1 = a.f1 * f.box.w + f.box.x0;
     const X0 = Math.floor(Math.min(x0, x1) + 0.5) + off, X1 = Math.floor(Math.max(x0, x1) + 0.5) + off;
     const Y0 = Math.floor(Math.min(y0, y1) + 0.5) + off, Y1 = Math.floor(Math.max(y0, y1) + 0.5) + off;
     const rect = rectNode(X0, Y0, X1 - X0, Y1 - Y0, ink.value);
-    return { nodes: [{ kind: 'group', clip, nodes: [rect], tag: '' }], lines: [], boxes: [], points: [], handle: some({ kind: 'patch', face: a.face, edge: a.edge }) };
+    return { nodes: [{ kind: 'group', clip, nodes: [rect], tag: '' }], lines: [], boxes: [], points: [], handle: handleOf(a) };
   }
 }
