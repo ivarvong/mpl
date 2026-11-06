@@ -1687,16 +1687,30 @@ export class Figure {
 
   /** RGBA8 pixels (straight alpha), rasterized like matplotlib's Agg backend. */
   toRGBA(): Canvas { const scene = this.toScene(); return tracer.span('render.raster', { w: scene.width, h: scene.height }, () => renderRGBA(scene, tracer)); }
-  /** PNG bytes via the platform's CompressionStream (Workers, browsers, Node ≥ 18). */
-  toPNG(): Promise<Uint8Array> { return encodePNG(this.toRGBA()); }
-  /** PNG bytes, synchronously, with the built-in deflate. */
-  toPNGSync(): Uint8Array {
+  /** toPNG({ colors }) — PNG bytes via the platform's CompressionStream (Workers, browsers, Node ≥ 18). 8-bit RGBA, or with colors (1..256) a palette PNG of at most that many colors: exact when the figure has that few, else quantized deterministically (frequent colors kept exact). */
+  toPNG(kwargs: Kwargs = {}): Promise<Uint8Array> {
+    const kw = new KwReader(kwargs, 'toPNG');
+    const colors = kw.read(['colors'], paletteColors, (): Option<number> => none);
+    kw.done();
+    return encodePNG(this.toRGBA(), { colors });
+  }
+  /** toPNGSync({ colors, level }) — PNG bytes, synchronously, with the built-in deflate. colors as in toPNG; level (1..9, as zlib's) trades time for size; left out, the default chart-tuned encoder runs. */
+  toPNGSync(kwargs: Kwargs = {}): Uint8Array {
+    const kw = new KwReader(kwargs, 'toPNGSync');
+    const colors = kw.read(['colors'], paletteColors, (): Option<number> => none);
+    const level = kw.read(['level'], (v): Result<Option<number>> => (Number.isInteger(v) && Number(v) >= 1 && Number(v) <= 9 ? ok(some(Number(v))) : err('level must be an integer in 1..9')), (): Option<number> => none);
+    kw.done();
     const scene = this.toScene();
     const c = tracer.span('render.raster', { w: scene.width, h: scene.height }, () => renderScratch(scene, tracer));
-    return tracer.span('png.encode', { w: c.w, h: c.h }, (sp) => { const b = encodePNGSync(c); sp.setAttribute('bytes', b.length); return b; });
+    return tracer.span('png.encode', { w: c.w, h: c.h }, (sp) => { const b = encodePNGSync(c, { colors, level }); sp.setAttribute('bytes', b.length); return b; });
   }
-  /** PNG as a byte stream: IHDR first, IDAT chunks as the compressor yields them. */
-  pngStream(): ReadableStream<Uint8Array> { return pngStream(this.toRGBA()); }
+  /** pngStream({ colors }) — PNG as a byte stream: IHDR first, IDAT chunks as the compressor yields them. colors as in toPNG. */
+  pngStream(kwargs: Kwargs = {}): ReadableStream<Uint8Array> {
+    const kw = new KwReader(kwargs, 'pngStream');
+    const colors = kw.read(['colors'], paletteColors, (): Option<number> => none);
+    kw.done();
+    return pngStream(this.toRGBA(), { colors });
+  }
 }
 
 /** A major tick label (Tick.label1): its text, and the Text setters mpljs supports. */
@@ -1711,6 +1725,9 @@ export type TransformRef = { readonly kind: 'transform'; readonly coords: TextCo
 const parseCoords = (o: Option<unknown>): Result<TextCoords> => (o.kind === 'some' && (o.value === 'data' || o.value === 'axes') ? ok(o.value) : err('unknown transform'));
 const weightOf = (v: unknown): Result<number> => (typeof v === 'number' || typeof v === 'string' ? ok(parseWeight(v)) : err('fontweight must be a number or a weight name'));
 /** 'data' | '<figure|axes|offset> <points|pixels|fontsize|fraction>'; 'offset …' only for textcoords. */
+/** A palette PNG's color budget: an integer in 1..256 (a PNG palette holds at most 256 entries). */
+const paletteColors = (v: unknown): Result<Option<number>> =>
+  (Number.isInteger(v) && Number(v) >= 1 && Number(v) <= 256 ? ok(some(Number(v))) : err(`colors must be an integer in 1..256, got ${JSON.stringify(v)}`));
 function parseAnnotationCoords(v: unknown, what: 'xycoords' | 'textcoords'): Result<AnnotationCoords> {
   if (v === 'data') return ok({ kind: 'data' });
   const parts = typeof v === 'string' ? v.split(' ') : [];

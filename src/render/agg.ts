@@ -14,7 +14,8 @@ import type { Coverage, IBox } from './agg/raster.ts';
 import { dashPath, fillPath, flatten, strokePath, stroker } from './agg/stroke.ts';
 import type { Sub } from './agg/stroke.ts';
 import { drawGlyph } from './ft.ts';
-import { encodePNG, encodePNGSync, pngStream } from './png.ts';
+import type { PngOptions, PngSyncOptions } from './png.ts';
+import { encodePNG, encodePNGSync, pngStream, RGBA } from './png.ts';
 
 export type { Canvas } from './agg/canvas.ts';
 
@@ -199,12 +200,14 @@ function renderInto(c: Canvas, scene: Scene, tracer: Tracer): Canvas {
   return c;
 }
 
-export const toPNG = (scene: Scene, tracer: Tracer): Promise<Uint8Array> =>
-  encodePNG(tracer.span('png.rasterize', { w: scene.width, h: scene.height }, () => renderRGBA(scene, tracer)));
-export const toPNGSync = (scene: Scene, tracer: Tracer): Uint8Array => {
+/** Scene to PNG bytes (CompressionStream); opts.colors writes a palette PNG (see png.ts). */
+export const toPNG = (scene: Scene, tracer: Tracer, opts: PngOptions = RGBA): Promise<Uint8Array> =>
+  encodePNG(tracer.span('png.rasterize', { w: scene.width, h: scene.height }, () => renderRGBA(scene, tracer)), opts);
+/** Scene to PNG bytes with the built-in deflate; opts.level sets its effort (1..9). */
+export const toPNGSync = (scene: Scene, tracer: Tracer, opts: PngSyncOptions = RGBA): Uint8Array => {
   const c = tracer.span('png.rasterize', { w: scene.width, h: scene.height },
     () => renderScratch(scene, tracer));
-  return tracer.span('png.encode', { sync: true }, (sp) => { const b = encodePNGSync(c); sp.setAttribute('bytes', b.length); return b; });
+  return tracer.span('png.encode', { sync: true }, (sp) => { const b = encodePNGSync(c, opts); sp.setAttribute('bytes', b.length); return b; });
 };
-export const toPNGStream = (scene: Scene, tracer: Tracer): ReadableStream<Uint8Array> =>
-  pngStream(tracer.span('png.rasterize', { w: scene.width, h: scene.height }, () => renderRGBA(scene, tracer)));
+export const toPNGStream = (scene: Scene, tracer: Tracer, opts: PngOptions = RGBA): ReadableStream<Uint8Array> =>
+  pngStream(tracer.span('png.rasterize', { w: scene.width, h: scene.height }, () => renderRGBA(scene, tracer)), opts);

@@ -9,6 +9,7 @@ export { svgChunks, svgIO, svgStream, toSVG } from './render/svg.ts';
 export { renderRGBA, toPNG, toPNGStream, toPNGSync } from './render/agg.ts';
 export type { Canvas } from './render/agg.ts';
 export { encodePNG, encodePNGSync, pngStream } from './render/png.ts';
+export type { PngOptions, PngSyncOptions } from './render/png.ts';
 export { iolistToStream, iolistToString } from './render/iolist.ts';
 export { renderTree, Tracer, tracer } from './trace.ts';
 export { FACE_LOADS, FontNotLoadedError, registerFonts, registeredFonts } from './core/fonts.ts';

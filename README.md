@@ -153,7 +153,16 @@ fig.toSVG();            // string
 fig.svgStream();        // ReadableStream<Uint8Array>, e.g. a Response body in a Worker
 fig.toScene();          // the renderer-independent Scene tree (JSON-able)
 fig.toPNGSync();        // Uint8Array, rasterized by mpljs' own port of Agg
+fig.toPNGSync({ colors: 64 });            // palette PNG: at most 64 colors, about a third of the RGBA file
+fig.toPNGSync({ colors: 64, level: 9 });  // and the built-in deflate's slowest, smallest setting
 ```
+
+`colors` (1–256, also on `toPNG` and `pngStream`) writes an indexed PNG. A figure with that few colors is encoded
+exactly; otherwise the palette is chosen deterministically (weighted k-means over the figure's colors, with every color
+covering ≥ 0.05% of the pixels kept exact), so only antialiased edges move. On the six-line figure at the top of this README (640×480):
+42,336 B as RGBA, 13,178 B at 64 colors (11,970 B with `level: 9`), PSNR 54.4 dB. `level` (1–9, as zlib's; sync only)
+trades time for size as zlib's does (on the fixtures, level 9 is 8–10% smaller than the default at 5–12× the time,
+within about 1% of zlib -9); left out, the default chart-tuned encoder runs.
 
 The API is matplotlib-shaped (`subplots`, `plot`, `step`, `bar`/`barh`, `hist`, `errorbar`, `fill_between`, `axhline`/`axvline`/`axline`,
 `hlines`/`vlines`, `text`, `legend`, `grid`, `set_xlim`, `set_yscale('log')`, `twinx`, `tight_layout`, styled tick labels, date axes,
@@ -177,9 +186,9 @@ Bundle size (esbuild minified + gzip -9, checked against `size-budget.json` with
 
 | scenario | minified | gzipped |
 |---|---|---|
-| core, without glyph data | 244 KiB | 83 KiB |
-| core + DejaVu Sans (the default import: `subplots`, `plot`, `toSVG`, `toPNGSync`) | 395 KiB | 140 KiB |
-| everything (every export and all 8 faces) | 1117 KiB | 348 KiB |
+| core, without glyph data | 254 KiB | 87 KiB |
+| core + DejaVu Sans (the default import: `subplots`, `plot`, `toSVG`, `toPNGSync`) | 405 KiB | 144 KiB |
+| everything (every export and all 8 faces) | 1127 KiB | 352 KiB |
 
 Each further face adds 16–17 KiB gzipped (an Inter weight) or 43–55 KiB (a DejaVu face), measured as a
 standalone minified module. Glyph data is packed losslessly (delta-coded integers as base64 VLQ), 36% smaller

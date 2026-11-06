@@ -117,17 +117,23 @@ The SVG as a byte stream (Workers, browsers, Node).
 
 RGBA8 pixels (straight alpha), rasterized like matplotlib's Agg backend.
 
-### `Figure.toPNG()`
+### `Figure.toPNG(kwargs?)`
 
-PNG bytes via the platform's CompressionStream (Workers, browsers, Node ≥ 18).
+toPNG({ colors }) — PNG bytes via the platform's CompressionStream (Workers, browsers, Node ≥ 18). 8-bit RGBA, or with colors (1..256) a palette PNG of at most that many colors: exact when the figure has that few, else quantized deterministically (frequent colors kept exact).
 
-### `Figure.toPNGSync()`
+Keyword arguments (unknown keys throw): `colors`
 
-PNG bytes, synchronously, with the built-in deflate.
+### `Figure.toPNGSync(kwargs?)`
 
-### `Figure.pngStream()`
+toPNGSync({ colors, level }) — PNG bytes, synchronously, with the built-in deflate. colors as in toPNG; level (1..9, as zlib's) trades time for size; left out, the default chart-tuned encoder runs.
 
-PNG as a byte stream: IHDR first, IDAT chunks as the compressor yields them.
+Keyword arguments (unknown keys throw): `colors`, `level`
+
+### `Figure.pngStream(kwargs?)`
+
+pngStream({ colors }) — PNG as a byte stream: IHDR first, IDAT chunks as the compressor yields them. colors as in toPNG.
+
+Keyword arguments (unknown keys throw): `colors`
 
 ## Axes
 

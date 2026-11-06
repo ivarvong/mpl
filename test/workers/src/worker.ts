@@ -20,8 +20,8 @@ export default {
       const t0 = performance.now();
       // dist's declarations describe the same classes as src's, but private fields make them nominally distinct
       const fig = buildWith(spec as Fixture, subplots as unknown as Subplots);
-      const svg = fig.toSVG(), png = fig.toPNGSync();
-      return { name, svg, png64: b64(png), ms: performance.now() - t0 };
+      const svg = fig.toSVG(), png = fig.toPNGSync(), pal = fig.toPNGSync({ colors: 64, level: 9 });   // test/runtime/common.ts PALETTE
+      return { name, svg, png64: b64(png), pal64: b64(pal), ms: performance.now() - t0 };
     });
     return Response.json({ runtime: navigator.userAgent, out });
   },
