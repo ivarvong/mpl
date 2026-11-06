@@ -281,6 +281,22 @@ class Axis {
       default: return assertNever(s);
     }
   }
+  /**
+   * One Text/Annotation coordinate in data space: convert_xunits at draw time. Unlike plot, text and annotate never call
+   * update_units, so a Date converts (date2num) without making this a date axis, and a string must be a category of an
+   * axis that is already categorical (StrCategoryConverter, which appends a name it has not seen).
+   */
+  position(v: unknown, what: string): Result<number> {
+    if (typeof v === 'number') return ok(v);
+    if (isNullish(v)) return ok(NaN);
+    if (v instanceof Date) return ok(Number.isNaN(v.getTime()) ? NaN : date2num(fromEpochMs(v.getTime())));
+    if (typeof v === 'string') {
+      return this.units.kind === 'category'
+        ? ok(this.convert({ kind: 'strings', values: [v] })[0])
+        : err(`${what}: ${JSON.stringify(v)} is not a number or Date, and the axis is not categorical`);
+    }
+    return err(`${what} must be a number, a Date, or a category name, got ${typeof v}`);
+  }
   setScale(v: unknown): void {
     if (v === 'linear') this.scale = { kind: 'linear' };
     else if (v === 'log') this.scale = { kind: 'log', base: 10 };
@@ -952,10 +968,10 @@ export class Axes {
     const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.weight);
     const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => true);
     kw.done();
-    // data coordinates go through the axis converter, so a Date works on a datetime axis
+    // data coordinates go through the axis converter (a Date, a category name); axes coordinates are plain fractions
     const at = (v: unknown, axis: Axis, name: string): number => (coords === 'axes'
       ? (typeof v === 'number' ? v : unwrap(err<number>(`text: ${name} must be a number in axes coordinates`)))
-      : axis.convert(unwrap(parseSeries([v], name)))[0]);
+      : unwrap(axis.position(v, `text: ${name}`)));
     const t: TextArtist = { kind: 'text', x: at(xRaw, this.xaxis, 'x'), y: at(yRaw, this.yaxis, 'y'), coords, text: str(s), sizePt, weight, color, ha, va, clip };
     this.artists.push(t);
     return t;
@@ -992,16 +1008,21 @@ export class Axes {
     const va = kw.read(['va', 'verticalalignment'], parseVAlign, (): VAlign => 'baseline');
     const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => false);   // matplotlib default: annotations are not clipped
     kw.done();
-    const xyOk = ((): readonly [number, number] => {
-      if (Array.isArray(xy) && xy.length === 2 && typeof xy[0] === 'number' && typeof xy[1] === 'number') return [xy[0], xy[1]];
-      throw new TypeError('xy must be [x, y] numbers');
-    })();
-    const xytextOk = ((): readonly [number, number] => {
-      if (xytextV.kind !== 'some') return xyOk;
-      const v = xytextV.value;
-      if (Array.isArray(v) && v.length === 2 && typeof v[0] === 'number' && typeof v[1] === 'number') return [v[0], v[1]];
-      throw new TypeError('xytext must be [x, y] numbers');
-    })();
+    // _AnnotationBase._get_xy: in 'data' coordinates each value goes through the axis converter (a Date on a date
+    // axis, a category name); every other coordinate system takes plain numbers
+    const point = (v: unknown, c: AnnotationCoords, name: 'xy' | 'xytext'): readonly [number, number] => {
+      if (!Array.isArray(v) || v.length !== 2) throw new TypeError(`annotate: ${name} must be [x, y]`);
+      const [x, y]: readonly unknown[] = v;
+      switch (c.kind) {
+        case 'data': return [unwrap(this.xaxis.position(x, `annotate: ${name}[0]`)), unwrap(this.yaxis.position(y, `annotate: ${name}[1]`))];
+        case 'relative':
+          if (typeof x === 'number' && typeof y === 'number') return [x, y];
+          throw new TypeError(`annotate: ${name} must be [x, y] numbers in '${c.ref} ${c.unit}' coordinates (a Date or category needs 'data')`);
+        default: return assertNever(c);
+      }
+    };
+    const xyOk = point(xy, xycoords, 'xy');
+    const xytextOk = xytextV.kind === 'some' ? point(xytextV.value, textcoords, 'xytext') : xyOk;
     const a: AnnotationArtist = {
       kind: 'annotation', x: xyOk[0], y: xyOk[1], xycoords,
       tx: xytextOk[0], ty: xytextOk[1], textcoords, text: str(text),

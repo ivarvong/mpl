@@ -27,7 +27,9 @@ export const strokePx = (points: number, k: number): number => (points * (k * 72
 /** A run of glyphs drawn at one size; (dx, dy) from the pen origin, dy < 0 is up. */
 export type Run = { readonly text: string; readonly dx: number; readonly dy: number; readonly sizePt: number; readonly face: string; readonly glyphs: readonly Glyph[] };
 /** What Text._get_layout needs: box width and the lp-clamped ascent/descent, plus how to draw it. */
-export type LabelLayout = { readonly width: number; readonly ascent: number; readonly descent: number; readonly runs: readonly Run[] };
+/** ascent: block top to the last line's baseline; descent: that baseline to the block bottom; lastDescent: the last line's
+ *  own descent and height the stacked total, both as Text._get_layout keeps them (ascent + descent can differ by an ulp). */
+export type LabelLayout = { readonly width: number; readonly ascent: number; readonly descent: number; readonly height: number; readonly lastDescent: number; readonly runs: readonly Run[] };
 
 /** Plain single-line text (Agg path): FT2Font pen positions, 26.6 exact. */
 function measurePlain(text: string, sizePt: number, dpi: number, face: Face): LabelLayout {
@@ -36,7 +38,8 @@ function measurePlain(text: string, sizePt: number, dpi: number, face: Face): La
   const glyphs = gids.map((gid, i): Glyph => ({ gid, dx: pens[i] / 64 }));
   const ink = inkExtent(face, gids, scale), min = minMetrics(face, sizePt, dpi);
   const h = text === '' ? 0 : ink.yMax - ink.yMin, d = text === '' ? 0 : -ink.yMin;
-  return { width: text === '' ? 0 : pens[pens.length - 1] / 64, ascent: Math.max(h - d, min.ascent), descent: Math.max(d, min.descent),
+  const descent = Math.max(d, min.descent);
+  return { width: text === '' ? 0 : pens[pens.length - 1] / 64, ascent: Math.max(h - d, min.ascent), descent, height: Math.max(h - d, min.ascent) + descent, lastDescent: descent,
            runs: [{ text, dx: 0, dy: 0, sizePt, face: face.id, glyphs }] };
 }
 
@@ -58,7 +61,7 @@ function measureMultiline(text: string, sizePt: number, dpi: number, face: Face,
   const H = y, last = baselines[baselines.length - 1];
   const shift = (w: number): number => (malign === 'left' ? 0 : malign === 'right' ? width - w : width / 2 - w / 2);
   const runs: Run[] = m.flatMap((mm, i) => mm.runs.map((r) => ({ ...r, dx: r.dx + shift(mm.width), dy: r.dy + baselines[i] - last })));
-  return { width, ascent: last, descent: H - last, runs };
+  return { width, ascent: last, descent: H - last, height: H, lastDescent: d[d.length - 1], runs };
 }
 
 /** Plain or multi-line text; `malign` aligns the lines of a multi-line block. */
@@ -123,7 +126,7 @@ function mathPower(coeff: string, base: string, exponent: number, sizePt: number
   // Text._get_layout clamps ascent and descent separately: a = max(h - d, min_ascent), d = max(d, min_descent)
   const min = minMetrics(face, sizePt, dpi);
   const ascent = Math.max(h - d, min.ascent), descent = Math.max(d, min.descent);
-  return { width: Math.ceil(acc.x), ascent, descent, runs };
+  return { width: Math.ceil(acc.x), ascent, descent, height: ascent + descent, lastDescent: descent, runs };
 }
 
 /** A tick label; `malign` is its horizontal alignment, which also aligns the lines of a multi-line label. */
@@ -169,6 +172,21 @@ export function placeLayout(m: LabelLayout, x: number, y: number, p: Placement):
     }
     default: return assertNever(p);
   }
+}
+
+/**
+ * Text.get_window_extent for unrotated text anchored at display (x, y), y up, in matplotlib's own arithmetic order
+ * (Text._get_layout's offsets, Bbox.from_bounds, then translated), so the corners match to the last bit. A top-left
+ * layout flipped with H - y can differ by an ulp, which moves an annotation arrow's antialiased edge.
+ */
+export function windowExtent(m: LabelLayout, x: number, y: number, ha: HAlign, va: 'top' | 'bottom' | 'center' | 'baseline' | 'center_baseline'): { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } {
+  const width = m.width, height = m.height;                   // xmax - xmin and ymax - ymin, with xmin = ymax = 0
+  const ymin = -height;                                        // ys[-1] - descent: the negated stack, which rounds alike
+  const offsetx = ha === 'left' ? 0 : ha === 'right' ? width : width / 2;
+  const offsety = va === 'bottom' ? ymin : va === 'top' ? 0 : va === 'center' ? ymin / 2
+    : va === 'baseline' ? ymin + m.lastDescent : (ymin + height) - m.ascent / 2;
+  const x0 = 0 - offsetx, y0 = ymin - offsety;
+  return { x0: x0 + x, y0: y0 + y, x1: (x0 + width) + x, y1: (y0 + height) + y };
 }
 
 /** Text._get_multialignment: the horizontal alignment (rotated axis labels are centred). */

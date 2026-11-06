@@ -8,9 +8,13 @@ export type Fixture = any;
 /** The subplots() of whichever mpljs build is under test. */
 export type Subplots = typeof SubplotsFn;
 type Dyn = Record<string, (...args: unknown[]) => unknown>;
-/** JSON args to mpljs args: {"$dates": [...]} becomes Date[]. */
-export const decode = (a: unknown): unknown =>
-  (a && typeof a === 'object' && !Array.isArray(a) && '$dates' in a ? (a.$dates as string[]).map((s) => new Date(s + 'Z')) : a);
+/** JSON args to mpljs args, at any depth: {"$dates": [...]} becomes Date[], {"$date": s} one Date (UTC, as numpy's naive datetime64). */
+export const decode = (a: unknown): unknown => {
+  if (Array.isArray(a)) return a.map(decode);
+  if (a && typeof a === 'object' && '$dates' in a) return (a.$dates as string[]).map((s) => new Date(s + 'Z'));
+  if (a && typeof a === 'object' && '$date' in a) return new Date((a.$date as string) + 'Z');
+  return a;
+};
 /** Replay a fixture's [method, args, kwargs] calls: ax[method](...args, kwargs). */
 export function buildWith(fx: Fixture, subplots: Subplots): Figure {
   // a leading ['$subplots', [nrows, ncols], kwargs] builds a grid; its Axes are listed row-major, as fig.axes
@@ -60,7 +64,7 @@ export function buildWith(fx: Fixture, subplots: Subplots): Figure {
       continue;
     }
     if (typeof (ax as unknown as Dyn)[fn] !== 'function') throw new Error(`no Axes.${fn}`);
-    const kw = Object.fromEntries(Object.entries(kwargs).map(([k, v]) => [k, v && typeof v === 'object' && '$transform' in v ? (v.$transform === 'axes' ? ax.transAxes : ax.transData) : v]));
+    const kw = Object.fromEntries(Object.entries(kwargs).map(([k, v]) => [k, v && typeof v === 'object' && '$transform' in v ? (v.$transform === 'axes' ? ax.transAxes : ax.transData) : decode(v)]));
     (ax as unknown as Dyn)[fn]?.(...args, ...(Object.keys(kw).length ? [kw] : []));
   }
   return fig;

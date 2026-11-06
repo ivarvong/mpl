@@ -13,7 +13,7 @@ import { lookup } from './std.ts';
 import { forward, forwardAll } from './scale.ts';
 import type { AxLineArtist, BarArtist, PolygonArtist, SegmentsArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, AnnotationCoords, Paint } from './types.ts';
 import { labelNodes } from './draw-axis.ts';
-import { placeText, pxPerPt, strokePx } from './text.ts';
+import { measure, placeLayout, placeText, pxPerPt, strokePx, windowExtent } from './text.ts';
 import type { Face } from './fonts.ts';
 import { resolveFace } from './fonts.ts';
 import { assertNever, none, some } from './types.ts';
@@ -273,14 +273,16 @@ export function drawAnnotation(a: AnnotationArtist, f: Frame, W: number, dpi: nu
   }
   const x1 = textUp[0], y1 = f.H - textUp[1];
   const face = resolveFace(theme.font.families, a.weight);
-  const box = placeText(a.text, a.sizePt, dpi, face, x1, y1, { kind: 'horizontal', ha: a.ha, va: a.va });
+  const layout = measure(a.text, a.sizePt, dpi, face, a.ha);
+  const box = placeLayout(layout, x1, y1, { kind: 'horizontal', ha: a.ha, va: a.va });
   const textNodes = a.text === '' ? [] : labelNodes(box, k, a.color);
   // matplotlib works in y-up display space; Agg flips with height - y
   const up = (y: number): number => f.H - y;
   const arrowNodes = ((): readonly Node[] => {
     if (a.arrow.kind === 'none') return [];
     const ar = a.arrow.value;
-    const bbox = a.text === '' ? { x0: x1, y0: textUp[1], x1, y1: textUp[1] } : { x0: box.x0, y0: up(box.y1), x1: box.x1, y1: up(box.y0) };
+    // Text.get_window_extent in y-up display px, computed as matplotlib does (not flipped from the top-left box)
+    const bbox = a.text === '' ? { x0: x1, y0: textUp[1], x1, y1: textUp[1] } : windowExtent(layout, textUp[0], textUp[1], a.ha, a.va);
     const path = yaArrowPath(bbox, xyUp, a.text !== '',
       { widthPt: ar.widthPt, headWidthPt: ar.headWidthPt, headLengthPt: ar.headLengthPt, shrink: ar.shrink, mutationPt: a.sizePt }, k);
     const segs = path.map((sg): Seg => {

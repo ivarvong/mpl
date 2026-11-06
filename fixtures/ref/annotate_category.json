@@ -1,0 +1,229 @@
+{
+ "spec": [
+  [
+   "bar",
+   [
+    [
+     "apples",
+     "pears",
+     "plums"
+    ],
+    [
+     3,
+     5,
+     2
+    ]
+   ],
+   {}
+  ],
+  [
+   "annotate",
+   [
+    "most",
+    [
+     "pears",
+     5
+    ]
+   ],
+   {
+    "xytext": [
+     "plums",
+     4.5
+    ],
+    "arrowprops": {
+     "color": "C3",
+     "width": 1,
+     "headwidth": 6,
+     "headlength": 6
+    }
+   }
+  ],
+  [
+   "text",
+   [
+    "apples",
+    3.2,
+    "first"
+   ],
+   {
+    "ha": "center"
+   }
+  ]
+ ],
+ "style": null,
+ "rc": {},
+ "xlim": [
+  -0.54,
+  2.5400000000000005
+ ],
+ "ylim": [
+  0.0,
+  5.25
+ ],
+ "xticks": [
+  0.0,
+  1.0,
+  2.0
+ ],
+ "yticks": [
+  0.0,
+  1.0,
+  2.0,
+  3.0,
+  4.0,
+  5.0,
+  6.0
+ ],
+ "xticklabels": [
+  "apples",
+  "pears",
+  "plums"
+ ],
+ "yticklabels": [
+  "0",
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6"
+ ],
+ "xoffset": "",
+ "yoffset": "",
+ "legend": null,
+ "x": {
+  "lim": [
+   -0.54,
+   2.5400000000000005
+  ],
+  "ticks": [
+   0.0,
+   1.0,
+   2.0
+  ],
+  "labels": [
+   "apples",
+   "pears",
+   "plums"
+  ],
+  "minor": [],
+  "minorlabels": [],
+  "offset": ""
+ },
+ "y": {
+  "lim": [
+   0.0,
+   5.25
+  ],
+  "ticks": [
+   0.0,
+   1.0,
+   2.0,
+   3.0,
+   4.0,
+   5.0,
+   6.0
+  ],
+  "labels": [
+   "0",
+   "1",
+   "2",
+   "3",
+   "4",
+   "5",
+   "6"
+  ],
+  "minor": [],
+  "minorlabels": [],
+  "offset": ""
+ },
+ "axes": [
+  {
+   "xlim": [
+    -0.54,
+    2.5400000000000005
+   ],
+   "ylim": [
+    0.0,
+    5.25
+   ],
+   "xticks": [
+    0.0,
+    1.0,
+    2.0
+   ],
+   "yticks": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0
+   ],
+   "xticklabels": [
+    "apples",
+    "pears",
+    "plums"
+   ],
+   "yticklabels": [
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6"
+   ],
+   "xoffset": "",
+   "yoffset": "",
+   "legend": null,
+   "x": {
+    "lim": [
+     -0.54,
+     2.5400000000000005
+    ],
+    "ticks": [
+     0.0,
+     1.0,
+     2.0
+    ],
+    "labels": [
+     "apples",
+     "pears",
+     "plums"
+    ],
+    "minor": [],
+    "minorlabels": [],
+    "offset": ""
+   },
+   "y": {
+    "lim": [
+     0.0,
+     5.25
+    ],
+    "ticks": [
+     0.0,
+     1.0,
+     2.0,
+     3.0,
+     4.0,
+     5.0,
+     6.0
+    ],
+    "labels": [
+     "0",
+     "1",
+     "2",
+     "3",
+     "4",
+     "5",
+     "6"
+    ],
+    "minor": [],
+    "minorlabels": [],
+    "offset": ""
+   }
+  }
+ ]
+}
