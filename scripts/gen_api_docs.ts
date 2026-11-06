@@ -50,13 +50,22 @@ function members(cls: string): readonly Member[] {
  *  list that is not all string literals (a variable, a conditional, a spread) would print source text as a keyword
  *  name, so it is an error, not a guess. */
 export function kwargKeys(name: string, body: string): readonly string[] {
-  const reads = [...body.matchAll(/kw\.(?:read|get)\(/g)].length;
-  const lists = [...body.matchAll(/kw\.(?:read|get)\(\[([^\]]*)\]/g)].map((x) => x[1].split(',').map((k) => k.trim()));
-  const bad = lists.flat().filter((k) => !/^'[A-Za-z_]\w*'$/.test(k));
-  if (lists.length !== reads || bad.length > 0) {
-    throw new Error(`${name}: every kw.read/kw.get must name its keys as string literals (got ${bad.length > 0 ? bad.join(', ') : 'a non-array key list'}); read orientation-specific keys in the public method`);
+  const fail = (got: string): never => {
+    throw new Error(`${name}: every kw.read/kw.get must name its keys as string literals (got ${got}); read orientation-specific keys in the public method`);
+  };
+  const out: string[] = [];
+  for (const call of body.matchAll(/kw\.(?:read|get)\(/g)) {
+    const rest = body.slice(call.index + call[0].length);
+    // an array literal of quoted names, single or double quotes, any whitespace or newlines, an optional trailing comma
+    const list = /^\s*\[([^\][]*)\]/.exec(rest);
+    if (list === null) return fail(`a key list that is not an array literal: ${JSON.stringify(rest.slice(0, 40).replace(/\s+/g, ' '))}`);
+    const items = list[1].split(',').map((k) => k.trim());
+    if (items.length > 1 && items[items.length - 1] === '') items.pop();
+    const bad = items.filter((k) => !/^(['"])[A-Za-z_]\w*\1$/.test(k));
+    if (bad.length > 0) fail(bad.map((k) => (k === '' ? 'an empty entry' : k)).join(', '));
+    out.push(items.map((k) => k.slice(1, -1)).join(' | '));
   }
-  return lists.map((ks) => ks.map((k) => k.slice(1, -1)).join(' | '));
+  return out;
 }
 
 /** KwReader names read by a body, following calls into private helpers of the same class. */
