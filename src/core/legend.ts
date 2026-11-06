@@ -195,7 +195,10 @@ function scatterHandle(h: Extract<Handle, { kind: 'scatter' }>, ox: number, oy: 
   // get_sizes: from the collection's own sizes (or [1]), scaled by markerscale ** 2
   const given = h.collection.sizesPt2.length > 0 ? h.collection.sizesPt2 : Float64Array.of(1);
   const scale2 = m.markerScale ** 2;
-  const sizeMax = Math.max(...given) * scale2, sizeMin = Math.min(...given) * scale2;
+  // a loop, not Math.max(...given): spreading a per-point array overflows the call stack past ~1e5 sizes
+  let gMax = -Infinity, gMin = Infinity;
+  for (const s of given) { gMax = Math.max(gMax, s); gMin = Math.min(gMin, s); }
+  const sizeMax = gMax * scale2, sizeMin = gMin * scale2;
   const sizes = n < 4 ? Float64Array.from([0.5 * (sizeMax + sizeMin), sizeMax, sizeMin].slice(0, n))
     : linspace(0, 1, n).map((t) => (sizeMax - sizeMin) * t + sizeMin);
   // get_xdata (xdescent 0): one point at the middle, else spread inside a 0.3 * fontsize pad; get_ydata: height * yoffsets

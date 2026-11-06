@@ -82,4 +82,14 @@ const ticks = (f: () => ReturnType<typeof subplots>): readonly string[] => {
   assert.throws(() => ax.annotate('p', [1, 1], { xycoords: ['data'] }), /pair must have two entries/);
   ax.annotate('q', [day(1), 1], { xytext: [10, 0.5], textcoords: ['offset points', 'axes fraction'] });
 }
+// 8. a scatter legend over a large per-point size array: the handle's min/max sizes must not spread the array
+//    (Math.max(...s) overflowed the call stack at ~1.25e5 points)
+{
+  const N = 200_000;
+  const x = Float64Array.from({ length: N }, (_, i) => i / N);
+  const [fig, ax] = subplots();
+  ax.scatter(x, x, { s: Float64Array.from(x, (_, i) => 2 + (i % 5)), label: 'many' });
+  ax.legend();
+  fig.toScene();
+}
 console.log('issue 14: annotate/text unit conversion, coordinate pairs and scatter legend contracts hold');
