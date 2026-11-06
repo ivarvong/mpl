@@ -338,6 +338,18 @@ case("legend_best_text", *LOW, ("text", [0.75, 0.9, "text here"], {"fontsize": 1
 case("legend_best_annotation", *LOW, ("annotate", ["", [0.97, 0.97]], {"xytext": [0.6, 0.6], "arrowprops": {"color": "C1"}}),
      ("annotate", ["left note", [0.03, 0.95]], {"fontsize": 12}), ("legend", []))
 
+# xycoords / textcoords as (x, y) pairs (blended_transform_factory): data x with an axes-fraction y and the reverse,
+# offsets per axis, a Date on the data axis, and a pair with xy outside the axes (only the string 'data' hides it)
+PAIR = [
+    ("annotate", ["x data, y axes", [date("2026-01-04"), 0.92]], {"xycoords": ["data", "axes fraction"], "ha": "center", "arrowprops": ARW14,
+                                                                   "xytext": [date("2026-01-02"), 0.6], "textcoords": ["data", "axes fraction"]}),
+    ("annotate", ["x axes, y data", [0.03, 7]], {"xycoords": ["axes fraction", "data"]}),
+    ("annotate", ["mixed offsets", [date("2026-01-08"), 6.5]], {"xytext": [-50, 0.15], "textcoords": ["offset points", "axes fraction"], "arrowprops": ARW14}),
+    ("annotate", ["figure pixels x, data y", [10, 4]], {"xycoords": ["figure pixels", "data"], "color": "C2"}),
+    ("annotate", ["pair, xy outside", [date("2026-02-20"), 5]], {"xycoords": ["data", "data"], "xytext": [0.6, 0.3], "textcoords": "axes fraction"}),
+]
+case("annotate_coord_pairs", ("plot", [DAYS14, VAL14]), *PAIR)
+
 def run_case(name, calls):
     style = None
     rc_layer = {}
@@ -386,6 +398,8 @@ def run_case(name, calls):
                 getattr(labels[i], action)(val)
             else:
                 kwargs = {k: (ax.transAxes if isinstance(v, dict) and v.get("$transform") == "axes" else decode(v)) for k, v in kwargs.items()}
+                # an (x, y) coordinate-system pair is a tuple to matplotlib (JSON only has lists)
+                kwargs = {k: (tuple(v) if k in ("xycoords", "textcoords") and isinstance(v, list) else v) for k, v in kwargs.items()}
                 getattr(ax, fn)(*args, **kwargs)
         fig.canvas.draw()
         recs = [record(a, fig) for a in axes]

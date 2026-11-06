@@ -177,7 +177,7 @@ hist, errorbar, dates, annotate) with the published `dist/browser` build. CI che
 | Runtime | How it is tested | Command |
 |---|---|---|
 | Node 24 | the full oracle suite | `npm test` |
-| Chromium (headless, via Playwright), in a non-UTC time zone and a non-English locale | unbundled ES modules loaded by the page | `npm run test:browser` |
+| Chromium (headless, via Playwright), in a non-UTC time zone and a non-English locale | unbundled ES modules loaded by the page | `npm run test:browser` (`CHROMIUM_PATH=…` for a Chromium other than Playwright's) |
 | Cloudflare Workers (workerd, local) | a small Worker in `test/workers`, run with `cf dev` and also from its `cf build` output | `npm run test:workers` |
 
 Nothing else (Firefox, Safari, Deno, Bun, deployed Workers) is tested yet.

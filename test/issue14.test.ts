@@ -33,7 +33,7 @@ const ticks = (f: () => ReturnType<typeof subplots>): readonly string[] => {
   const [, ax] = subplots();
   ax.plot([day(1), day(2)], [1, 2]);
   assert.throws(() => ax.annotate('x', [day(1), 0.5], { xycoords: 'axes fraction' }), /'axes fraction' coordinates/);
-  assert.throws(() => ax.annotate('x', [day(1), 2], { xytext: [day(1), 10], textcoords: 'offset points' }), /xytext must be \[x, y\] numbers in 'offset points'/);
+  assert.throws(() => ax.annotate('x', [day(1), 2], { xytext: [day(1), 10], textcoords: 'offset points' }), /xytext\[0\] must be a number in 'offset points'/);
   assert.throws(() => ax.annotate('x', [day(1)]), /xy must be \[x, y\]/);
 }
 
@@ -71,4 +71,15 @@ const ticks = (f: () => ReturnType<typeof subplots>): readonly string[] => {
   assert.deepEqual([...sc.collection.sizesPt2], [80]);
   assert.equal(sc.collection.faces.length, 1);
 }
-console.log('issue 14: annotate/text unit conversion and scatter legend contracts hold');
+// 7. coordinate-system pairs: each axis converts on its own; an offset system is textcoords-only, per axis too
+{
+  const [, ax] = subplots();
+  ax.plot([day(1), day(2)], [1, 2]);
+  const a = ax.annotate('p', [day(2), 0.5], { xycoords: ['data', 'axes fraction'] });
+  assert.equal(a.y, 0.5);
+  assert.throws(() => ax.annotate('p', [day(2), day(2)], { xycoords: ['data', 'axes fraction'] }), /xy\[1\] must be a number in 'axes fraction'/);
+  assert.throws(() => ax.annotate('p', [1, 1], { xycoords: ['data', 'offset points'] }), /xycoords must be 'data' or/);
+  assert.throws(() => ax.annotate('p', [1, 1], { xycoords: ['data'] }), /pair must have two entries/);
+  ax.annotate('q', [day(1), 1], { xytext: [10, 0.5], textcoords: ['offset points', 'axes fraction'] });
+}
+console.log('issue 14: annotate/text unit conversion, coordinate pairs and scatter legend contracts hold');

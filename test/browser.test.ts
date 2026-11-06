@@ -29,7 +29,9 @@ const server = createServer((req, res) => {
 await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-const browser = await chromium.launch();
+// CHROMIUM_PATH runs a system or pre-installed Chromium when Playwright's own build is not downloaded
+const executablePath = process.env['CHROMIUM_PATH'];
+const browser = await chromium.launch(typeof executablePath === 'string' && executablePath !== '' ? { executablePath } : {});
 let fails = 0;
 try {
   // an unusual time zone and locale: output must not depend on either

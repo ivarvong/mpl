@@ -11,7 +11,7 @@ import { MARKERS } from './data/markers.ts';
 import { arrowExtents, yaArrowPath } from './arrow.ts';
 import { lookup } from './std.ts';
 import { forward, forwardAll } from './scale.ts';
-import type { AxLineArtist, MarkerName, ScatterCollection, BarArtist, PolygonArtist, SegmentsArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, AnnotationCoords, Paint } from './types.ts';
+import type { AxLineArtist, MarkerName, ScatterCollection, BarArtist, PolygonArtist, SegmentsArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, AnnotationCoords, AnnotationCoordPair, Paint } from './types.ts';
 import { labelNodes } from './draw-axis.ts';
 import { measure, placeLayout, pxPerPt, strokePx, windowExtent } from './text.ts';
 import type { Face } from './fonts.ts';
@@ -260,23 +260,22 @@ export function drawText(a: TextArtist, f: Frame, dpi: number, face: Face): Draw
 
 /** ax.annotate: Annotation.draw draws its FancyArrowPatch (ArrowStyle.Simple via the YAArrow emulation), then the text. */
 export function drawAnnotation(a: AnnotationArtist, f: Frame, W: number, dpi: number, theme: Theme, k: number, clip: Clip): Drawn {
-  // _get_xy_transform, in display (y-up) px: 'data' is transData; "<ref> <unit>" is
-  // Affine2D().scale(unit).translate(*ref.p0), with 'offset' anchored at the annotated point.
-  const up0 = (c: AnnotationCoords, x: number, y: number, offsetFrom: readonly [number, number]): readonly [number, number] => {
-    if (c.kind === 'data') return [forward(f.xscale, x) * f.ax + f.cx, forward(f.yscale, y) * f.ay + f.cy];
-    const p0: readonly [number, number] = c.ref === 'figure' ? [0, 0] : c.ref === 'axes' ? [f.box.x0, f.box.b] : offsetFrom;
-    const size: readonly [number, number] = c.ref === 'figure' ? [W, f.H] : [f.box.w, f.box.h];
-    const s: readonly [number, number] = c.unit === 'points' ? [dpi / 72, dpi / 72]
-      : c.unit === 'pixels' ? [1, 1]
-      : c.unit === 'fontsize' ? [a.sizePt * dpi / 72, a.sizePt * dpi / 72]
-      : size;
-    return [x * s[0] + p0[0], y * s[1] + p0[1]];
+  // _get_xy_transform, in display (y-up) px, one axis at a time (a pair is blended_transform_factory): 'data' is
+  // transData; "<ref> <unit>" is Affine2D().scale(unit).translate(*ref.p0), with 'offset' anchored at the annotated point.
+  const along = (c: AnnotationCoords, v: number, axis: 0 | 1, offsetFrom: readonly [number, number]): number => {
+    if (c.kind === 'data') return axis === 0 ? forward(f.xscale, v) * f.ax + f.cx : forward(f.yscale, v) * f.ay + f.cy;
+    const p0 = c.ref === 'figure' ? 0 : c.ref === 'axes' ? (axis === 0 ? f.box.x0 : f.box.b) : offsetFrom[axis];
+    const s = c.unit === 'points' ? dpi / 72 : c.unit === 'pixels' ? 1 : c.unit === 'fontsize' ? a.sizePt * dpi / 72
+      : c.ref === 'figure' ? (axis === 0 ? W : f.H) : (axis === 0 ? f.box.w : f.box.h);
+    return v * s + p0;
   };
+  const up0 = (c: AnnotationCoordPair, x: number, y: number, offsetFrom: readonly [number, number]): readonly [number, number] =>
+    [along(c.x, x, 0, offsetFrom), along(c.y, y, 1, offsetFrom)];
   const xyUp = up0(a.xycoords, a.x, a.y, [0, 0]);
   const textUp = up0(a.textcoords, a.tx, a.ty, xyUp);
-  // Annotation._check_xy (annotation_clip None): a 'data' annotation draws only while xy is inside the axes
-  // (and get_window_extent is then Bbox.unit(), which loc='best' still counts)
-  if (a.xycoords.kind === 'data' && !(xyUp[0] >= f.box.x0 && xyUp[0] <= f.box.x1 && xyUp[1] >= f.box.b && xyUp[1] <= f.box.t)) {
+  // Annotation._check_xy (annotation_clip None): with xycoords the string 'data' (not a pair), an annotation draws only
+  // while xy is inside the axes (and get_window_extent is then Bbox.unit(), which loc='best' still counts)
+  if (!a.xycoords.pair && a.xycoords.x.kind === 'data' && !(xyUp[0] >= f.box.x0 && xyUp[0] <= f.box.x1 && xyUp[1] >= f.box.b && xyUp[1] <= f.box.t)) {
     return { nodes: [], lines: [], boxes: [{ x0: 0, y0: 0, x1: 1, y1: 1 }], points: [], handle: none };
   }
   const x1 = textUp[0], y1 = f.H - textUp[1];
