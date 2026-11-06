@@ -10,7 +10,7 @@ import type { Bins, Sample } from './core/histogram.ts';
 import { BIN_ESTIMATORS, histTops } from './core/histogram.ts';
 import { scaleOf } from './core/ticks.ts';
 import { parseFmt, parseLinestyle, parseMarker } from './core/fmt.ts';
-import { layoutFigure, supBoxes, unionBox } from './core/layout.ts';
+import { layoutFigure, supBoxes, tightBoxes, unionBox } from './core/layout.ts';
 import type { GridSpec, SubplotParams, SubplotSpec } from './core/gridspec.ts';
 import { cellPosition, validParams } from './core/gridspec.ts';
 import { parseWeight } from './core/fonts.ts';
@@ -23,7 +23,7 @@ import { parseFontSize, parseLegendLoc, parseTheme, scatterPointsOf } from './co
 import type {
   Artist, AxesMeta, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
   AxLineArtist, AxLineThrough, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist,
-  LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
+  LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, PxBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
 } from './core/types.ts';
 import { assertNever, err, none, ok, some, unwrap } from './core/types.ts';
 import { iolistToString } from './render/iolist.ts';
@@ -1569,12 +1569,14 @@ export class Figure {
     kw.done();
     if (this.axes.length === 0) return this;
     const pads = { pad, h: hPad, w: wPad };
-    const first = this.autoAdjust(pads, none);
+    // the measuring pass: both autoAdjust calls read the same layout (the subplot params change only after)
+    const tight = this.measureTight();
+    const first = this.autoAdjust(tight, pads, none);
     if (first.kind !== 'some') return this;
     // get_tight_layout_figure: a rect shifts by the first pass's margins, then lays out again
     const f = first.value;
     const out = rect.kind === 'some'
-      ? this.autoAdjust(pads, some([rect.value[0] + f.left, rect.value[1] + f.bottom, rect.value[2] - (1 - f.right), rect.value[3] - (1 - f.top)]))
+      ? this.autoAdjust(tight, pads, some([rect.value[0] + f.left, rect.value[1] + f.bottom, rect.value[2] - (1 - f.right), rect.value[3] - (1 - f.top)]))
       : first;
     if (out.kind === 'some') {
       const o = out.value;
@@ -1583,14 +1585,18 @@ export class Figure {
     }
     return this;
   }
+  /** Each Axes' tight bbox at the current subplot params: the layout tight_layout measures (one trace). */
+  private measureTight(): readonly PxBox[] {
+    const root = tracer.startTrace('figure.tight', { axes: this.axes.length, dpi: this.dpi });
+    try { return tightBoxes(this.spec(), tracer); } catch (e) { root.recordException(e); throw e; } finally { root.end(); }
+  }
   /**
    * _tight_layout._auto_adjust_subplotpars over the figure's SubplotSpecs (twins join their host's cell):
    * each cell's tight bbox overhang is added into the gutter rows/columns it borders, the outer gutters
    * become margins (plus the suptitle and supx/supylabel), the inner ones wspace/hspace.
    */
-  private autoAdjust(pads: { readonly pad: number; readonly h: Option<number>; readonly w: Option<number> }, rect: Option<readonly [number, number, number, number]>):
+  private autoAdjust(tightPx: readonly PxBox[], pads: { readonly pad: number; readonly h: Option<number>; readonly w: Option<number> }, rect: Option<readonly [number, number, number, number]>):
       Option<{ readonly left: number; readonly bottom: number; readonly right: number; readonly top: number; readonly wspace: Option<number>; readonly hspace: Option<number> }> {
-    this.toScene();
     const W = this.widthIn * this.dpi, H = this.heightIn * this.dpi;
     // ss_to_subplots: one entry per distinct SubplotSpec, in first-seen order
     const cells: { readonly cell: SubplotSpec; readonly members: number[] }[] = [];
@@ -1611,7 +1617,7 @@ export class Figure {
     const hspaces = Array.from({ length: maxRows }, () => zeros(maxCols + 1));
     for (const { cell, members } of cells) {
       const [l0, b0, r0, t0] = cellPosition(cell, this.subplotpars);
-      const t = unionBox(members.map((i) => this.meta[i].tight));
+      const t = unionBox(members.map((i) => tightPx[i]));
       const tight = { xmin: t.x0 / W, xmax: t.x1 / W, ymin: 1 - t.y1 / H, ymax: 1 - t.y0 / H };
       const dr = maxRows / cell.grid.nrows, dc = maxCols / cell.grid.ncols;
       const rs = [cell.rows[0] * dr, cell.rows[1] * dr], cs = [cell.cols[0] * dc, cell.cols[1] * dc];

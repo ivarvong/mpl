@@ -5,7 +5,7 @@ import { dataExtents, unionExtent, viewLimits } from './autoscale.ts';
 import type { AxisDrawn, Sides } from './draw-axis.ts';
 import { drawAxis, labelNodes } from './draw-axis.ts';
 import type { Drawn } from './draw-artists.ts';
-import { drawAxLine, drawBar, drawFill, drawLine, drawPolygon, drawSegments, drawText, drawScatter, drawSpan, drawAnnotation } from './draw-artists.ts';
+import { drawAxLine, drawBar, drawFill, drawLine, drawPolygon, drawSegments, drawText, drawScatter, drawSpan, drawAnnotation, handleOf } from './draw-artists.ts';
 import type { Frame } from './frame.ts';
 import { axesBox, frame } from './frame.ts';
 import { layoutLegend } from './legend.ts';
@@ -80,7 +80,7 @@ function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tr
       case 'axline': return tracer.span('artist.axline', { through: a.through.kind }, (sp) => drawAxLine(a, f, theme, k, clip, sp));
       case 'segments': return tracer.span('artist.segments', { segments: a.x0.length }, () => drawSegments(a, f, theme, k, clip));
       case 'polygon': return tracer.span('artist.polygon', { vertices: a.x.length, closed: a.closed }, () => drawPolygon(a, f, k, clip));
-      case 'errorbar': return { nodes: [], lines: [], boxes: [], points: [], handle: some({ kind: 'errorbar', errorbar: a.handle }) };
+      case 'errorbar': return { nodes: [], lines: [], boxes: [], points: [], handle: handleOf(a) };
       default: return assertNever(a);
     }
   }
@@ -288,7 +288,11 @@ function planAxis(which: 'x' | 'y', leader: AxesSpec, extent: Extent, fig: Figur
   return { lim, ticks, minpos: extent.minpos };
 }
 
-function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly nodes: readonly Node[]; readonly meta: AxesMeta } {
+/** 'scene' lays out everything; 'tight' (tight_layout's measuring pass) needs only each Axes' tight bbox, which
+ *  no artist enters except through a loc='best' legend's placement, so it draws artists only for that. */
+type LayoutMode = 'scene' | 'tight';
+
+function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, tracer: Tracer): { readonly nodes: readonly Node[]; readonly meta: AxesMeta } {
   const { ax } = inp;
   const theme = fig.theme, dpi = fig.dpi, k = pxPerPt(dpi);
   const W = fig.widthIn * dpi, H = fig.heightIn * dpi;
@@ -305,7 +309,9 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
   // The axes patch is a rectilinear, edgeless path: Agg snaps its corners to whole pixels (snap value 0).
   const bx0 = snap(box.x0, 0), bx1 = snap(box.x1, 0), by0 = snap(box.yTop, 0), by1 = snap(box.yBot, 0);
   const background: readonly Node[] = face.kind === 'some' ? [rectNode(bx0, by0, bx1 - bx0, by1 - by0, face.value)] : [];
-  const drawn = tracer.span('artists', { count: ax.artists.length }, () => drawArtists(ax, f, theme, k, clip, tracer));
+  const undrawn = (): readonly Drawn[] => ax.artists.map((a): Drawn => ({ nodes: [], lines: [], boxes: [], points: [], handle: handleOf(a) }));
+  const needArtists = mode === 'scene' || (ax.legend.kind === 'on' && ax.legend.loc.kind === 'best' && legendEntries(ax, undrawn()).length > 0);
+  const drawn = needArtists ? tracer.span('artists', { count: ax.artists.length }, () => drawArtists(ax, f, theme, k, clip, tracer)) : undrawn();
   const userTexts = drawn.flatMap((d, i) => (zorder(ax.artists[i]) === 3 ? d.nodes : []));
   const artistLayers = drawn.flatMap((d, i): (readonly [number, readonly Node[]])[] => { const z = zorder(ax.artists[i]); return z === 3 ? [] : [[z, d.nodes]]; });
   // Spine outward offsets move the axis baseline (ticks and labels follow)
@@ -386,7 +392,7 @@ export function supBoxes(fig: FigureSpec): { readonly title: Option<PxBox>; read
   return { title: place(fig.suptitle, false), x: place(fig.supx, false), y: place(fig.supy, true) };
 }
 
-export function layoutFigure(fig: FigureSpec, tracer: Tracer): { readonly scene: Scene; readonly meta: readonly AxesMeta[] } {
+function layoutParts(fig: FigureSpec, mode: LayoutMode, tracer: Tracer): readonly { readonly nodes: readonly Node[]; readonly meta: AxesMeta }[] {
   const ext = fig.axes.map((ax) => tracer.span('datalimits', { artists: ax.artists.length }, (sp) => {
     const e = dataExtents(ax.artists); sp.setAttribute('values', e.x.count + e.y.count); return e;
   }));
@@ -402,8 +408,17 @@ export function layoutFigure(fig: FigureSpec, tracer: Tracer): { readonly scene:
     planned.set(key, p);
     return p;
   };
-  const parts = fig.axes.map((ax, i) => tracer.span('axes.layout', { artists: ax.artists.length, role: ax.role.kind, index: i }, () =>
-    layoutAxes({ ax, x: shared('x', i), y: shared('y', i), hasTwin: ax.role.kind === 'primary' && twinGroup(fig.axes, i).length > 1 }, fig, tracer)));
+  return fig.axes.map((ax, i) => tracer.span('axes.layout', { artists: ax.artists.length, role: ax.role.kind, index: i, mode }, () =>
+    layoutAxes({ ax, x: shared('x', i), y: shared('y', i), hasTwin: ax.role.kind === 'primary' && twinGroup(fig.axes, i).length > 1 }, fig, mode, tracer)));
+}
+
+/** Each Axes' tight bbox (px, y down), as layoutFigure's meta[i].tight, without drawing what does not enter it. */
+export function tightBoxes(fig: FigureSpec, tracer: Tracer): readonly PxBox[] {
+  return layoutParts(fig, 'tight', tracer).map((p) => p.meta.tight);
+}
+
+export function layoutFigure(fig: FigureSpec, tracer: Tracer): { readonly scene: Scene; readonly meta: readonly AxesMeta[] } {
+  const parts = layoutParts(fig, 'scene', tracer);
   const W = fig.widthIn * fig.dpi, H = fig.heightIn * fig.dpi, k = pxPerPt(fig.dpi);
   const figTexts: Node[] = [];
   // generic fig.text
