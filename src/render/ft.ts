@@ -23,6 +23,45 @@ const UPSCALE = (x: number): number => x * (ONE_PIXEL >> 6);
 const TWO32 = 4294967296;
 const recip = (d: number): number => Math.trunc(0xffffffff / Math.abs(d));
 const udiv = (a: number, r: number): number => Math.floor(a * r / TWO32);
+/** An integer v (exact double) as v = hi32(v)·2^32 + lo32(v), 0 ≤ lo32(v) < 2^32; both exact. */
+const hi32 = (v: number): number => Math.floor(v / TWO32);
+const lo32 = (v: number): number => v - hi32(v) * TWO32;
+
+/** conicSteps' output: (x, y) pairs, 24.8. d < 2^31 bounds the count by 2^13. */
+export const CONIC_STEPS: Float64Array = new Float64Array(2 << 13);
+/**
+ * gray_render_conic's subdivision of the conic p0 → p1 → p2 (24.8): 0 when it is flat enough for one line to
+ * p2, else the count of DDA points, written to CONIC_STEPS. FreeType steps in 64-bit fixed point (values scaled
+ * by 2^32); here each value is two integer words, v = h·2^32 + l with 0 ≤ l < 2^32. Every word stays far below
+ * 2^53, so each double sum is exact, and a point is p's high word, FreeType's p >> 32 (arithmetic: floor).
+ * Scaling by a power of two is exact. (test/conic.test.ts checks it against the 64-bit arithmetic in BigInt.)
+ */
+export function conicSteps(p0x: number, p0y: number, p1x: number, p1y: number, p2x: number, p2y: number): number {
+  const bx = p1x - p0x, by = p1y - p0y;
+  const ax = p2x - p1x - bx, ay = p2y - p1y - by;
+  let d = Math.max(Math.abs(ax), Math.abs(ay));
+  if (d <= ONE_PIXEL / 4) return 0;
+  let shift = 16;
+  do { d >>= 2; shift--; } while (d > ONE_PIXEL / 4);
+  const count = 0x10000 >>> shift;
+  const r0x = ax * 2 ** (2 * shift), r0y = ay * 2 ** (2 * shift);
+  const b0x = bx * 2 ** (shift + 17), b0y = by * 2 ** (shift + 17);
+  // q = b·2^(shift+17) + r, and r doubles after
+  let qxh = hi32(b0x) + hi32(r0x), qxl = lo32(b0x) + lo32(r0x);
+  let qyh = hi32(b0y) + hi32(r0y), qyl = lo32(b0y) + lo32(r0y);
+  let c = Math.floor(qxl / TWO32); qxh += c; qxl -= c * TWO32;
+  c = Math.floor(qyl / TWO32); qyh += c; qyl -= c * TWO32;
+  const rxh = hi32(2 * r0x), rxl = lo32(2 * r0x), ryh = hi32(2 * r0y), ryl = lo32(2 * r0y);
+  let pxh = p0x, pxl = 0, pyh = p0y, pyl = 0;
+  for (let i = 0; i < 2 * count; i += 2) {
+    pxl += qxl; pxh += qxh; c = Math.floor(pxl / TWO32); pxh += c; pxl -= c * TWO32;
+    pyl += qyl; pyh += qyh; c = Math.floor(pyl / TWO32); pyh += c; pyl -= c * TWO32;
+    qxl += rxl; qxh += rxh; c = Math.floor(qxl / TWO32); qxh += c; qxl -= c * TWO32;
+    qyl += ryl; qyh += ryh; c = Math.floor(qyl / TWO32); qyh += c; qyl -= c * TWO32;
+    CONIC_STEPS[i] = pxh; CONIC_STEPS[i + 1] = pyh;
+  }
+  return count;
+}
 
 /** One glyph's worth of ftgrays state over a pixel box (FreeType y-up rows). */
 class Gray {
@@ -110,23 +149,9 @@ class Gray {
     const p1x = UPSCALE(cx26), p1y = UPSCALE(cy26), p2x = UPSCALE(tx26), p2y = UPSCALE(ty26);
     if ((TRUNC(p0y) >= this.maxEy && TRUNC(p1y) >= this.maxEy && TRUNC(p2y) >= this.maxEy) ||
         (TRUNC(p0y) < this.minEy && TRUNC(p1y) < this.minEy && TRUNC(p2y) < this.minEy)) { this.x = p2x; this.y = p2y; return; }
-    const bx = p1x - p0x, by = p1y - p0y;
-    const ax = p2x - p1x - bx, ay = p2y - p1y - by;
-    let d = Math.max(Math.abs(ax), Math.abs(ay));
-    if (d <= ONE_PIXEL / 4) { this.renderLine(p2x, p2y); return; }
-    let shift = 16;
-    do { d >>= 2; shift--; } while (d > ONE_PIXEL / 4);
-    let count = 0x10000 >>> shift;
-    // 64-bit fixed point (values scaled by 2^32), exact in BigInt
-    const sh = BigInt(shift);
-    let rx = BigInt(ax) << (sh + sh), ry = BigInt(ay) << (sh + sh);
-    let qx = (BigInt(bx) << (sh + 17n)) + rx, qy = (BigInt(by) << (sh + 17n)) + ry;
-    rx *= 2n; ry *= 2n;
-    let px = BigInt(p0x) << 32n, py = BigInt(p0y) << 32n;
-    do {
-      px += qx; py += qy; qx += rx; qy += ry;
-      this.renderLine(Number(px >> 32n), Number(py >> 32n));
-    } while (--count);
+    const count = conicSteps(p0x, p0y, p1x, p1y, p2x, p2y);
+    if (count === 0) { this.renderLine(p2x, p2y); return; }
+    for (let i = 0; i < 2 * count; i += 2) this.renderLine(CONIC_STEPS[i], CONIC_STEPS[i + 1]);
   }
 
   /** gray_render_cubic: bisect until the control points sit within half a pixel of the chord trisections. */
