@@ -40,8 +40,8 @@ async function serveAndRender(label: string, args: string[]): Promise<{ runtime:
       try {
         const r = await fetch(`http://localhost:${port}/render`);
         if (r.ok) {
-          const j = await r.json() as { runtime: string; out: { name: string; svg: string; png64: string; ms: number }[] };
-          return { runtime: j.runtime, outs: j.out.map((o) => ({ name: o.name, svg: o.svg, png: Buffer.from(o.png64, 'base64'), ms: o.ms })) };
+          const j = await r.json() as { runtime: string; out: { name: string; svg: string; png64: string; pal64: string; ms: number }[] };
+          return { runtime: j.runtime, outs: j.out.map((o) => ({ name: o.name, svg: o.svg, png: Buffer.from(o.png64, 'base64'), palette: Buffer.from(o.pal64, 'base64'), ms: o.ms })) };
         }
       } catch { /* not up yet */ }
       if (child.exitCode !== null) break;

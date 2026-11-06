@@ -5,8 +5,41 @@
 //   encodePNG  — the stream, collected.
 //   encodePNGSync — synchronous: our own deflate, tokenized from the canvas a pixel at a time
 //                   where it can be, with dynamic Huffman blocks.
+// Each takes a PngOptions: colors none writes 8-bit RGBA (color type 6); colors n writes a palette PNG (color type 3)
+// of at most n entries, exact when the figure has that few colors (palette.ts), packed at the smallest bit depth.
 import type { Canvas } from './agg/canvas.ts';
 import { BLOCK, BLOCK_SHIFT } from './agg/canvas.ts';
+import type { Indexed } from './palette.ts';
+import { quantize } from './palette.ts';
+import type { Option } from '../core/types.ts';
+import { none } from '../core/types.ts';
+
+/** colors: the palette budget (1..256), or none for full RGBA. */
+export type PngOptions = { readonly colors: Option<number> };
+/** encodePNGSync also takes the built-in deflate's level (1..9); none keeps the default chart-tuned encoder. */
+export type PngSyncOptions = PngOptions & { readonly level: Option<number> };
+export const RGBA: PngSyncOptions = { colors: none, level: none };
+
+/**
+ * How hard the built-in deflate searches, as zlib's configuration_table: greedy (deflate_fast) or lazy (deflate_slow)
+ * matching; `chain` hash candidates at most, a quarter of them once the previous match reaches `good`; no chain search
+ * once the left or upper match reaches `nice`, and the chain search stops at a `stop` match; lazy matching does not
+ * look past a match of `maxLazy`. Levels 1..9 take zlib's values (nice = stop; the greedy levels keep this tokenizer's
+ * insertion policy rather than max_insert_length). The default (no level) searches 4
+ * candidates only below 16 and keeps the longest, which the chart-tuned encoders were measured with.
+ * Measured on 23 fixtures against the default (RGBA / 64 colours): level 6 is 7.5% / 5.1% smaller at 3x / 1.2x the
+ * time, level 9 9.5% / 8.2% at 12x / 5x, within about 1% of zlib -9.
+ */
+export type Effort = { readonly lazy: boolean; readonly chain: number; readonly good: number; readonly nice: number; readonly stop: number; readonly maxLazy: number };
+const FAST: Effort = { lazy: false, chain: 4, good: 258, nice: 16, stop: 258, maxLazy: 258 };
+const zl = (lazy: boolean, good: number, maxLazy: number, nice: number, chain: number): Effort => ({ lazy, chain, good, nice, stop: nice, maxLazy });
+const LEVELS: readonly Effort[] = [FAST, zl(false, 4, 4, 8, 4), zl(false, 4, 5, 16, 8), zl(false, 4, 6, 32, 32),
+  zl(true, 4, 4, 16, 16), zl(true, 8, 16, 32, 32), zl(true, 8, 16, 128, 128), zl(true, 8, 32, 128, 256), zl(true, 32, 128, 258, 1024), zl(true, 32, 258, 258, 4096)];
+/** zlib's 1..9 scale; anything else is an error. */
+export function effortOf(level: number): Effort {
+  if (!Number.isInteger(level) || level < 1 || level > 9) throw new RangeError(`level must be an integer in 1..9, got ${level}`);
+  return LEVELS[level];
+}
 
 // ------------------------------------------------------------------ CRC-32, Adler-32
 const CRC = new Uint32Array(256);
@@ -59,6 +92,39 @@ function header(w: number, h: number, dpi: number): Uint8Array {
   ihdr[8] = 8; ihdr[9] = 6; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;   // 8-bit RGBA, deflate, adaptive, no interlace
   return concat([SIGNATURE, chunk('IHDR', ihdr), phys(dpi)]);
 }
+
+// ------------------------------------------------------------------ palette (color type 3)
+/** The smallest PNG bit depth that holds `size` indices. Measured on the fixtures (zlib 6): 4-bit is 13% smaller
+ *  than 8-bit at 16 colors, 2-bit 28% at 4. */
+const bitDepth = (size: number): number => (size <= 2 ? 1 : size <= 4 ? 2 : size <= 16 ? 4 : 8);
+/** IHDR (color type 3), PLTE, tRNS when an entry is translucent (alphas up to the last one below 255), pHYs. */
+function headerIndexed(w: number, h: number, dpi: number, ix: Indexed): Uint8Array {
+  const ihdr = new Uint8Array(13);
+  ihdr.set(u32(w), 0); ihdr.set(u32(h), 4);
+  ihdr[8] = bitDepth(ix.size); ihdr[9] = 3;
+  const plte = new Uint8Array(3 * ix.size), alpha = new Uint8Array(ix.size);
+  let lastTranslucent = -1;
+  for (let i = 0; i < ix.size; i++) {
+    plte[3 * i] = ix.palette[4 * i]; plte[3 * i + 1] = ix.palette[4 * i + 1]; plte[3 * i + 2] = ix.palette[4 * i + 2];
+    alpha[i] = ix.palette[4 * i + 3];
+    if (alpha[i] !== 255) lastTranslucent = i;
+  }
+  const trns = lastTranslucent >= 0 ? chunk('tRNS', alpha.subarray(0, lastTranslucent + 1)) : new Uint8Array(0);
+  return concat([SIGNATURE, chunk('IHDR', ihdr), chunk('PLTE', plte), trns, phys(dpi)]);
+}
+/** Rows [y0, y1) of packed indices (most significant bits first), each led by filter byte 0. None is also the best
+ *  filter for indexed charts: Sub, Up, Paeth and adaptive were 3 to 22% larger on the fixtures. */
+function indexedBand(ix: Indexed, w: number, y0: number, y1: number): Uint8Array<ArrayBuffer> {
+  const bits = bitDepth(ix.size), per = 8 / bits, stride = Math.ceil(w / per), S = stride + 1;
+  const out = new Uint8Array((y1 - y0) * S);
+  for (let y = y0; y < y1; y++) {
+    const src = y * w, dst = (y - y0) * S + 1;
+    if (bits === 8) { out.set(ix.index.subarray(src, src + w), dst); continue; }
+    for (let x = 0; x < w; x++) out[dst + Math.floor(x / per)] |= ix.index[src + x] << (8 - bits * (1 + (x % per)));
+  }
+  return out;
+}
+const indexedStride = (ix: Indexed, w: number): number => Math.ceil(w / (8 / bitDepth(ix.size))) + 1;
 const IEND = chunk('IEND', new Uint8Array(0));
 
 // ------------------------------------------------------------------ filtering
@@ -79,7 +145,10 @@ export function filteredBand(c: Canvas, y0: number, y1: number): Uint8Array<Arra
 const BAND = 64;
 
 /** PNG as a byte stream. Uses the platform's zlib (CompressionStream 'deflate' = RFC 1950). */
-export function pngStream(c: Canvas): ReadableStream<Uint8Array> {
+export function pngStream(c: Canvas, opts: PngOptions = RGBA): ReadableStream<Uint8Array> {
+  const ix: Option<Indexed> = opts.colors.kind === 'some' ? { kind: 'some', value: quantize(c, opts.colors.value) } : none;
+  const head = ix.kind === 'some' ? headerIndexed(c.w, c.h, c.dpi, ix.value) : header(c.w, c.h, c.dpi);
+  const band = (y0: number, y1: number): Uint8Array<ArrayBuffer> => (ix.kind === 'some' ? indexedBand(ix.value, c.w, y0, y1) : filteredBand(c, y0, y1));
   const z = new CompressionStream('deflate');
   const writer = z.writable.getWriter();
   void (async () => {
@@ -88,7 +157,7 @@ export function pngStream(c: Canvas): ReadableStream<Uint8Array> {
       // oxlint-disable-next-line no-await-in-loop
       await writer.ready;
       // oxlint-disable-next-line no-await-in-loop
-      await writer.write(filteredBand(c, y, Math.min(y + BAND, c.h)));
+      await writer.write(band(y, Math.min(y + BAND, c.h)));
     }
     await writer.close();
   })();
@@ -97,7 +166,7 @@ export function pngStream(c: Canvas): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     async pull(ctl) {
       switch (state) {
-        case 'head': ctl.enqueue(header(c.w, c.h, c.dpi)); state = 'body'; return;
+        case 'head': ctl.enqueue(head); state = 'body'; return;
         case 'body': {
           const r = await reader.read();
           if (r.done) { ctl.enqueue(IEND); state = 'done'; ctl.close(); return; }
@@ -111,9 +180,9 @@ export function pngStream(c: Canvas): ReadableStream<Uint8Array> {
   });
 }
 
-export async function encodePNG(c: Canvas): Promise<Uint8Array> {
+export async function encodePNG(c: Canvas, opts: PngOptions = RGBA): Promise<Uint8Array> {
   const parts: Uint8Array[] = [];
-  const r = pngStream(c).getReader();
+  const r = pngStream(c, opts).getReader();
   for (;;) {
     // oxlint-disable-next-line no-await-in-loop
     const x = await r.read();
@@ -211,9 +280,14 @@ function canonical(lens: Uint8Array): Uint16Array {
   return codes;
 }
 
-/** Tokens: literal v (< 256), or match: 256 + (len << 16 | dist). Stored as one Int32. */
-function tokenize(d: Uint8Array, rowDist: number): { readonly tok: Int32Array; readonly n: number } {
-  const WIN = 32768, HBITS = 15, HMASK = (1 << HBITS) - 1, CHAIN = 4;
+/**
+ * Tokens: literal v (< 256), or match: 256 + (len << 16 | dist), stored as one Int32. At each byte the longest match
+ * over the previous pixel (`left` bytes back: 4 for RGBA, 1 for palette indices), the row above and up to
+ * `effort.chain` hash candidates. Greedy (zlib's deflate_fast) takes it and searches the chain only for a short one;
+ * lazy (deflate_slow) emits it only if the next byte does not start a longer match, else a literal.
+ */
+function tokenize(d: Uint8Array, rowDist: number, left: number, effort: Effort): { readonly tok: Int32Array; readonly n: number } {
+  const WIN = 32768, HBITS = 15, HMASK = (1 << HBITS) - 1;
   const head = new Int32Array(1 << HBITS).fill(-1), prev = new Int32Array(WIN);
   const tok = new Int32Array(d.length + 1);
   let n = 0;
@@ -221,35 +295,58 @@ function tokenize(d: Uint8Array, rowDist: number): { readonly tok: Int32Array; r
   const hash = (i: number): number => ((d[i] * 506832829 + d[i + 1] * 1103515245 + d[i + 2] * 12345) >>> 17) & HMASK;
   const insert = (i: number): void => { if (i + 2 < len) { const h = hash(i); prev[i & (WIN - 1)] = head[h]; head[h] = i; } };
   const matchLen = (i: number, j: number, max: number): number => { let l = 0; while (l < max && d[i + l] === d[j + l]) l++; return l; };
-  let i = 0;
-  while (i < len) {
+  let best = 0, dist = 0;
+  const find = (i: number, prevLen: number): void => {
     const max = Math.min(258, len - i);
-    let best = 0, dist = 0;
-    if (max >= 3) {
-      if (i >= 4) { const l = matchLen(i, i - 4, max); if (l > best) { best = l; dist = 4; } }
-      if (best < max && rowDist > 4 && i >= rowDist) { const l = matchLen(i, i - rowDist, max); if (l > best) { best = l; dist = rowDist; } }
-      if (best < 16) {
-        let j = head[hash(i)], chain = CHAIN;
-        while (j >= 0 && i - j <= WIN && chain-- > 0) {
-          if (d[j + best] === d[i + best]) { const l = matchLen(i, j, max); if (l > best) { best = l; dist = i - j; if (l === max) break; } }
-          const pj = prev[j & (WIN - 1)];
-          if (pj >= j) break;
-          j = pj;
-        }
+    best = 0; dist = 0;
+    if (max < 3) return;
+    if (i >= left) { const l = matchLen(i, i - left, max); if (l > best) { best = l; dist = left; } }
+    if (best < max && rowDist > left && i >= rowDist) { const l = matchLen(i, i - rowDist, max); if (l > best) { best = l; dist = rowDist; } }
+    if (best >= Math.min(max, effort.nice)) return;
+    let j = head[hash(i)], chain = prevLen >= effort.good ? effort.chain >> 2 : effort.chain;
+    while (j >= 0 && i - j <= WIN && chain-- > 0) {
+      if (d[j + best] === d[i + best]) { const l = matchLen(i, j, max); if (l > best) { best = l; dist = i - j; if (l >= Math.min(max, effort.stop)) break; } }
+      const pj = prev[j & (WIN - 1)];
+      if (pj >= j) break;
+      j = pj;
+    }
+  };
+  let i = 0;
+  if (!effort.lazy) {
+    while (i < len) {
+      find(i, 0);
+      if (best >= 3) {
+        tok[n++] = 256 + ((best << 16) | dist);
+        insert(i);
+        if (best <= 16) for (let k = 1; k < best; k++) insert(i + k);
+        else { insert(i + best - 2); insert(i + best - 1); }
+        i += best;
+      } else {
+        tok[n++] = d[i];
+        insert(i);
+        i++;
       }
     }
-    if (best >= 3) {
-      tok[n++] = 256 + ((best << 16) | dist);
-      insert(i);
-      if (best <= 16) for (let k = 1; k < best; k++) insert(i + k);
-      else { insert(i + best - 2); insert(i + best - 1); }
-      i += best;
-    } else {
-      tok[n++] = d[i];
-      insert(i);
-      i++;
-    }
+    return { tok, n };
   }
+  let prevLen = 0, prevDist = 0, pending = false;
+  while (i < len) {
+    // past a match of maxLazy there is no look for a longer one (deflate_slow's max_lazy_match)
+    if (pending && prevLen >= effort.maxLazy) { best = 0; dist = 0; } else find(i, pending ? prevLen : 0);
+    if (pending && prevLen >= 3 && prevLen >= best) {
+      // the match that started one byte back is at least as long: take it
+      tok[n++] = 256 + ((prevLen << 16) | prevDist);
+      const end = i - 1 + prevLen;
+      for (let k = i; k < end; k++) insert(k);
+      i = end; pending = false;
+      continue;
+    }
+    if (pending) tok[n++] = d[i - 1];   // the byte before stays a literal: the match here may be longer
+    insert(i);
+    prevLen = best; prevDist = dist; pending = true;
+    i++;
+  }
+  if (pending) tok[n++] = prevLen >= 3 ? 256 + ((prevLen << 16) | prevDist) : d[len - 1];
   return { tok, n };
 }
 
@@ -326,8 +423,8 @@ function zlibFrom(tok: Int32Array, n: number, adler: number): Uint8Array {
  * zlib stream (RFC 1950) of `d`. `rowDist` is the byte distance to the same byte one row up
  * (pass 0 for generic data).
  */
-export function zlibSync(d: Uint8Array, rowDist = 0): Uint8Array {
-  const { tok, n } = tokenize(d, rowDist);
+export function zlibSync(d: Uint8Array, rowDist = 0, left = 4, effort: Effort = FAST): Uint8Array {
+  const { tok, n } = tokenize(d, rowDist, left, effort);
   return zlibFrom(tok, n, adler32(1, d));
 }
 
@@ -490,7 +587,14 @@ function tokenizeCanvas(c: Canvas): Tokens {
   return { tok, n, adler: ((b << 16) | a) >>> 0 };
 }
 
-export function encodePNGSync(c: Canvas): Uint8Array {
+export function encodePNGSync(c: Canvas, opts: PngSyncOptions = RGBA): Uint8Array {
+  const effort = opts.level.kind === 'some' ? effortOf(opts.level.value) : FAST;
+  if (opts.colors.kind === 'some') {
+    const ix = quantize(c, opts.colors.value);
+    return concat([headerIndexed(c.w, c.h, c.dpi, ix), chunk('IDAT', zlibSync(indexedBand(ix, c.w, 0, c.h), indexedStride(ix, c.w), 1, effort)), IEND]);
+  }
+  // an explicit level runs the generic tokenizer over the filtered rows; the default keeps the canvas-aware one
+  if (opts.level.kind === 'some') return concat([header(c.w, c.h, c.dpi), chunk('IDAT', zlibSync(filteredBand(c, 0, c.h), c.w * 4 + 1, 4, effort)), IEND]);
   const { tok, n, adler } = tokenizeCanvas(c);
   return concat([header(c.w, c.h, c.dpi), chunk('IDAT', zlibFrom(tok, n, adler)), IEND]);
 }

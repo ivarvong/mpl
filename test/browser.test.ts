@@ -8,7 +8,7 @@ import type { AddressInfo } from 'node:net';
 import { extname, join, normalize } from 'node:path';
 import { stripTypeScriptTypes } from 'node:module';
 import { chromium } from 'playwright';
-import { check, fixtures, type RuntimeOutput } from './runtime/common.ts';
+import { check, fixtures, PALETTE, type RuntimeOutput } from './runtime/common.ts';
 
 const ROOT = new URL('../', import.meta.url).pathname;
 execFileSync(process.execPath, [join(ROOT, 'scripts/build_package.ts')], { stdio: 'pipe' });
@@ -53,8 +53,8 @@ try {
   const lazyOk = lazy.ok && lazy.err === 'FontNotLoadedError DejaVu Sans:700 mpljs/fonts/dejavu-sans-bold' && JSON.stringify(lazy.fetched) === '["/lib/fonts/dejavu-sans.js"]';
   if (!lazyOk) fails++;
   console.log(`${lazyOk ? 'PASS' : 'FAIL'} chromium default import: fetched ${lazy.fetched.join(', ')}; bold without its face → ${lazy.err}`);
-  type Out = { name: string; svg: string; png64: string; ms: number };
-  const outs: Out[] = await page.evaluate(async (fx: Record<string, unknown>) => {
+  type Out = { name: string; svg: string; png64: string; pal64: string; ms: number };
+  const outs: Out[] = await page.evaluate(async ([fx, palette]: readonly [Record<string, unknown>, typeof PALETTE]) => {
     // served paths, typed as the sources they are built from
     const lib: string = '/lib/index.js', core: string = '/replay-core.js', fonts: string = '/lib/fonts/all.js';
     const m = await import(lib) as typeof import('../src/index.ts');
@@ -66,14 +66,14 @@ try {
     for (const [name, spec] of Object.entries(fx)) {
       const t0 = performance.now();
       const fig = r.buildWith(spec, m.subplots);
-      const svg = fig.toSVG(), png = fig.toPNGSync();
-      res.push({ name, svg, png64: b64(png), ms: performance.now() - t0 });
+      const svg = fig.toSVG(), png = fig.toPNGSync(), pal = fig.toPNGSync(palette);
+      res.push({ name, svg, png64: b64(png), pal64: b64(pal), ms: performance.now() - t0 });
     }
     return res;
-  }, fixtures());
+  }, [fixtures(), PALETTE] as const);
   if (errors.length > 0) { fails++; console.log(`FAIL page errors: ${errors.join('; ')}`); }
   console.log(`browser: ${browser.browserType().name()} ${browser.version()} (${ua.includes('Headless') ? 'headless' : 'headed'}, TZ Pacific/Kiritimati, locale de-DE)`);
-  const got: RuntimeOutput[] = outs.map((o) => ({ name: o.name, svg: o.svg, png: Buffer.from(o.png64, 'base64'), ms: o.ms }));
+  const got: RuntimeOutput[] = outs.map((o) => ({ name: o.name, svg: o.svg, png: Buffer.from(o.png64, 'base64'), palette: Buffer.from(o.pal64, 'base64'), ms: o.ms }));
   fails += check('chromium', got);
 } finally {
   await browser.close();

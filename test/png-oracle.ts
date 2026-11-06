@@ -15,22 +15,42 @@ mkdirSync(OUT, { recursive: true });
 
 /** Minimal PNG reader for the 8-bit RGBA, non-interlaced files Agg writes (node:zlib is test-only). */
 export type Pixels = { readonly w: number; readonly h: number; readonly px: Uint8Array };
+/** Decode a non-interlaced PNG: 8-bit RGBA (color type 6), or a palette (color type 3, bit depth 1/2/4/8, PLTE and
+ *  optional tRNS), to RGBA pixels. Every filter type is undone, so this also checks what an encoder writes. */
 export function readPNG(buf: Buffer): Pixels {
-  let o = 8, w = 0, h = 0; const idat: Buffer[] = [];
+  let o = 8, w = 0, h = 0, type = 6, bits = 8; const idat: Buffer[] = [];
+  let plte: Buffer = Buffer.alloc(0), trns: Buffer = Buffer.alloc(0);
   while (o < buf.length) {
-    const len = buf.readUInt32BE(o), type = buf.toString('latin1', o + 4, o + 8), data = buf.subarray(o + 8, o + 8 + len);
-    if (type === 'IHDR') { w = data.readUInt32BE(0); h = data.readUInt32BE(4); if (data[8] !== 8 || data[9] !== 6 || data[12] !== 0) throw new Error('need 8-bit RGBA non-interlaced'); }
-    if (type === 'IDAT') idat.push(data);
+    const len = buf.readUInt32BE(o), kind = buf.toString('latin1', o + 4, o + 8), data = buf.subarray(o + 8, o + 8 + len);
+    if (kind === 'IHDR') {
+      w = data.readUInt32BE(0); h = data.readUInt32BE(4); bits = data[8]; type = data[9];
+      const okType = (type === 6 && bits === 8) || (type === 3 && [1, 2, 4, 8].includes(bits));
+      if (!okType || data[12] !== 0) throw new Error(`unsupported PNG: color type ${type}, bit depth ${bits}, interlace ${data[12]}`);
+    }
+    if (kind === 'PLTE') plte = data;
+    if (kind === 'tRNS') trns = data;
+    if (kind === 'IDAT') idat.push(data);
     o += 12 + len;
   }
-  const raw = inflateSync(Buffer.concat(idat)), stride = w * 4, px = new Uint8Array(w * h * 4);
+  const bpp = type === 6 ? 4 : 1, stride = type === 6 ? w * 4 : Math.ceil((w * bits) / 8);
+  const raw = inflateSync(Buffer.concat(idat)), rows = new Uint8Array(h * stride);
   for (let y = 0; y < h; y++) {
     const f = raw[y * (stride + 1)], src = y * (stride + 1) + 1, dst = y * stride;
     for (let i = 0; i < stride; i++) {
-      const a = i >= 4 ? px[dst + i - 4] : 0, b = y > 0 ? px[dst - stride + i] : 0, c = i >= 4 && y > 0 ? px[dst - stride + i - 4] : 0;
+      const a = i >= bpp ? rows[dst + i - bpp] : 0, b = y > 0 ? rows[dst - stride + i] : 0, c = i >= bpp && y > 0 ? rows[dst - stride + i - bpp] : 0;
       const p = a + b - c, pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
       const pred = f === 0 ? 0 : f === 1 ? a : f === 2 ? b : f === 3 ? (a + b) >> 1 : (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
-      px[dst + i] = (raw[src + i] + pred) & 255;
+      rows[dst + i] = (raw[src + i] + pred) & 255;
+    }
+  }
+  if (type === 6) return { w, h, px: rows };
+  const n = plte.length / 3, px = new Uint8Array(w * h * 4), per = 8 / bits, mask = (1 << bits) - 1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const v = (rows[y * stride + Math.floor(x / per)] >> (8 - bits * (1 + (x % per)))) & mask;
+      if (v >= n) throw new Error(`palette index ${v} out of range (${n} entries)`);
+      const q = 4 * (y * w + x);
+      px[q] = plte[3 * v]; px[q + 1] = plte[3 * v + 1]; px[q + 2] = plte[3 * v + 2]; px[q + 3] = v < trns.length ? trns[v] : 255;
     }
   }
   return { w, h, px };
