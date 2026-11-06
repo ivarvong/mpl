@@ -125,7 +125,7 @@ Keyword arguments (unknown keys throw): `colors`
 
 ### `Figure.toPNGSync(kwargs?)`
 
-toPNGSync({ colors, level }) — PNG bytes, synchronously, with the built-in deflate. colors as in toPNG; level (1..9, as zlib's) trades time for size; left out, the default chart-tuned encoder runs.
+toPNGSync({ colors, level }) — PNG bytes, synchronously, with the built-in deflate. colors as in toPNG; level (1..9, as zlib's) trades time for size; left out, the default chart-tuned encoder runs. The encode is synchronous and its cost grows with the level's match-chain length (up to 4096 candidates at 9): level 9 can take many seconds on a large, noisy canvas.
 
 Keyword arguments (unknown keys throw): `colors`, `level`
 

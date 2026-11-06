@@ -1688,7 +1688,7 @@ export class Figure {
     kw.done();
     return encodePNG(this.toRGBA(), { colors });
   }
-  /** toPNGSync({ colors, level }) — PNG bytes, synchronously, with the built-in deflate. colors as in toPNG; level (1..9, as zlib's) trades time for size; left out, the default chart-tuned encoder runs. */
+  /** toPNGSync({ colors, level }) — PNG bytes, synchronously, with the built-in deflate. colors as in toPNG; level (1..9, as zlib's) trades time for size; left out, the default chart-tuned encoder runs. The encode is synchronous and its cost grows with the level's match-chain length (up to 4096 candidates at 9): level 9 can take many seconds on a large, noisy canvas. */
   toPNGSync(kwargs: Kwargs = {}): Uint8Array {
     const kw = new KwReader(kwargs, 'toPNGSync');
     const colors = kw.read(['colors'], paletteColors, (): Option<number> => none);
