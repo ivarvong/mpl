@@ -1,6 +1,6 @@
 // PNG encoder properties: zlibSync round-trips through node:zlib on adversarial inputs,
 // and every PNG path (sync, CompressionStream, streamed) decodes to the same pixels.
-import { inflateSync } from 'node:zlib';
+import { crc32, inflateSync } from 'node:zlib';
 import { encodePNG, encodePNGSync, pngStream, zlibSync } from '../src/render/png.ts';
 import { readPNG, type Pixels } from './png-oracle.ts';
 import { canvasOf, invalidateBlocks } from '../src/render/agg/canvas.ts';
@@ -60,5 +60,15 @@ for (const cv of canvases) {
   try { got = readPNG(Buffer.from(encodePNGSync(cv))); } catch (e) { console.log(`${cv.w}×${cv.h}: ${(e as Error).message}`); }
   if (got.w !== cv.w || got.h !== cv.h || got.px.some((v, i) => v !== cv.px[i])) { bad++; console.log(`encodePNGSync mismatch ${cv.w}×${cv.h}`); }
 }
-console.log(`png: ${cases.length} zlib round-trips, ${canvases.length} sync canvases, 3 PNG paths — ${bad === 0 ? 'ok' : `${bad} FAILED`}`);
+// every chunk's CRC-32 (slicing-by-4) against node:zlib's, on every sync canvas (inflateSync above checks Adler-32)
+let crcs = 0;
+for (const cv of canvases) {
+  const png = encodePNGSync(cv), dv = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  for (let o = 8; o < png.length;) {
+    const len = dv.getUint32(o), body = png.subarray(o + 4, o + 8 + len);
+    if (dv.getUint32(o + 8 + len) !== crc32(body)) { bad++; console.log(`CRC mismatch ${cv.w}×${cv.h} at ${o}`); }
+    crcs++; o += 12 + len;
+  }
+}
+console.log(`png: ${cases.length} zlib round-trips, ${canvases.length} sync canvases (${crcs} chunk CRCs), 3 PNG paths — ${bad === 0 ? 'ok' : `${bad} FAILED`}`);
 if (bad) process.exitCode = 1;
