@@ -178,9 +178,13 @@ export type TextArtist = {
 /** Scatter: a PathCollection of identical markers at (x, y), size in pt^2 (matplotlib semantics). */
 export type ScatterArtist = {
   readonly kind: 'scatter'; readonly x: Float64Array; readonly y: Float64Array;
-  readonly sizePt2: Float64Array; readonly shape: MarkerName;
-  readonly faces: readonly Paint[]; readonly edges: readonly Paint[]; readonly edgeWidthPt: number; readonly label: Label; readonly clip: boolean;
+  readonly shape: MarkerName; readonly edgeWidthPt: number; readonly label: Label; readonly clip: boolean;
+  readonly collection: ScatterCollection;
 };
+/** A PathCollection's sizes (pt^2) and colours as given (get_sizes, get_facecolor, get_edgecolor): one each, or one
+ *  per point, cycled over the points. Not broadcast, because the draw path and the legend handler depend on the
+ *  lengths, and an empty scatter (a legend proxy) still has them. */
+export type ScatterCollection = { readonly sizesPt2: Float64Array; readonly faces: readonly Paint[]; readonly edges: readonly Paint[] };
 /**
  * An annotation coordinate system (_AnnotationBase._get_xy_transform): 'data', or "<ref> <unit>"
  * where ref is figure | axes | offset (offset: from the annotated point; textcoords only) and
@@ -220,7 +224,9 @@ export type Handle =
   | { readonly kind: 'errorbar'; readonly errorbar: ErrorbarHandle }
   /** HandlerLineCollection: a 2-point Line2D given the collection's dash tuple, so it counts as dashed
    *  (dash cap and join) even when solid */
-  | { readonly kind: 'collection'; readonly color: Rgb; readonly widthPt: number; readonly style: LineStyleName };
+  | { readonly kind: 'collection'; readonly color: Rgb; readonly widthPt: number; readonly style: LineStyleName }
+  /** HandlerPathCollection: a scatter's marker path, sizes and colours, drawn as a small collection of its own */
+  | { readonly kind: 'scatter'; readonly shape: MarkerName; readonly collection: ScatterCollection; readonly edgeWidthPt: number };
 export type LegendEntry = { readonly label: string; readonly handle: Handle };
 
 // ---------------------------------------------------------------- axes
@@ -258,7 +264,9 @@ export type AnchorCode = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type LegendLoc = { readonly kind: 'best' } | { readonly kind: 'anchored'; readonly code: AnchorCode };
 export type LegendSpec =
   | { readonly kind: 'off' }
-  | { readonly kind: 'on'; readonly loc: LegendLoc; readonly ncols: number; readonly frame: boolean; readonly fontSizePt: number };
+  | { readonly kind: 'on'; readonly loc: LegendLoc; readonly ncols: number; readonly frame: boolean; readonly fontSizePt: number; readonly markers: LegendMarkers };
+/** Legend marker settings: scatterpoints and scatteryoffsets (HandlerPathCollection), markerscale (every handler's markers). */
+export type LegendMarkers = { readonly scatterPoints: number; readonly scatterYOffsets: readonly number[]; readonly markerScale: number };
 
 /** A twinx Axes shares its host's x axis; its y axis, label and offset text live on the right. */
 export type AxesRole = { readonly kind: 'primary' } | { readonly kind: 'twinx'; readonly host: number };
@@ -344,6 +352,7 @@ export type Theme = {
     readonly fontSizePt: number; readonly labelColor: Rgb;
     readonly borderPad: number; readonly labelSpacing: number; readonly handleLength: number; readonly handleHeight: number;
     readonly handleTextPad: number; readonly borderAxesPad: number; readonly columnSpacing: number;
+    readonly scatterPoints: number; readonly markerScale: number;
   };
   readonly offsetTextPadPt: number;
   /** errorbar.capsize (pt), errorbar.capthick and errorbar.elinewidth (pt; none = follow the lines) */

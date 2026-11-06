@@ -3,6 +3,7 @@
 // unknown keyword arguments are errors, as in matplotlib.
 import { parsePaint, parseRgb } from './core/colors.ts';
 import { date2num, fromEpochMs } from './core/dates.ts';
+import { MARKERS } from './core/data/markers.ts';
 import type { Fmt, FmtShape } from './core/fmt.ts';
 import { dataExtents, unionExtent, viewLimits } from './core/autoscale.ts';
 import type { Bins, Sample } from './core/histogram.ts';
@@ -18,7 +19,7 @@ import { DEFAULTS } from './core/rc.ts';
 import { isNullish, isPlainObject, lookup, prop } from './core/std.ts';
 import type { StyleSpec } from './core/style.ts';
 import { composeStyles } from './core/style.ts';
-import { parseFontSize, parseLegendLoc, parseTheme } from './core/theme.ts';
+import { parseFontSize, parseLegendLoc, parseTheme, scatterPointsOf } from './core/theme.ts';
 import type {
   Artist, AxesMeta, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
   AxLineArtist, AxLineThrough, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist,
@@ -1041,7 +1042,14 @@ export class Axes {
     const ys = this.yaxis.convert(unwrap(parseSeries(yRaw, 'y')));
     if (xs.length !== ys.length) throw new RangeError(`scatter: x and y must have the same length, got ${xs.length} and ${ys.length}`);
     const n = xs.length;
-    const s = kw.read(['s'], (v) => broadcast(v, n, 's'), () => new Float64Array(n).fill(36)); // matplotlib default 36 pt^2
+    // the sizes as given (get_sizes: a scalar is one size); default lines.markersize ** 2
+    const sizes = kw.read(['s'], (v): Result<Float64Array> => {
+      const p = parseSeries(v, 's');
+      if (!p.ok) return p;
+      if (p.value.kind !== 'numeric') return err('s must be numeric');
+      const vals = p.value.values;
+      return vals.length === 1 || vals.length === n ? ok(vals) : err(`s has ${vals.length} values, expected 1 or ${n}`);
+    }, () => Float64Array.of(36));
     const marker = kw.read(['marker'], parseMarker, () => unwrap(parseMarker('o')));
     const alpha = kw.read(['alpha'], (v): Result<Option<number>> => (typeof v === 'number' && v >= 0 && v <= 1 ? ok(some(v)) : err('alpha must be in [0, 1]')), (): Option<number> => none);
     const parsePaintOrList = (v: unknown): Result<readonly Paint[]> => {
@@ -1055,15 +1063,18 @@ export class Axes {
     const colorList0 = kw.read(['c', 'color'], (v) => parsePaintOrList(v), (): readonly Paint[] => [{ kind: 'solid', color: this.next('patch') }]);
     // edgecolors='face' (rc scatter.edgecolors) strokes each marker in its own face colour
     const se = this.theme.scatterEdge;
-    const edgecolorsList = kw.read(['edgecolors', 'edgecolor'], (v) => (v === 'face' ? ok(colorList0) : parsePaintOrList(v)), (): readonly Paint[] => (se.kind === 'face' ? colorList0 : [se.paint]));
-    const linewidths = kw.read(['linewidths', 'linewidth', 'lw'], num('linewidths'), () => this.theme.patch.linewidthPt);
+    const edgecolorsGiven = kw.read(['edgecolors', 'edgecolor'], (v) => (v === 'face' ? ok(colorList0) : parsePaintOrList(v)), (): readonly Paint[] => (se.kind === 'face' ? colorList0 : [se.paint]));
+    // an unfilled marker ('x', '+', '|', '_') strokes in its face colour ('face'; matplotlib warns and ignores a given
+    // edgecolor) at lines.linewidth by default
+    const filled = MARKERS[marker.kind === 'some' ? marker.value : 'o'].filled;
+    const edgecolorsList = filled ? edgecolorsGiven : colorList0;
+    const linewidths = kw.read(['linewidths', 'linewidth', 'lw'], num('linewidths'), () => (filled ? this.theme.patch.linewidthPt : this.theme.lines.widthPt));
     const lbl = kw.read(['label'], label, (): Label => ({ kind: 'none' }));
     const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => true);
     kw.done();
     const withAlpha = (p: Paint): Paint => (p.kind === 'solid' && alpha.kind === 'some' ? { kind: 'solid', color: { hex: p.color.hex, alpha: alpha.value } } : p);
-    const faces = Array.from({ length: n }, (_, i) => withAlpha(colorList0[(i) % colorList0.length]));
-    const edges = Array.from({ length: n }, (_, i) => withAlpha(edgecolorsList[(i) % edgecolorsList.length]));
-    const sc: ScatterArtist = { kind: 'scatter', x: xs, y: ys, sizePt2: s, shape: marker.kind === 'some' ? marker.value : 'o', faces, edges, edgeWidthPt: linewidths, label: lbl, clip };
+    const collection = { sizesPt2: sizes, faces: colorList0.map(withAlpha), edges: edgecolorsList.map(withAlpha) };
+    const sc: ScatterArtist = { kind: 'scatter', x: xs, y: ys, shape: marker.kind === 'some' ? marker.value : 'o', edgeWidthPt: linewidths, label: lbl, clip, collection };
     this.artists.push(sc);
     this.xaxis.request(); this.yaxis.request();
     return sc;
@@ -1272,7 +1283,7 @@ export class Axes {
     this.grid_ = { x: axis === 'y' ? cur.x : axisGrid(cur.x), y: axis === 'x' ? cur.y : axisGrid(cur.y) };
     return this;
   }
-  /** legend({ loc, ncols|ncol, frameon, fontsize }) — entries come from artists with a label. */
+  /** legend({ loc, ncols|ncol, frameon, fontsize, scatterpoints, scatteryoffsets, markerscale }) — entries come from artists with a label; a scatter's entry draws scatterpoints markers (rc legend.scatterpoints) sized from its sizes, and markerscale (rc legend.markerscale) scales every entry's markers. */
   legend(kwargs: Kwargs = {}): this {
     const L = this.theme.legend;
     const kw = new KwReader(kwargs, 'legend');
@@ -1282,6 +1293,13 @@ export class Axes {
       ncols: kw.read(['ncols', 'ncol'], (v) => (Number.isInteger(v) && Number(v) >= 1 ? ok(Number(v)) : err(`ncols must be an integer >= 1`)), () => 1),
       frame: kw.read(['frameon'], bool('frameon'), () => L.frame),
       fontSizePt: kw.read(['fontsize'], (v) => parseFontSize(v, this.theme.font.sizePt), () => L.fontSizePt),
+      markers: {
+        scatterPoints: kw.read(['scatterpoints'], scatterPointsOf, () => L.scatterPoints),
+        // Legend.__init__: 3/8, 4/8, 2.5/8 of the handle height, tiled to scatterpoints
+        scatterYOffsets: kw.read(['scatteryoffsets'], (v): Result<readonly number[]> => (Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === 'number' && Number.isFinite(x))
+          ? ok(v.map(Number)) : err('scatteryoffsets must be a non-empty list of numbers')), () => [3 / 8, 4 / 8, 2.5 / 8]),
+        markerScale: kw.read(['markerscale'], (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? ok(v) : err('markerscale must be a number >= 0')), () => L.markerScale),
+      },
     };
     kw.done();
     return this;

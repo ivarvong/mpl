@@ -28,9 +28,8 @@ export function lineStroke(theme: Theme, color: Rgb, widthPt: number, style: Lin
 }
 
 /** Marker outline at the origin in px (y down). Vertices snap to integers at/above the marker's threshold. */
-export function markerShape(name: MarkerName, sizePx: number): readonly Seg[] {
+export function markerShape(name: MarkerName, sizePx: number, doSnap: boolean = sizePx >= MARKERS[name].snapPx): readonly Seg[] {
   const def = MARKERS[name];
-  const doSnap = sizePx >= def.snapPx;
   const v = (x: number): number => (doSnap ? Math.floor(x + 0.5) : x);
   const X = (x: number): number => v(x * sizePx), Y = (y: number): number => v(-y * sizePx);
   return def.segs.map((s): Seg => {
@@ -46,14 +45,40 @@ export function markerShape(name: MarkerName, sizePx: number): readonly Seg[] {
 }
 
 /**
- * One instanced Markers node. Agg draw_markers snaps each origin to the pixel centre;
- * opaque identical markers at the same snapped pixel are indistinguishable, so they dedupe.
+ * PathSnapper's SNAP_AUTO test (path_converters.h should_snap), on a path in px: at most 1024 segments, no curves, and
+ * every line_to axis-aligned within 1e-4 px of the previous vertex (a move_to only moves the pen, so '+' snaps).
+ * A collection's GraphicsContext keeps snap None, which is this test.
  */
-export function markersNode(m: Extract<LineMarkers, { kind: 'on' }>, xs: Float64Array, ys: Float64Array, k: number, alwaysUnsnap: boolean = false): Option<Node> {
+export function snapsAuto(segs: readonly Seg[]): boolean {
+  if (segs.length > 1024 || segs.length === 0) return false;
+  let px = 0, py = 0;
+  for (const sg of segs) {
+    switch (sg[0]) {
+      case 'M': px = sg[1]; py = sg[2]; break;
+      case 'L':
+        if (Math.abs(px - sg[1]) >= 1e-4 && Math.abs(py - sg[2]) >= 1e-4) return false;
+        px = sg[1]; py = sg[2]; break;
+      case 'Q': case 'C': return false;
+      case 'Z': break;
+      default: return assertNever(sg);
+    }
+  }
+  return true;
+}
+const autoSnaps = (name: MarkerName, sizePx: number): boolean => snapsAuto(markerShape(name, sizePx, false));
+
+/**
+ * One instanced Markers node: renderer.draw_markers. Agg snaps each origin to the pixel centre; opaque identical
+ * markers at the same snapped pixel are indistinguishable, so they dedupe. A Line2D snaps its marker path when the
+ * marker is at least its snap threshold, and strokes with the marker's own join and cap. With `collection` (a
+ * PathCollection's single-path draw) the GraphicsContext keeps its defaults instead: round join, butt cap, and
+ * SNAP_AUTO, which snaps only an axis-aligned path (a square, not a triangle or diamond).
+ */
+export function markersNode(m: Extract<LineMarkers, { kind: 'on' }>, xs: Float64Array, ys: Float64Array, k: number, collection: boolean = false): Option<Node> {
   const def = MARKERS[m.shape];
   const ew = strokePx(m.edgeWidthPt, k);
   const stroke: Option<Stroke> = m.edge.kind === 'solid' && ew > 0
-    ? some({ color: m.edge.color, width: ew, cap: def.cap, join: def.join, dash: { kind: 'solid' } })
+    ? some({ color: m.edge.color, width: ew, cap: collection ? 'butt' : def.cap, join: collection ? 'round' : def.join, dash: { kind: 'solid' } })
     : none;
   // Line2D fills every marker path with its face colour (unfillable ones such as 'x' and '|' enclose no area; the carets do)
   const ink = inkOf(m.face, stroke);
@@ -64,7 +89,8 @@ export function markersNode(m: Extract<LineMarkers, { kind: 'on' }>, xs: Float64
   const seen = new Set<number>();
   // a snapped marker path lands on PathSnapper's grid: +0.5 for odd edge widths, +0 for even
   // (including no edge); an unsnapped one gets draw_markers' plain +0.5 shift
-  const off = alwaysUnsnap ? 0.5 : (m.sizePt * k >= def.snapPx ? snapOffset(ew) : 0.5);
+  const snapping = collection ? autoSnaps(m.shape, m.sizePt * k) : m.sizePt * k >= def.snapPx;
+  const off = snapping ? snapOffset(ew) : 0.5;
   const ox = new Float64Array(xs.length), oy = new Float64Array(xs.length);
   let n = 0;
   for (let i = 0; i < xs.length; i++) {
@@ -75,5 +101,5 @@ export function markersNode(m: Extract<LineMarkers, { kind: 'on' }>, xs: Float64
     ox[n] = px + off; oy[n] = py + off; n++;
   }
   if (n === 0) return none;
-  return some({ kind: 'markers', shape: markerShape(m.shape, m.sizePt * k), xs: ox.subarray(0, n), ys: oy.subarray(0, n), ink: ink.value });
+  return some({ kind: 'markers', shape: markerShape(m.shape, m.sizePt * k, snapping), xs: ox.subarray(0, n), ys: oy.subarray(0, n), ink: ink.value });
 }

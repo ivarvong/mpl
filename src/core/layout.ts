@@ -80,7 +80,7 @@ function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tr
       case 'axline': return tracer.span('artist.axline', { through: a.through.kind }, (sp) => drawAxLine(a, f, theme, k, clip, sp));
       case 'segments': return tracer.span('artist.segments', { segments: a.x0.length }, () => drawSegments(a, f, theme, k, clip));
       case 'polygon': return tracer.span('artist.polygon', { vertices: a.x.length, closed: a.closed }, () => drawPolygon(a, f, k, clip));
-      case 'errorbar': return { nodes: [], lines: [], boxes: [], handle: some({ kind: 'errorbar', errorbar: a.handle }) };
+      case 'errorbar': return { nodes: [], lines: [], boxes: [], points: [], handle: some({ kind: 'errorbar', errorbar: a.handle }) };
       default: return assertNever(a);
     }
   }
@@ -329,8 +329,8 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, tracer: Tracer): { readonly no
   const spec = ax.legend;
   const legend = spec.kind === 'on' && entries.length > 0
     ? some({ code: spec.loc, out: tracer.span('legend', { entries: entries.length }, () => layoutLegend({
-        entries, theme, dpi, H, axesBox: axesUp, lines: drawn.flatMap((d) => d.lines), boxes: drawn.flatMap((d) => d.boxes),
-        loc: spec.loc, ncols: spec.ncols, frame: spec.frame, fontSizePt: spec.fontSizePt }, tracer)) })
+        entries, theme, dpi, W, H, axesBox: axesUp, lines: drawn.flatMap((d) => d.lines), points: drawn.flatMap((d) => d.points), boxes: drawn.flatMap((d) => d.boxes),
+        loc: spec.loc, ncols: spec.ncols, frame: spec.frame, fontSizePt: spec.fontSizePt, markers: spec.markers }, tracer)) })
     : none;
 
   // Gridlines clip to the axes like every artist; each Axis draws as a unit (x, then y).

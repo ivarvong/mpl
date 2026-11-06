@@ -335,9 +335,9 @@ Keyword arguments (unknown keys throw): `axis`, `which`, `color | c`, `linewidth
 
 ### `Axes.legend(kwargs?)`
 
-legend({ loc, ncols|ncol, frameon, fontsize }) — entries come from artists with a label.
+legend({ loc, ncols|ncol, frameon, fontsize, scatterpoints, scatteryoffsets, markerscale }) — entries come from artists with a label; a scatter's entry draws scatterpoints markers (rc legend.scatterpoints) sized from its sizes, and markerscale (rc legend.markerscale) scales every entry's markers.
 
-Keyword arguments (unknown keys throw): `loc`, `ncols | ncol`, `frameon`, `fontsize`
+Keyword arguments (unknown keys throw): `loc`, `ncols | ncol`, `frameon`, `fontsize`, `scatterpoints`, `scatteryoffsets`, `markerscale`
 
 ### `Axes.spec()`
 

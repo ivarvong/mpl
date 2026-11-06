@@ -4,7 +4,7 @@
 // All coordinates are display px with y UP, as matplotlib computes them; the caller flips for Agg.
 
 import type { Option } from './types.ts';
-import { none, some } from './types.ts';
+import { assertNever, none, some } from './types.ts';
 
 export type Pt = readonly [number, number];
 type Quad = readonly [Pt, Pt, Pt];
@@ -191,4 +191,30 @@ export function yaArrowPath(bbox: Box, xy: Pt, hasText: boolean, spec: SimpleArr
   const q2 = shrinkPx !== 0 ? clip(q1, some(insideCircle(q1[0][0], q1[0][1], shrinkPx)), some(insideCircle(q1[2][0], q1[2][1], shrinkPx))) : q1;
   const ms = spec.mutationPt;
   return simple(q2, ms * k, spec.headLengthPt / ms, spec.headWidthPt / ms, spec.widthPt / ms);
+}
+
+/**
+ * Path.get_extents of an arrow path (display px): every segment's end points plus a quadratic's axis-aligned extrema,
+ * t = (p0 - c) / (p0 - 2c + p1) where it lies inside (0, 1). Annotation.get_window_extent unions it with the text's.
+ */
+export function arrowExtents(path: readonly ArrowSeg[]): Box {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const add = (p: Pt): void => { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); };
+  let pen: Pt = [0, 0];
+  for (const sg of path) {
+    switch (sg.kind) {
+      case 'M': case 'L': add(sg.p); pen = sg.p; break;
+      case 'Q': {
+        for (const axis of [0, 1] as const) {
+          const den = pen[axis] - 2 * sg.c[axis] + sg.p[axis];
+          const t = den === 0 ? -1 : (pen[axis] - sg.c[axis]) / den;
+          if (t > 0 && t < 1) add(quadAt([pen, sg.c, sg.p], t));
+        }
+        add(sg.p); pen = sg.p; break;
+      }
+      case 'Z': break;
+      default: return assertNever(sg);
+    }
+  }
+  return { x0, y0, x1, y1 };
 }

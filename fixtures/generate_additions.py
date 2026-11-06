@@ -296,6 +296,48 @@ for i, (ha, va) in enumerate([(h, v) for h in ["left", "center", "right"] for v 
                  "arrowprops": {"color": f"C{i % 10}", "width": [0.5, 1, 1.5, 2.5][i % 4], "headwidth": 5 + i % 4, "headlength": 4 + i % 5, "shrink": 0.05 * (i % 2)}}))
 case("annotate_arrow_extent", ("set_xlim", [0, 10]), ("set_ylim", [0, 3.5]), *EXT)
 
+# Issue #14 (comment): scatter legend entries (HandlerPathCollection) and loc='best' counting collection offsets
+SC_X = [0.5, 1.2, 2.0, 2.6, 3.3]; SC_Y = [1.0, 2.2, 1.6, 2.9, 2.4]
+case("scatter_legend_basic", ("scatter", [[1, 2, 3], [1, 2, 3]], {"label": "x"}), ("legend", []))
+case("scatter_legend_styles",
+     ("scatter", [SC_X, SC_Y], {"s": [20, 80, 200, 50, 120], "c": ["C0", "C1", "C2", "C3", "C4"], "marker": "s", "edgecolors": "k", "linewidths": 1, "label": "sized squares"}),
+     ("scatter", [SC_X, [v - 0.8 for v in SC_Y]], {"marker": "^", "alpha": 0.5, "color": "C5", "label": "alpha triangles"}),
+     ("plot", [SC_X, [v + 0.6 for v in SC_Y], "o-"], {"label": "line"}), ("legend", [], {"loc": "lower right"}))
+case("scatter_legend_points",
+     ("scatter", [SC_X, SC_Y], {"s": [10, 40, 90, 160, 250], "label": "sizes"}),
+     ("plot", [SC_X, [v - 1 for v in SC_Y], "D--"], {"label": "line"}),
+     ("errorbar", [SC_X, [v + 1 for v in SC_Y]], {"yerr": 0.2, "fmt": "o", "capsize": 3, "label": "errorbar"}),
+     ("legend", [], {"scatterpoints": 3, "markerscale": 1.5, "loc": "upper left"}))
+case("scatter_legend_rc", ("$rc", [], {"legend.scatterpoints": 4, "legend.markerscale": 0.7}),
+     ("scatter", [SC_X, SC_Y], {"s": [10, 40, 90, 160, 250], "c": "C2", "marker": "*", "label": "rc points"}),
+     ("plot", [SC_X, SC_Y, "s"], {"label": "markers"}), ("legend", [], {"scatteryoffsets": [0.2, 0.8]}))
+case("scatter_legend_proxy", ("plot", [lin(30, 0, 6), L(np.sin(lin(30, 0, 6)))]),
+     ("scatter", [[], []], {"c": "C3", "marker": "o", "label": "proxy (empty)"}), ("scatter", [[], []], {"c": "C2", "s": 80, "marker": "D", "label": "proxy s=80"}), ("legend", []))
+# a cloud in the upper right and a line along the bottom: only the scatter offsets push 'best' away from code 1
+CLOUD = R.uniform(0, 1, (60, 2))
+case("scatter_best_offsets", ("plot", [[0, 10], [0.5, 0.5]], {"label": "baseline"}),
+     ("scatter", [L(7 + 3 * CLOUD[:, 0]), L(7 + 3 * CLOUD[:, 1])], {"s": 12, "label": "cloud"}),
+     ("set_xlim", [0, 10]), ("set_ylim", [0, 10]), ("legend", []))
+
+# Every scatter marker through both PathCollection draws: one size and colour (draw_markers, GraphicsContext defaults:
+# round join, SNAP_AUTO snaps only axis-aligned paths) and a per-point size list (draw_path_collection, even when the
+# sizes are equal); odd and even edge widths pick PathSnapper's offset. Sub-pixel jitter in x.
+MK = ["o", "s", "^", "v", "<", ">", "D", "d", "x", "+", "*", ".", "p", "h", "X", "P", "|", "_"]
+UNFILLED = {"x", "+", "|", "_"}
+MKC = []
+for i, m in enumerate(MK):
+    edge = {} if m in UNFILLED else {"edgecolors": "k", "linewidths": 1 + i % 2}
+    MKC += [("scatter", [[0.13 * i + j for j in range(4)], [i] * 4], {"marker": m, "s": 50 + 7 * (i % 3), **edge}),
+            ("scatter", [[6.07 * 1 + 0.11 * i + j for j in range(4)], [i] * 4], {"marker": m, "s": [60] * 4, "c": "C1"})]
+case("scatter_markers_paths", ("$rc", [], {"figure.figsize": [6.4, 7.0]}), *MKC)
+
+# loc='best' counts every Text child's window extent (Legend._auto_legend_data): a text, and an annotation as the union
+# of its text and arrow, each alone in a corner the legend would otherwise take
+LOW = [("plot", [[0, 1], [0.05, 0.05]], {"label": "low line"}), ("set_ylim", [0, 1])]
+case("legend_best_text", *LOW, ("text", [0.75, 0.9, "text here"], {"fontsize": 14}), ("legend", []))
+case("legend_best_annotation", *LOW, ("annotate", ["", [0.97, 0.97]], {"xytext": [0.6, 0.6], "arrowprops": {"color": "C1"}}),
+     ("annotate", ["left note", [0.03, 0.95]], {"fontsize": 12}), ("legend", []))
+
 def run_case(name, calls):
     style = None
     rc_layer = {}

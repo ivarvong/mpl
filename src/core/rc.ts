@@ -128,6 +128,8 @@ export const DEFAULTS: RcLayer = new Map<string, RcValue>(Object.entries({
   'legend.handletextpad': 0.8,
   'legend.borderaxespad': 0.5,
   'legend.columnspacing': 2.0,
+  'legend.scatterpoints': 1,
+  'legend.markerscale': 1.0,
 }));
 
 /** Later layers win. */

@@ -1,7 +1,8 @@
 // Spatial index for Legend loc='best': plan once (linear in vertices), then answer
 // each candidate box in O(cells touched) instead of O(vertices).
-//   badness(box) = #vertices strictly inside + #bboxes overlapping
+//   badness(box) = #vertices strictly inside + #collection offsets strictly inside + #bboxes overlapping
 //                + #lines intersecting the box (vertex inside-or-on, or a segment crossing an edge)
+// Offsets (Legend._auto_legend_data's `offsets`) are counted like vertices but belong to no line.
 // Interior cells come from a prefix table; only boundary cells are tested exactly.
 import type { XY } from './path.ts';
 
@@ -23,7 +24,7 @@ const segCrossesBox = (x1: number, y1: number, x2: number, y2: number, r: Box): 
 
 const ok = (L: XY, i: number): boolean => Number.isFinite(L.xs[i]) && Number.isFinite(L.ys[i]);
 
-export function buildObstacleIndex(lines: readonly XY[], bboxes: readonly Box[], W: number, H: number, cell: number): ObstacleIndex {
+export function buildObstacleIndex(lines: readonly XY[], points: readonly XY[], bboxes: readonly Box[], W: number, H: number, cell: number): ObstacleIndex {
   const cols = Math.max(1, Math.ceil(W / cell)), rows = Math.max(1, Math.ceil(H / cell));
   const cx = (x: number): number => Math.min(cols - 1, Math.max(0, Math.floor(x / cell)));
   const cy = (y: number): number => Math.min(rows - 1, Math.max(0, Math.floor(y / cell)));
@@ -44,6 +45,7 @@ export function buildObstacleIndex(lines: readonly XY[], bboxes: readonly Box[],
       if (i > 0 && ok(L, i - 1)) forSegCells(L, i, (c) => { sCount[c]++; totalS++; });
     }
   }
+  for (const P of points) for (let i = 0; i < P.xs.length; i++) if (ok(P, i)) { vCount[cy(P.ys[i]) * cols + cx(P.xs[i])]++; totalV++; }
   // CSR layout
   const vStart = new Int32Array(nCells + 1), sStart = new Int32Array(nCells + 1);
   for (let c = 0; c < nCells; c++) { vStart[c + 1] = vStart[c] + vCount[c]; sStart[c + 1] = sStart[c] + sCount[c]; }
@@ -58,6 +60,13 @@ export function buildObstacleIndex(lines: readonly XY[], bboxes: readonly Box[],
       if (i > 0 && ok(L, i - 1)) forSegCells(L, i, (c) => { const kk = sFill[c]++; sLine[kk] = li; sIdx[kk] = i; });
     }
   });
+  for (const P of points) {
+    for (let i = 0; i < P.xs.length; i++) {
+      if (!ok(P, i)) continue;
+      const k = vFill[cy(P.ys[i]) * cols + cx(P.xs[i])]++;
+      vX[k] = P.xs[i]; vY[k] = P.ys[i]; vLine[k] = -1;   // an offset: counted, never a line hit
+    }
+  }
   // 2D prefix sums of vertex counts
   const W1 = cols + 1;
   const pre = new Int32Array(W1 * (rows + 1));
@@ -86,7 +95,7 @@ export function buildObstacleIndex(lines: readonly XY[], bboxes: readonly Box[],
       if (b >= limit) return b;
       for (let y = iy0; y <= iy1; y++) for (let x = ix0; x <= ix1; x++) {
         const c = y * cols + x;
-        for (let k = vStart[c]; k < vStart[c + 1]; k++) hit[vLine[k]] = 1;
+        for (let k = vStart[c]; k < vStart[c + 1]; k++) if (vLine[k] >= 0) hit[vLine[k]] = 1;
       }
     }
     for (let y = cy0; y <= cy1; y++) for (let x = cx0; x <= cx1; x++) {
@@ -94,8 +103,9 @@ export function buildObstacleIndex(lines: readonly XY[], bboxes: readonly Box[],
       const c = y * cols + x;
       for (let k = vStart[c]; k < vStart[c + 1]; k++) {
         const px = vX[k], py = vY[k];
-        if (box.x0 < px && px < box.x1 && box.y0 < py && py < box.y1) { b++; hit[vLine[k]] = 1; if (b >= limit) return b; }
-        else if (box.x0 <= px && px <= box.x1 && box.y0 <= py && py <= box.y1) hit[vLine[k]] = 1;
+        const li = vLine[k];
+        if (box.x0 < px && px < box.x1 && box.y0 < py && py < box.y1) { b++; if (li >= 0) hit[li] = 1; if (b >= limit) return b; }
+        else if (li >= 0 && box.x0 <= px && px <= box.x1 && box.y0 <= py && py <= box.y1) hit[li] = 1;
       }
     }
     for (let y = cy0; y <= cy1; y++) for (let x = cx0; x <= cx1; x++) {
