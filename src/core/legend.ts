@@ -8,7 +8,8 @@ import type { XY } from './path.ts';
 import { inkOf, pathNode, rectNode, snap, snapOffset } from './scene.ts';
 import { lpAscent, measure, pxPerPt, strokePx } from './text.ts';
 import { resolveFace } from './fonts.ts';
-import type { AnchorCode, Handle, LegendEntry, LegendLoc, Node, Option, Seg, Stroke, Theme } from './types.ts';
+import type { AnchorCode, Handle, LegendEntry, LegendLoc, LegendMarkers, LineMarkers, Node, Option, Seg, Stroke, Theme } from './types.ts';
+import { collectionNodes, singlePath } from './draw-artists.ts';
 import { assertNever, none, some } from './types.ts';
 import type { Tracer } from '../trace.ts';
 
@@ -76,16 +77,16 @@ function anchoredP0(code: AnchorCode, w: number, h: number, parent: Box, pad: nu
 }
 
 export type LegendInput = {
-  readonly entries: readonly LegendEntry[]; readonly theme: Theme; readonly dpi: number; readonly H: number;
-  readonly axesBox: Box; readonly lines: readonly XY[]; readonly boxes: readonly Box[];
-  readonly loc: LegendLoc; readonly ncols: number; readonly frame: boolean; readonly fontSizePt: number;
+  readonly entries: readonly LegendEntry[]; readonly theme: Theme; readonly dpi: number; readonly W: number; readonly H: number;
+  readonly axesBox: Box; readonly lines: readonly XY[]; readonly points: readonly XY[]; readonly boxes: readonly Box[];
+  readonly loc: LegendLoc; readonly ncols: number; readonly frame: boolean; readonly fontSizePt: number; readonly markers: LegendMarkers;
 };
 export type LegendOutput = { readonly box: Box; readonly code: AnchorCode; readonly nodes: readonly Node[] };
 
 /** Legend._find_best_position over the obstacle index; ties keep the lower code. */
 function bestCode(inp: LegendInput, W: number, Hh: number, pad: number, tracer: Tracer): AnchorCode {
-  return tracer.span('legend.best', { lines: inp.lines.length, bboxes: inp.boxes.length }, (sp) => {
-    const index = buildObstacleIndex(inp.lines, inp.boxes, inp.axesBox.x1 + 1, inp.axesBox.y1 + 1, 16);
+  return tracer.span('legend.best', { lines: inp.lines.length, points: inp.points.length, bboxes: inp.boxes.length }, (sp) => {
+    const index = buildObstacleIndex(inp.lines, inp.points, inp.boxes, inp.axesBox.x1 + 1, inp.axesBox.y1 + 1, 16);
     sp.setAttribute('cells', index.cells).setAttribute('segCells', index.segCells);
     let best: Option<{ readonly code: AnchorCode; readonly badness: number }> = none;
     for (const code of ANCHORS) {
@@ -149,7 +150,7 @@ export function layoutLegend(inp: LegendInput, tracer: Tracer): LegendOutput {
       const [ix, iy] = cp.offsets[ii];
       const bx = ox + hbx + cx + ix, by = oy + hby + cy + iy;
       const [hx, hy] = item.offsets[0], [txo, tyo] = item.offsets[1];
-      nodes.push(...handleNodes(item.entry.handle, bx + hx, by + hy, hWidthPt * k, hHeightPt * k, descentPt * k, theme, k, tl, fsPt * k, H));
+      nodes.push(...handleNodes(item.entry.handle, bx + hx, by + hy, { wPt: hWidthPt, hPt: hHeightPt, ydPt: descentPt, fsPt }, inp.markers, theme, k, tl, inp.W, H));
       nodes.push({ kind: 'text', text: item.entry.label, x: bx + txo, y: tl(by + tyo), sizePx: fs, sizePt: fsPt, glyphs: measure(item.entry.label, fsPt, dpi, face).runs[0].glyphs, face: face.id, color: L.labelColor, rotation: 'horizontal' });
     });
   });
@@ -177,10 +178,45 @@ function frameNode(box: Box, fs: number, theme: Theme, k: number, tl: (y: number
   return [pathNode(segs, ink.value)];
 }
 
+/** The handle box in points (DrawingArea width, height, ydescent) and the legend font size. */
+type HandleArea = { readonly wPt: number; readonly hPt: number; readonly ydPt: number; readonly fsPt: number };
+
+/** numpy.linspace(start, stop, num): i * step + start, the last element exactly stop. */
+function linspace(start: number, stop: number, num: number): Float64Array {
+  const out = new Float64Array(num), step = (stop - start) / (num - 1);
+  for (let i = 0; i < num; i++) out[i] = i * step + start;
+  if (num > 1) out[num - 1] = stop;
+  return out;
+}
+
+/** HandlerPathCollection (HandlerRegularPolyCollection, HandlerNpointsYoffsets, HandlerNpoints), in display px. */
+function scatterHandle(h: Extract<Handle, { kind: 'scatter' }>, ox: number, oy: number, a: HandleArea, m: LegendMarkers, k: number, tl: (y: number) => number, W: number, Hfig: number): readonly Node[] {
+  const n = m.scatterPoints;
+  // get_sizes: from the collection's own sizes (or [1]), scaled by markerscale ** 2
+  const given = h.collection.sizesPt2.length > 0 ? h.collection.sizesPt2 : Float64Array.of(1);
+  const scale2 = m.markerScale ** 2;
+  const sizeMax = Math.max(...given) * scale2, sizeMin = Math.min(...given) * scale2;
+  const sizes = n < 4 ? Float64Array.from([0.5 * (sizeMax + sizeMin), sizeMax, sizeMin].slice(0, n))
+    : linspace(0, 1, n).map((t) => (sizeMax - sizeMin) * t + sizeMin);
+  // get_xdata (xdescent 0): one point at the middle, else spread inside a 0.3 * fontsize pad; get_ydata: height * yoffsets
+  const xPt = n > 1 ? linspace(0.3 * a.fsPt, a.wPt - 0.3 * a.fsPt, n) : Float64Array.of(0.5 * a.wPt);
+  const reps = Math.floor(n / m.scatterYOffsets.length) + 1;
+  const yoff = Array.from({ length: reps }, () => m.scatterYOffsets).flat().slice(0, n);
+  // offsets through the DrawingArea transform (scale points_to_pixels, then translate); Agg flips y
+  const xs = xPt.map((x) => x * k + ox), ys = Float64Array.from(yoff, (f) => tl(a.hPt * f * k + oy));
+  const c = { ...h.collection, sizesPt2: sizes };
+  return collectionNodes(h.shape, xs, ys, sizes, c.faces, c.edges, h.edgeWidthPt, k, singlePath(h.shape, c, k, W, Hfig));
+}
+
+/** HandlerLine2D and HandlerErrorbar scale the marker by markerscale (legline_marker.set_markersize). */
+const scaled = (mk: LineMarkers, s: number): LineMarkers => (mk.kind === 'on' && s !== 1 ? { ...mk, sizePt: mk.sizePt * s } : mk);
+
 // HandlerLine2D / HandlerPatch inside a DrawingArea whose origin is (ox, oy), y up
-function handleNodes(h: Handle, ox: number, oy: number, wPx: number, hPx: number, ydPx: number, theme: Theme, k: number,
-                     tl: (y: number) => number, fsPx: number, H: number): readonly Node[] {
+function handleNodes(h: Handle, ox: number, oy: number, area: HandleArea, mk: LegendMarkers, theme: Theme, k: number,
+                     tl: (y: number) => number, W: number, H: number): readonly Node[] {
+  const wPx = area.wPt * k, hPx = area.hPt * k, ydPx = area.ydPt * k, fsPx = area.fsPt * k;
   switch (h.kind) {
+    case 'scatter': return scatterHandle(h, ox, oy, area, mk, k, tl, W, H);
     case 'patch': {
       const stroke: Option<Stroke> = h.edge.kind === 'on' && h.edge.widthPt > 0
         ? some({ color: h.edge.color, width: strokePx(h.edge.widthPt, k), cap: 'butt', join: 'miter', dash: { kind: 'solid' } })
@@ -211,8 +247,9 @@ function handleNodes(h: Handle, ox: number, oy: number, wPx: number, hPx: number
         const ys = Float64Array.of(y, y, y).map((v) => snap(v, s.width));
         if (s.color.alpha > 0) out.push({ kind: 'polyline', xs, ys, stroke: s });
       }
-      if (h.markers.kind === 'on') {
-        const m = markersNode(h.markers, Float64Array.of(ox + wPx / 2), Float64Array.of(y), k);
+      const markers = scaled(h.markers, mk.markerScale);
+      if (markers.kind === 'on') {
+        const m = markersNode(markers, Float64Array.of(ox + wPx / 2), Float64Array.of(y), k);
         if (m.kind === 'some') out.push(m.value);
       }
       return out;
@@ -240,8 +277,9 @@ function handleNodes(h: Handle, ox: number, oy: number, wPx: number, hPx: number
           const st = lineStroke(theme, ln.stroke.color, ln.stroke.widthPt, ln.stroke.style, k);
           if (st.color.alpha > 0) out.push({ kind: 'polyline', xs: Float64Array.of(ox, ox + wPx).map((v) => snap(v, st.width)), ys: Float64Array.of(tl(yUp), tl(yUp)).map((v) => snap(v, st.width)), stroke: st });
         }
-        if (ln.markers.kind === 'on') {
-          const m = markersNode(ln.markers, Float64Array.of(xm), Float64Array.of(tl(yUp)), k);
+        const markers = scaled(ln.markers, mk.markerScale);
+        if (markers.kind === 'on') {
+          const m = markersNode(markers, Float64Array.of(xm), Float64Array.of(tl(yUp)), k);
           if (m.kind === 'some') out.push(m.value);
         }
       }

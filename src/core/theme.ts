@@ -39,6 +39,12 @@ export function parseLegendLoc(v: unknown): Result<LegendLoc> {
   return l.kind === 'some' ? ok(l.value) : err(`unknown legend loc ${JSON.stringify(v)}`);
 }
 
+/** legend.scatterpoints / legend(scatterpoints=): how many markers a scatter's legend entry draws. */
+export function scatterPointsOf(v: unknown): Result<number> {
+  const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
+  return typeof n === 'number' && Number.isInteger(n) && n >= 1 ? ok(n) : err(`scatterpoints must be an integer >= 1, got ${JSON.stringify(v)}`);
+}
+
 export function parseFontSize(v: unknown, basePt: number): Result<number> {
   if (typeof v === 'number' && v > 0) return ok(v);
   if (typeof v === 'string') {
@@ -215,6 +221,7 @@ export function parseTheme(rc: RcLayer): Result<Theme> {
       borderPad: r.num('legend.borderpad'), labelSpacing: r.num('legend.labelspacing'),
       handleLength: r.num('legend.handlelength'), handleHeight: r.num('legend.handleheight'),
       handleTextPad: r.num('legend.handletextpad'), borderAxesPad: r.num('legend.borderaxespad'), columnSpacing: r.num('legend.columnspacing'),
+      scatterPoints: r.fromResult('legend.scatterpoints', scatterPointsOf(r.raw('legend.scatterpoints')), 1), markerScale: r.num('legend.markerscale'),
     },
     offsetTextPadPt: 3,   // Axis.OFFSETTEXTPAD (class constant)
     errorbar: { capsizePt: r.num('errorbar.capsize'), capthickPt: r.optNum('errorbar.capthick'), elinewidthPt: r.optNum('errorbar.elinewidth') },

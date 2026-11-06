@@ -49,4 +49,26 @@ const ticks = (f: () => ReturnType<typeof subplots>): readonly string[] => {
   assert.throws(() => num.text('b', 0.5, 'x'), /not categorical/);
   assert.throws(() => num.annotate('x', [0.5, 'b']), /not categorical/);
 }
-console.log('issue 14: annotate/text unit conversion contracts hold');
+// 5. scatter legend settings: legend() kwargs and their rc keys are validated, not ignored
+{
+  const [, ax] = subplots();
+  ax.scatter([1, 2], [1, 2], { label: 's' });
+  assert.throws(() => ax.legend({ scatterpoints: 0 }), /scatterpoints must be an integer >= 1/);
+  assert.throws(() => ax.legend({ scatterpoints: 1.5 }), /scatterpoints/);
+  assert.throws(() => ax.legend({ scatteryoffsets: [] }), /scatteryoffsets/);
+  assert.throws(() => ax.legend({ markerscale: -1 }), /markerscale/);
+  assert.throws(() => subplots({ rc: { 'legend.scatterpoints': 0 } }), /scatterpoints/);
+  const [fig, ok] = subplots({ rc: { 'legend.scatterpoints': 3, 'legend.markerscale': 2 } });
+  ok.scatter([1, 2], [1, 2], { label: 's' });
+  ok.legend();
+  fig.toSVG();
+}
+
+// 6. an empty scatter is a legend proxy: it keeps the size and colour it was given
+{
+  const [, ax] = subplots();
+  const sc = ax.scatter([], [], { s: 80, c: 'C2', label: 'proxy' });
+  assert.deepEqual([...sc.collection.sizesPt2], [80]);
+  assert.equal(sc.collection.faces.length, 1);
+}
+console.log('issue 14: annotate/text unit conversion and scatter legend contracts hold');
