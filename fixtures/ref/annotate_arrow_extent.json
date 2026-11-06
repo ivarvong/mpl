@@ -1,0 +1,618 @@
+{
+ "spec": [
+  [
+   "set_xlim",
+   [
+    0,
+    10
+   ],
+   {}
+  ],
+  [
+   "set_ylim",
+   [
+    0,
+    3.5
+   ],
+   {}
+  ],
+  [
+   "annotate",
+   [
+    "l/top",
+    [
+     0.09999999999999998,
+     0.09999999999999998
+    ]
+   ],
+   {
+    "xytext": [
+     0.6,
+     0.5
+    ],
+    "ha": "left",
+    "va": "top",
+    "fontsize": 7,
+    "arrowprops": {
+     "color": "C0",
+     "width": 0.5,
+     "headwidth": 5,
+     "headlength": 4,
+     "shrink": 0.0
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "l/bottom\nline 2",
+    [
+     3.2,
+     0.95
+    ]
+   ],
+   {
+    "xytext": [
+     2.5,
+     0.5
+    ],
+    "ha": "left",
+    "va": "bottom",
+    "fontsize": 8,
+    "arrowprops": {
+     "color": "C1",
+     "width": 1,
+     "headwidth": 6,
+     "headlength": 5,
+     "shrink": 0.05
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "l/center",
+    [
+     3.8999999999999995,
+     0.95
+    ]
+   ],
+   {
+    "xytext": [
+     4.3999999999999995,
+     0.5
+    ],
+    "ha": "left",
+    "va": "center",
+    "fontsize": 9,
+    "arrowprops": {
+     "color": "C2",
+     "width": 1.5,
+     "headwidth": 7,
+     "headlength": 6,
+     "shrink": 0.0
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "l/baseline",
+    [
+     6.999999999999999,
+     0.09999999999999998
+    ]
+   ],
+   {
+    "xytext": [
+     6.299999999999999,
+     0.5
+    ],
+    "ha": "left",
+    "va": "baseline",
+    "fontsize": 7,
+    "arrowprops": {
+     "color": "C3",
+     "width": 2.5,
+     "headwidth": 8,
+     "headlength": 7,
+     "shrink": 0.05
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "l/center_baseline",
+    [
+     7.699999999999999,
+     0.95
+    ]
+   ],
+   {
+    "xytext": [
+     8.2,
+     0.5
+    ],
+    "ha": "left",
+    "va": "center_baseline",
+    "fontsize": 8,
+    "arrowprops": {
+     "color": "C4",
+     "width": 0.5,
+     "headwidth": 5,
+     "headlength": 8,
+     "shrink": 0.0
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "c/top\nline 2",
+    [
+     1.2999999999999998,
+     1.95
+    ]
+   ],
+   {
+    "xytext": [
+     0.6,
+     1.5
+    ],
+    "ha": "center",
+    "va": "top",
+    "fontsize": 9,
+    "arrowprops": {
+     "color": "C5",
+     "width": 1,
+     "headwidth": 6,
+     "headlength": 4,
+     "shrink": 0.05
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "c/bottom",
+    [
+     2.0,
+     1.1
+    ]
+   ],
+   {
+    "xytext": [
+     2.5,
+     1.5
+    ],
+    "ha": "center",
+    "va": "bottom",
+    "fontsize": 7,
+    "arrowprops": {
+     "color": "C6",
+     "width": 1.5,
+     "headwidth": 7,
+     "headlength": 5,
+     "shrink": 0.0
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "c/center",
+    [
+     5.1,
+     1.95
+    ]
+   ],
+   {
+    "xytext": [
+     4.3999999999999995,
+     1.5
+    ],
+    "ha": "center",
+    "va": "center",
+    "fontsize": 8,
+    "arrowprops": {
+     "color": "C7",
+     "width": 2.5,
+     "headwidth": 8,
+     "headlength": 6,
+     "shrink": 0.05
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "c/baseline",
+    [
+     5.799999999999999,
+     1.95
+    ]
+   ],
+   {
+    "xytext": [
+     6.299999999999999,
+     1.5
+    ],
+    "ha": "center",
+    "va": "baseline",
+    "fontsize": 9,
+    "arrowprops": {
+     "color": "C8",
+     "width": 0.5,
+     "headwidth": 5,
+     "headlength": 7,
+     "shrink": 0.0
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "c/center_baseline\nline 2",
+    [
+     8.899999999999999,
+     1.1
+    ]
+   ],
+   {
+    "xytext": [
+     8.2,
+     1.5
+    ],
+    "ha": "center",
+    "va": "center_baseline",
+    "fontsize": 7,
+    "arrowprops": {
+     "color": "C9",
+     "width": 1,
+     "headwidth": 6,
+     "headlength": 8,
+     "shrink": 0.05
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "r/top",
+    [
+     0.09999999999999998,
+     2.95
+    ]
+   ],
+   {
+    "xytext": [
+     0.6,
+     2.5
+    ],
+    "ha": "right",
+    "va": "top",
+    "fontsize": 8,
+    "arrowprops": {
+     "color": "C0",
+     "width": 1.5,
+     "headwidth": 7,
+     "headlength": 4,
+     "shrink": 0.0
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "r/bottom",
+    [
+     3.2,
+     2.95
+    ]
+   ],
+   {
+    "xytext": [
+     2.5,
+     2.5
+    ],
+    "ha": "right",
+    "va": "bottom",
+    "fontsize": 9,
+    "arrowprops": {
+     "color": "C1",
+     "width": 2.5,
+     "headwidth": 8,
+     "headlength": 5,
+     "shrink": 0.05
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "r/center",
+    [
+     3.8999999999999995,
+     2.1
+    ]
+   ],
+   {
+    "xytext": [
+     4.3999999999999995,
+     2.5
+    ],
+    "ha": "right",
+    "va": "center",
+    "fontsize": 7,
+    "arrowprops": {
+     "color": "C2",
+     "width": 0.5,
+     "headwidth": 5,
+     "headlength": 6,
+     "shrink": 0.0
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "r/baseline\nline 2",
+    [
+     6.999999999999999,
+     2.95
+    ]
+   ],
+   {
+    "xytext": [
+     6.299999999999999,
+     2.5
+    ],
+    "ha": "right",
+    "va": "baseline",
+    "fontsize": 8,
+    "arrowprops": {
+     "color": "C3",
+     "width": 1,
+     "headwidth": 6,
+     "headlength": 7,
+     "shrink": 0.05
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "r/center_baseline",
+    [
+     7.699999999999999,
+     2.95
+    ]
+   ],
+   {
+    "xytext": [
+     8.2,
+     2.5
+    ],
+    "ha": "right",
+    "va": "center_baseline",
+    "fontsize": 9,
+    "arrowprops": {
+     "color": "C4",
+     "width": 1.5,
+     "headwidth": 7,
+     "headlength": 8,
+     "shrink": 0.0
+    }
+   }
+  ]
+ ],
+ "style": null,
+ "rc": {},
+ "xlim": [
+  0.0,
+  10.0
+ ],
+ "ylim": [
+  0.0,
+  3.5
+ ],
+ "xticks": [
+  0.0,
+  2.0,
+  4.0,
+  6.0,
+  8.0,
+  10.0
+ ],
+ "yticks": [
+  0.0,
+  0.5,
+  1.0,
+  1.5,
+  2.0,
+  2.5,
+  3.0,
+  3.5
+ ],
+ "xticklabels": [
+  "0",
+  "2",
+  "4",
+  "6",
+  "8",
+  "10"
+ ],
+ "yticklabels": [
+  "0.0",
+  "0.5",
+  "1.0",
+  "1.5",
+  "2.0",
+  "2.5",
+  "3.0",
+  "3.5"
+ ],
+ "xoffset": "",
+ "yoffset": "",
+ "legend": null,
+ "x": {
+  "lim": [
+   0.0,
+   10.0
+  ],
+  "ticks": [
+   0.0,
+   2.0,
+   4.0,
+   6.0,
+   8.0,
+   10.0
+  ],
+  "labels": [
+   "0",
+   "2",
+   "4",
+   "6",
+   "8",
+   "10"
+  ],
+  "minor": [],
+  "minorlabels": [],
+  "offset": ""
+ },
+ "y": {
+  "lim": [
+   0.0,
+   3.5
+  ],
+  "ticks": [
+   0.0,
+   0.5,
+   1.0,
+   1.5,
+   2.0,
+   2.5,
+   3.0,
+   3.5
+  ],
+  "labels": [
+   "0.0",
+   "0.5",
+   "1.0",
+   "1.5",
+   "2.0",
+   "2.5",
+   "3.0",
+   "3.5"
+  ],
+  "minor": [],
+  "minorlabels": [],
+  "offset": ""
+ },
+ "axes": [
+  {
+   "xlim": [
+    0.0,
+    10.0
+   ],
+   "ylim": [
+    0.0,
+    3.5
+   ],
+   "xticks": [
+    0.0,
+    2.0,
+    4.0,
+    6.0,
+    8.0,
+    10.0
+   ],
+   "yticks": [
+    0.0,
+    0.5,
+    1.0,
+    1.5,
+    2.0,
+    2.5,
+    3.0,
+    3.5
+   ],
+   "xticklabels": [
+    "0",
+    "2",
+    "4",
+    "6",
+    "8",
+    "10"
+   ],
+   "yticklabels": [
+    "0.0",
+    "0.5",
+    "1.0",
+    "1.5",
+    "2.0",
+    "2.5",
+    "3.0",
+    "3.5"
+   ],
+   "xoffset": "",
+   "yoffset": "",
+   "legend": null,
+   "x": {
+    "lim": [
+     0.0,
+     10.0
+    ],
+    "ticks": [
+     0.0,
+     2.0,
+     4.0,
+     6.0,
+     8.0,
+     10.0
+    ],
+    "labels": [
+     "0",
+     "2",
+     "4",
+     "6",
+     "8",
+     "10"
+    ],
+    "minor": [],
+    "minorlabels": [],
+    "offset": ""
+   },
+   "y": {
+    "lim": [
+     0.0,
+     3.5
+    ],
+    "ticks": [
+     0.0,
+     0.5,
+     1.0,
+     1.5,
+     2.0,
+     2.5,
+     3.0,
+     3.5
+    ],
+    "labels": [
+     "0.0",
+     "0.5",
+     "1.0",
+     "1.5",
+     "2.0",
+     "2.5",
+     "3.0",
+     "3.5"
+    ],
+    "minor": [],
+    "minorlabels": [],
+    "offset": ""
+   }
+  }
+ ]
+}

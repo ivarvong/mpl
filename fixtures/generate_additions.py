@@ -24,9 +24,15 @@ def dates(start, n, step):
     base = np.datetime64(start)
     return {"$dates": [str(base + i * np.timedelta64(*step)) for i in range(n)]}
 
+def date(s): return {"$date": s}
 def decode(a):
+    """JSON spec -> matplotlib args: {"$dates": [...]} is a datetime64 array, {"$date": s} one datetime64, at any depth."""
     if isinstance(a, dict) and "$dates" in a:
         return np.array(a["$dates"], dtype="datetime64[us]")
+    if isinstance(a, dict) and "$date" in a:
+        return np.datetime64(a["$date"], "us")
+    if isinstance(a, list):
+        return [decode(v) for v in a]
     return a
 
 def axis_record(axis):
@@ -265,6 +271,31 @@ case("example_histogram_errorbar", ("$subplots", [1, 2], {"figsize": [10, 4]}),
      ("set_ylabel", ["latency (ms)"]), ("set_title", ["Daily median (illustrative)"]), ("legend", [], {"loc": "upper right"}),
      ("fig.tight_layout", []))
 
+# Issue #14: annotate and text take Dates and category names in 'data' coordinates (convert_xunits at draw time),
+# and neither switches an axis's units: a Date in a text on a numeric axis leaves the ticks numeric
+DAYS14 = dates("2026-01-01", 10, (1, "D")); VAL14 = [3, 4, 3.5, 5, 6, 5.5, 7, 6.5, 8, 7.5]
+ARW14 = {"color": "C3", "width": 1, "headwidth": 6, "headlength": 6}
+case("annotate_dates", ("plot", [DAYS14, VAL14]),
+     ("annotate", ["peak", [date("2026-01-09"), 8]], {"xytext": [date("2026-01-03T12:00"), 7.5], "arrowprops": ARW14}),
+     ("annotate", ["dip", [date("2026-01-02"), 4]], {"xytext": [20, -30], "textcoords": "offset points", "arrowprops": ARW14}),
+     ("annotate", ["axes text, date point", [date("2026-01-06"), 5.5]], {"xytext": [0.55, 0.12], "textcoords": "axes fraction", "arrowprops": ARW14}),
+     ("text", [date("2026-01-07"), 4, "text at a Date"]), ("axvline", [date("2026-01-05")], {"color": "C2", "ls": ":"}))
+case("text_date_numeric_axis", ("plot", [[0, 1, 2], [0, 1, 0]]), ("text", [date("1970-01-02"), 0.5, "x = 1 day"]),
+     ("annotate", ["also 1 day", [date("1970-01-02T12:00"), 0.8]], {"xytext": [0.2, 0.2], "arrowprops": ARW14}))
+case("annotate_category", ("bar", [["apples", "pears", "plums"], [3, 5, 2]]),
+     ("annotate", ["most", ["pears", 5]], {"xytext": ["plums", 4.5], "arrowprops": ARW14}),
+     ("text", ["apples", 3.2, "first"], {"ha": "center"}))
+
+# The arrow starts on the text's window extent, which must match matplotlib to the last bit (a one-ulp corner moved a
+# thin shaft's antialiasing): every ha x va, a multi-line block, thin and thick shafts, arrows in each direction
+EXT = []
+for i, (ha, va) in enumerate([(h, v) for h in ["left", "center", "right"] for v in ["top", "bottom", "center", "baseline", "center_baseline"]]):
+    gx, gy = 0.6 + (i % 5) * 1.9, 0.5 + (i // 5) * 1.0
+    EXT.append(("annotate", [f"{ha[0]}/{va}" + ("\nline 2" if i % 4 == 1 else ""), [gx + (0.7 if i % 2 else -0.5), gy + (0.45 if i % 3 else -0.4)]],
+                {"xytext": [gx, gy], "ha": ha, "va": va, "fontsize": 7 + i % 3,
+                 "arrowprops": {"color": f"C{i % 10}", "width": [0.5, 1, 1.5, 2.5][i % 4], "headwidth": 5 + i % 4, "headlength": 4 + i % 5, "shrink": 0.05 * (i % 2)}}))
+case("annotate_arrow_extent", ("set_xlim", [0, 10]), ("set_ylim", [0, 3.5]), *EXT)
+
 def run_case(name, calls):
     style = None
     rc_layer = {}
@@ -312,7 +343,7 @@ def run_case(name, calls):
                 labels = ax.get_xticklabels() if which == "x" else ax.get_yticklabels()
                 getattr(labels[i], action)(val)
             else:
-                kwargs = {k: (ax.transAxes if isinstance(v, dict) and v.get("$transform") == "axes" else v) for k, v in kwargs.items()}
+                kwargs = {k: (ax.transAxes if isinstance(v, dict) and v.get("$transform") == "axes" else decode(v)) for k, v in kwargs.items()}
                 getattr(ax, fn)(*args, **kwargs)
         fig.canvas.draw()
         recs = [record(a, fig) for a in axes]
