@@ -464,17 +464,23 @@ export class Axes {
   }
 
   /** axhline(y = 0, { xmin = 0, xmax = 1, …Line2D }) — xmin/xmax are axes fractions. Autoscales y only when y is outside the current bounds. */
-  axhline(y: unknown = 0, kwargs: Kwargs = {}): LineArtist { return isPlainObject(y) ? this.refLine('axhline', 0, y) : this.refLine('axhline', y, kwargs); }
+  axhline(y: unknown = 0, kwargs: Kwargs = {}): LineArtist {
+    const kw = this.refLineKw('axhline', isPlainObject(y) ? y : kwargs);
+    return this.refLine(kw, 'axhline', isPlainObject(y) ? 0 : y, kw.read(['xmin'], num('xmin'), () => 0), kw.read(['xmax'], num('xmax'), () => 1));
+  }
   /** axvline(x = 0, { ymin = 0, ymax = 1, …Line2D }) — ymin/ymax are axes fractions. Autoscales x only when x is outside the current bounds. */
-  axvline(x: unknown = 0, kwargs: Kwargs = {}): LineArtist { return isPlainObject(x) ? this.refLine('axvline', 0, x) : this.refLine('axvline', x, kwargs); }
+  axvline(x: unknown = 0, kwargs: Kwargs = {}): LineArtist {
+    const kw = this.refLineKw('axvline', isPlainObject(x) ? x : kwargs);
+    return this.refLine(kw, 'axvline', isPlainObject(x) ? 0 : x, kw.read(['ymin'], num('ymin'), () => 0), kw.read(['ymax'], num('ymax'), () => 1));
+  }
 
-  private refLine(fn: 'axhline' | 'axvline', vRaw: unknown, kwargs: Kwargs): LineArtist {
-    const kw = new KwReader(kwargs, fn);
+  private refLineKw(fn: 'axhline' | 'axvline', kwargs: Kwargs): KwReader {
     if (prop(kwargs, 'transform').kind === 'some') throw new RangeError(`'transform' is not allowed as a keyword argument; ${fn} generates its own transform.`);
+    return new KwReader(kwargs, fn);
+  }
+  /** The span along the line (f0, f1, axes fractions) is read by the caller, so docs/api.md lists each method's own keys. */
+  private refLine(kw: KwReader, fn: 'axhline' | 'axvline', vRaw: unknown, f0: number, f1: number): LineArtist {
     const horiz = fn === 'axhline';
-    const [n0, n1] = horiz ? ['xmin', 'xmax'] : ['ymin', 'ymax'];
-    const f0 = kw.read([n0], num(n0), () => 0);
-    const f1 = kw.read([n1], num(n1), () => 1);
     this.settle();
     const axis = horiz ? this.yaxis : this.xaxis;
     const v = axis.convert(unwrap(parseSeries([vRaw], horiz ? 'y' : 'x')))[0];
@@ -845,19 +851,24 @@ export class Axes {
   }
 
   /** bar(x, height, { width, bottom, align, color|facecolor|fc, edgecolor|ec, linewidth|lw, alpha, label, clip_on }) — vertical bars. */
-  bar(x: unknown, height: unknown, kwargs: Kwargs = {}): BarArtist { return this.bars(x, height, kwargs, 'vertical'); }
+  bar(x: unknown, height: unknown, kwargs: Kwargs = {}): BarArtist {
+    const kw = new KwReader(kwargs, 'bar');
+    return this.bars(kw, x, height, 'vertical', kw.get(['width']), kw.get(['bottom']));
+  }
   /** barh(y, width, { height, left, align, color|facecolor|fc, edgecolor|ec, linewidth|lw, alpha, label, clip_on }) — horizontal bars; `left` offsets each bar (Gantt and waterfall charts). */
-  barh(y: unknown, width: unknown, kwargs: Kwargs = {}): BarArtist { return this.bars(y, width, kwargs, 'horizontal'); }
+  barh(y: unknown, width: unknown, kwargs: Kwargs = {}): BarArtist {
+    const kw = new KwReader(kwargs, 'barh');
+    return this.bars(kw, y, width, 'horizontal', kw.get(['height']), kw.get(['left']));
+  }
 
-  private bars(posRaw: unknown, sizeRaw: unknown, kwargs: Kwargs, o: Orientation): BarArtist {
-    const fn = o === 'vertical' ? 'bar' : 'barh';
-    const kw = new KwReader(kwargs, fn);
+  /** thickRaw/baseRaw are bar's width/bottom or barh's height/left, read by the caller so docs/api.md lists each method's own keys. */
+  private bars(kw: KwReader, posRaw: unknown, sizeRaw: unknown, o: Orientation, thickRaw: Option<unknown>, baseRaw: Option<unknown>): BarArtist {
     const posAxis = o === 'vertical' ? this.xaxis : this.yaxis;
     const pos = posAxis.convert(unwrap(parseSeries(posRaw, 'x')));
     const n = pos.length;
     const size = unwrap(broadcast(sizeRaw, n, o === 'vertical' ? 'height' : 'width'));
-    const thick = kw.read([o === 'vertical' ? 'width' : 'height'], (v) => broadcast(v, n, 'thickness'), () => new Float64Array(n).fill(0.8));
-    const base = kw.read([o === 'vertical' ? 'bottom' : 'left'], (v) => broadcast(v, n, 'base'), () => new Float64Array(n));
+    const thick = thickRaw.kind === 'some' ? unwrap(broadcast(thickRaw.value, n, o === 'vertical' ? 'width' : 'height')) : new Float64Array(n).fill(0.8);
+    const base = baseRaw.kind === 'some' ? unwrap(broadcast(baseRaw.value, n, o === 'vertical' ? 'bottom' : 'left')) : new Float64Array(n);
     const align = kw.read(['align'], (v): Result<'center' | 'edge'> => (v === 'center' || v === 'edge' ? ok(v) : err(`align must be 'center' or 'edge'`)), () => 'center');
     // color= is one colour or a list cycled over the bars (bar() chains itertools.cycle over it)
     const paints = (v: unknown): Result<readonly Paint[]> => {

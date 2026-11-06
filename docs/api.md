@@ -169,13 +169,13 @@ Keyword arguments (unknown keys throw): `color | c`, `alpha`, `linestyle | ls`, 
 
 axhline(y = 0, { xmin = 0, xmax = 1, …Line2D }) — xmin/xmax are axes fractions. Autoscales y only when y is outside the current bounds.
 
-Keyword arguments (unknown keys throw): `n0`, `n1`, `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `drawstyle | ds`, `zorder`, `label`, `clip_on | clipon | clip`
+Keyword arguments (unknown keys throw): `xmin`, `xmax`, `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `drawstyle | ds`, `zorder`, `label`, `clip_on | clipon | clip`
 
 ### `Axes.axvline(x?, kwargs?)`
 
 axvline(x = 0, { ymin = 0, ymax = 1, …Line2D }) — ymin/ymax are axes fractions. Autoscales x only when x is outside the current bounds.
 
-Keyword arguments (unknown keys throw): `n0`, `n1`, `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `drawstyle | ds`, `zorder`, `label`, `clip_on | clipon | clip`
+Keyword arguments (unknown keys throw): `ymin`, `ymax`, `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `drawstyle | ds`, `zorder`, `label`, `clip_on | clipon | clip`
 
 ### `Axes.axline(xy1, xy2OrKw?, kwargs?)`
 
@@ -211,13 +211,13 @@ Keyword arguments (unknown keys throw): `histtype`, `align`, `orientation`, `sta
 
 bar(x, height, { width, bottom, align, color|facecolor|fc, edgecolor|ec, linewidth|lw, alpha, label, clip_on }) — vertical bars.
 
-Keyword arguments (unknown keys throw): `o===vertical?width:height`, `o===vertical?bottom:left`, `align`, `color | facecolor | fc`, `edgecolor | ec`, `linewidth | lw`, `alpha`, `label`, `clip_on | clipon | clip`
+Keyword arguments (unknown keys throw): `width`, `bottom`, `align`, `color | facecolor | fc`, `edgecolor | ec`, `linewidth | lw`, `alpha`, `label`, `clip_on | clipon | clip`
 
 ### `Axes.barh(y, width, kwargs?)`
 
 barh(y, width, { height, left, align, color|facecolor|fc, edgecolor|ec, linewidth|lw, alpha, label, clip_on }) — horizontal bars; `left` offsets each bar (Gantt and waterfall charts).
 
-Keyword arguments (unknown keys throw): `o===vertical?width:height`, `o===vertical?bottom:left`, `align`, `color | facecolor | fc`, `edgecolor | ec`, `linewidth | lw`, `alpha`, `label`, `clip_on | clipon | clip`
+Keyword arguments (unknown keys throw): `height`, `left`, `align`, `color | facecolor | fc`, `edgecolor | ec`, `linewidth | lw`, `alpha`, `label`, `clip_on | clipon | clip`
 
 ### `Axes.fill_between(xRaw, y1Raw, ...rest)`
 
