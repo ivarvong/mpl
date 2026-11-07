@@ -1,6 +1,13 @@
 // Replay a fixture spec against any mpl build: the Node source, dist/browser in Chromium, or a Worker
 // bundle. No Node imports, so browsers and workerd load it as is; tools/replay.ts binds it to src/.
 import type { Axes, Figure, subplots as SubplotsFn } from '../src/index.ts';
+import type { ConciseDateFormatterInit } from '../src/core/date-formatters.ts';
+
+/** Date-axis constructors from the mpl build under test (src, dist/browser, or page bundle). */
+export type DateCtors = {
+  readonly AutoDateLocator: new () => { readonly kind: 'auto' };
+  readonly ConciseDateFormatter: new (loc: { readonly kind: 'auto' }, opts?: ConciseDateFormatterInit) => unknown;
+};
 
 /** A fixture file as matplotlib's generator wrote it (JSON, so deliberately loose). */
 // oxlint-disable-next-line typescript/no-explicit-any -- oracle JSON, read key by key
@@ -26,7 +33,7 @@ export const decode = (a: unknown): unknown => {
   return a;
 };
 /** Replay a fixture's [method, args, kwargs] calls: ax[method](...args, kwargs). */
-export function buildWith(fx: Fixture, subplots: Subplots): Figure {
+export function buildWith(fx: Fixture, subplots: Subplots, dates?: DateCtors): Figure {
   // a leading ['$subplots', [nrows, ncols], kwargs] builds a grid; its Axes are listed row-major, as fig.axes
   const grid = fx.spec.find((c: Fixture) => c[0] === '$subplots');
   const [fig, made] = grid
@@ -61,6 +68,16 @@ export function buildWith(fx: Fixture, subplots: Subplots): Figure {
     // at Figure construction from fx.rc; fixtures that additionally emit a "$rc" step only
     // need it to be accepted during replay. Ignore it here (theme already reflects fx.rc).
     if (fn === '$rc') {
+      continue;
+    }
+    if (fn === '$concise_x') {
+      if (dates === undefined) throw new Error('$concise_x: DateCtors not provided to buildWith');
+      const loc = new dates.AutoDateLocator();
+      const init = kwargs && typeof kwargs === 'object' && 'show_offset' in (kwargs as object)
+        ? { show_offset: Boolean((kwargs as { show_offset?: unknown }).show_offset) }
+        : {};
+      ax.xaxis.set_major_locator(loc);
+      ax.xaxis.set_major_formatter(new dates.ConciseDateFormatter(loc, init));
       continue;
     }
     if (fn === 'twinx') { ax = ax.twinx(); axes.push(ax); continue; }

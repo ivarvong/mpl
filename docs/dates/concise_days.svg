@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
+<rect width="640" height="480" fill="#ffffff"/>
+<rect x="80" y="58" width="496" height="369" fill="#ffffff" stroke="none"/>
+<text x="89.4439" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">Mar</text>
+<text x="174.6341" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">08</text>
+<text x="255.5665" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">15</text>
+<text x="336.4989" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">22</text>
+<text x="448.9526" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">Apr</text>
+<text x="533.049" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">08</text>
+<path d="M103.5 427.5 L103.5 432.5 M183.5 427.5 L183.5 432.5 M264.5 427.5 L264.5 432.5 M345.5 427.5 L345.5 432.5 M461.5 427.5 L461.5 432.5 M542.5 427.5 L542.5 432.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<text x="61.434" y="415.6762" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">0</text>
+<text x="61.434" y="366.9805" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">1</text>
+<text x="61.434" y="318.2848" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">2</text>
+<text x="61.434" y="269.5892" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">3</text>
+<text x="61.434" y="220.8935" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">4</text>
+<text x="61.434" y="172.1979" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">5</text>
+<text x="61.434" y="123.5022" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">6</text>
+<text x="61.434" y="74.8066" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">7</text>
+<path d="M80.5 410.5 L75.5 410.5 M80.5 362.5 L75.5 362.5 M80.5 313.5 L75.5 313.5 M80.5 264.5 L75.5 264.5 M80.5 216.5 L75.5 216.5 M80.5 167.5 L75.5 167.5 M80.5 118.5 L75.5 118.5 M80.5 70.5 L75.5 70.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c0"><rect x="80" y="57.6" width="496" height="369.6"/></clipPath>
+<g clip-path="url(#c0)" data-artist="artist/0/line">
+<path d="M102.5455 410.4L114.1072 390.9217L125.669 351.9652L137.2308 308.1391L148.7925 264.313L160.3543 264.313L171.9161 278.9217L183.4779 249.7043L195.0396 293.5304L206.6014 269.1826L218.1632 244.8348L229.7249 196.1391L241.2867 191.2696L252.8485 171.7913L264.4103 191.2696L275.972 176.6609L287.5338 137.7043L299.0956 127.9652L310.6573 113.3565L322.2191 132.8348L333.7809 113.3565L345.3427 74.4L356.9044 79.2696L368.4662 89.0087L380.028 127.9652L391.5897 166.9217L403.1515 127.9652L414.7133 157.1826L426.2751 157.1826L437.8368 147.4435L449.3986 181.5304L460.9604 142.5739L472.5221 152.313L484.0839 201.0087L495.6457 186.4L507.2075 235.0957L518.7692 269.1826L530.331 225.3565L541.8928 220.487L553.4545 186.4" fill="none" stroke="#1f77b4" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<path d="M80.5 427.5 L80.5 58.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M576.5 427.5 L576.5 58.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M80.5 427.5 L576.5 427.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M80.5 58.5 L576.5 58.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="511.9063" y="465.5301" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">2024-Apr</text>
+<text x="205.4922" y="49.2667" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">ConciseDateFormatter (days)</text>
+</svg>

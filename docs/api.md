@@ -120,6 +120,12 @@ subplots_adjust({ left, bottom, right, top, wspace, hspace }) — SubplotParams.
 
 Keyword arguments (unknown keys throw): `left`, `bottom`, `right`, `top`, `wspace`, `hspace`
 
+### `Figure.autofmt_xdate(kwargs?)`
+
+Figure.autofmt_xdate(bottom=0.2, rotation=30, ha='right', which='major') — rotate and align x tick labels; on a shared-x grid, only the bottom row keeps visible labels (others hide labels and clear xlabel); when every Axes is a subplot, also subplots_adjust(bottom). Minor labels (which='minor'|'both') are not yet supported and throw.
+
+Keyword arguments (unknown keys throw): `bottom`, `rotation`, `ha`, `which`
+
 ### `Figure.tight_layout(kwargs?)`
 
 tight_layout({ pad = 1.08, h_pad, w_pad, rect }) — _tight_layout.get_tight_layout_figure: lay out now, measure each subplot cell's tight bbox (an Axes and its twins), then subplots_adjust margins and wspace/hspace so the decorations fit with `pad` (h_pad/w_pad between cells) font sizes to spare. As in matplotlib it runs once, at call time: call it after the plot is complete.
@@ -364,25 +370,25 @@ set_yticks(locs) — fixed major tick locations.
 
 set_xticklabels(labels, { color|c, fontsize|size, fontweight|weight }): the kwargs style every label set here.
 
-Keyword arguments (unknown keys throw): `color | c`, `fontsize | size`, `fontweight | weight`
+Keyword arguments (unknown keys throw): `color | c`, `fontsize | size`, `fontweight | weight`, `rotation`, `ha | horizontalalignment`, `visible`
 
 ### `Axes.set_yticklabels(l, kwargs?)`
 
 set_yticklabels(labels, { color|c, fontsize|size, fontweight|weight }): the kwargs style every label set here.
 
-Keyword arguments (unknown keys throw): `color | c`, `fontsize | size`, `fontweight | weight`
+Keyword arguments (unknown keys throw): `color | c`, `fontsize | size`, `fontweight | weight`, `rotation`, `ha | horizontalalignment`, `visible`
 
 ### `Axes.get_xticklabels()`
 
 The major tick labels as Text handles: get_text(), set_fontweight(), set_color(), set_fontsize().
 
-Keyword arguments (unknown keys throw): `color | c`, `fontsize | size`, `fontweight | weight`
+Keyword arguments (unknown keys throw): `color | c`, `fontsize | size`, `fontweight | weight`, `rotation`, `ha | horizontalalignment`, `visible`
 
 ### `Axes.get_yticklabels()`
 
 The major y tick labels as Text handles (see get_xticklabels).
 
-Keyword arguments (unknown keys throw): `color | c`, `fontsize | size`, `fontweight | weight`
+Keyword arguments (unknown keys throw): `color | c`, `fontsize | size`, `fontweight | weight`, `rotation`, `ha | horizontalalignment`, `visible`
 
 ### `Axes.grid(visible?, kwargs?)`
 

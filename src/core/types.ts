@@ -55,7 +55,8 @@ export type Seg =
   | readonly ['Q', number, number, number, number]
   | readonly ['C', number, number, number, number, number, number]
   | readonly ['Z'];
-export type Rotation = 'horizontal' | 'vertical';
+/** Text glyph rotation: axis-aligned, or arbitrary degrees CCW (matplotlib Text.rotation). */
+export type Rotation = 'horizontal' | 'vertical' | { readonly kind: 'angled'; readonly deg: number };
 /** A positioned glyph: a font glyph key (character or ligature) and its offset along the baseline in px. */
 export type Glyph = { readonly gid: number; readonly dx: number };
 export type Clip = { readonly kind: 'none' } | { readonly kind: 'rect'; readonly x: number; readonly y: number; readonly w: number; readonly h: number };
@@ -88,13 +89,15 @@ export type TickLabel =
 // ---------------------------------------------------------------- text placement
 export type HAlign = 'left' | 'center' | 'right';
 export type VAlign = 'top' | 'bottom' | 'center' | 'baseline' | 'center_baseline';
-/** Rotated text is only ever the y label (rotation=90, ha=center, va=bottom). */
+/** Text placement: horizontal, 90° ylabel, or arbitrary-angle (rotation_mode='default'). */
 export type Placement =
   | { readonly kind: 'horizontal'; readonly ha: HAlign; readonly va: VAlign }
   | { readonly kind: 'ylabel' }          // left y label: rotation 90, va bottom
   | { readonly kind: 'ylabelRight' }    // right y label (twinx): rotation 90, va top
   /** rotation 90, rotation_mode='default': ha/va align the rotated box on (x, y) */
-  | { readonly kind: 'vertical'; readonly ha: HAlign; readonly va: VAlign };
+  | { readonly kind: 'vertical'; readonly ha: HAlign; readonly va: VAlign }
+  /** Arbitrary degrees CCW; rotation_mode='default' (align the rotated AABB). */
+  | { readonly kind: 'angled'; readonly deg: number; readonly ha: HAlign; readonly va: VAlign };
 
 // ---------------------------------------------------------------- artists
 export type MarkerName = 'o' | 's' | '^' | 'v' | '<' | '>' | 'D' | 'd' | 'x' | '+' | '*' | '.' | 'p' | 'h' | 'X' | 'P' | '|' | '_'
@@ -265,15 +268,35 @@ export type Limits = { readonly kind: 'auto' } | { readonly kind: 'fixed'; reado
 export type TickSpec = { readonly kind: 'auto' } | { readonly kind: 'fixed'; readonly locs: readonly number[] };
 export type LabelSpec = { readonly kind: 'auto' } | { readonly kind: 'fixed'; readonly labels: readonly string[] };
 /** 'auto' ticks/labels mean "what matplotlib's converter picks for this kind of axis". */
+/** Date-axis major formatter: AutoDateFormatter (default) or ConciseDateFormatter / DateFormatter. */
+export type DateFormatterSpec =
+  | { readonly kind: 'auto' }
+  | { readonly kind: 'strftime'; readonly fmt: string }
+  | {
+      readonly kind: 'concise';
+      readonly formats: Option<readonly string[]>;
+      readonly zeroFormats: Option<readonly string[]>;
+      readonly offsetFormats: Option<readonly string[]>;
+      readonly showOffset: boolean;
+    };
+
 export type AxisSpec =
   | { readonly kind: 'numeric'; readonly scale: Scale; readonly limits: Limits; readonly ticks: TickSpec; readonly labels: LabelSpec }
   | { readonly kind: 'category'; readonly names: readonly string[]; readonly limits: Limits; readonly ticks: TickSpec; readonly labels: LabelSpec }
   /** values are matplotlib date numbers: days since 1970-01-01T00:00:00 UTC */
-  | { readonly kind: 'datetime'; readonly limits: Limits; readonly ticks: TickSpec; readonly labels: LabelSpec };
+  | { readonly kind: 'datetime'; readonly limits: Limits; readonly ticks: TickSpec; readonly labels: LabelSpec; readonly formatter: DateFormatterSpec };
 
 export type GridWhich = 'x' | 'y' | 'both';
 /** Text properties set on one major tick label (set_xticklabels kwargs, get_xticklabels()[i].set_*). */
-export type TickLabelStyle = { readonly color: Option<Rgb>; readonly sizePt: Option<number>; readonly weight: Option<number> };
+/** Per-tick Text styling. rotation is degrees CCW (matplotlib); unsupported keys throw at set time. */
+export type TickLabelStyle = {
+  readonly color: Option<Rgb>;
+  readonly sizePt: Option<number>;
+  readonly weight: Option<number>;
+  readonly rotation: Option<number>;
+  readonly ha: Option<HAlign>;
+  readonly visible: Option<boolean>;
+};
 /** [major tick index, style] pairs (a list, so the spec stays JSON for the layout cache); an index
  *  with no entry uses the tick theme. */
 export type TickLabelStyles = readonly (readonly [number, TickLabelStyle])[];

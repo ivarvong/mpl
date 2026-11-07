@@ -1,6 +1,6 @@
 // Renders the runtime cases with the published build (dist/browser) inside workerd: GET /render returns
 // [{ name, svg, png64, ms }]. cases.gen.json is written by ../../workers.test.ts from fixtures/ref.
-import { registerFonts, subplots } from '../../../dist/browser/index.js';
+import { AutoDateLocator, ConciseDateFormatter, registerFonts, subplots } from '../../../dist/browser/index.js';
 import { allFonts } from '../../../dist/browser/fonts/all.js';
 import { buildWith, type Fixture, type Subplots } from '../../../tools/replay-core.ts';
 import cases from './cases.gen.json' with { type: 'json' };
@@ -19,7 +19,7 @@ export default {
     const out = Object.entries(cases).map(([name, spec]) => {
       const t0 = performance.now();
       // dist's declarations describe the same classes as src's, but private fields make them nominally distinct
-      const fig = buildWith(spec as Fixture, subplots as unknown as Subplots);
+      const fig = buildWith(spec as Fixture, subplots as unknown as Subplots, { AutoDateLocator, ConciseDateFormatter });
       const svg = fig.toSVG(), png = fig.toPNGSync(), pal = fig.toPNGSync({ colors: 64, level: 9 });   // test/runtime/common.ts PALETTE
       return { name, svg, png64: b64(png), pal64: b64(pal), ms: performance.now() - t0 };
     });

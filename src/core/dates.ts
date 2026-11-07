@@ -2,7 +2,7 @@
 // num2date / date2num, dateutil.relativedelta, AutoDateLocator (interval_multiples=True)
 // and AutoDateFormatter with the default rc formats. UTC only.
 import { pyDivmod } from './ticker.ts';
-import { assertNever } from './types.ts';
+import { assertNever, none, some, type Option } from './types.ts';
 
 const US_PER_DAY = 86_400_000_000;
 const DAYS_PER_YEAR = 365, DAYS_PER_MONTH = 30;
@@ -247,14 +247,21 @@ const SCALED: ReadonlyArray<readonly [number, string]> = [
 ];
 const pad = (v: number, n: number): string => String(v).padStart(n, '0');
 
-/** datetime.strftime for the directives the default formats use. */
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+/** datetime.strftime for the directives AutoDateFormatter / ConciseDateFormatter / DateFormatter use (C locale). */
 export function strftime(t: DT, fmt: string): string {
   const c = civil(t);
-  return fmt.replace(/%([YmdHMSf%])/g, (_, k: string) => {
+  return fmt.replace(/%([YmdbHMSf%])/g, (_, k: string) => {
     switch (k) {
       case 'Y': return String(c.y);
       case 'm': return pad(c.m, 2);
       case 'd': return pad(c.d, 2);
+      case 'b': {
+        const i = Math.min(11, Math.max(0, c.m - 1));
+        for (const [j, name] of MONTH_ABBR.entries()) if (j === i) return name;
+        throw new Error('strftime %b: month out of range');
+      }
       case 'H': return pad(c.hh, 2);
       case 'M': return pad(c.mm, 2);
       case 'S': return pad(c.ss, 2);
@@ -278,4 +285,131 @@ export function dateNonsingular(v0: number, v1: number): readonly [number, numbe
   if (!Number.isFinite(v0) || !Number.isFinite(v1)) return [0, 1];
   const lo = Math.min(v0, v1), hi = Math.max(v0, v1);
   return lo === hi ? [lo - DAYS_PER_YEAR * 2, hi + DAYS_PER_YEAR * 2] : [lo, hi];
+}
+
+// ---------------------------------------------------------------- DateFormatter / ConciseDateFormatter
+
+/** Fixed strftime DateFormatter (matplotlib.dates.DateFormatter). UTC / C locale only. */
+export function dateFormat(locs: readonly number[], fmt: string): readonly string[] {
+  return locs.map((x) => strftime(num2date(x), fmt));
+}
+
+/** ConciseDateFormatter option bag (matplotlib.dates.ConciseDateFormatter). */
+export type ConciseDateOptions = {
+  readonly formats: Option<readonly string[]>;
+  readonly zeroFormats: Option<readonly string[]>;
+  readonly offsetFormats: Option<readonly string[]>;
+  readonly showOffset: boolean;
+  /** When the axis is inverted, the offset comes from the first tick (matplotlib). */
+  readonly inverted: boolean;
+};
+
+const DEFAULT_FORMATS: readonly string[] = ['%Y', '%b', '%d', '%H:%M', '%H:%M', '%S.%f'];
+const DEFAULT_ZERO: readonly string[] = ['', '%Y', '%b', '%b-%d', '%H:%M', '%H:%M'];
+const DEFAULT_OFFSET: readonly string[] = ['', '%Y', '%Y-%b', '%Y-%b-%d', '%Y-%b-%d', '%Y-%b-%d %H:%M'];
+
+const six = (name: string, v: Option<readonly string[]>, fallback: readonly string[]): readonly string[] => {
+  if (v.kind === 'none') return fallback;
+  if (v.value.length !== 6) throw new RangeError(`${name} argument must be a list of 6 format strings (or None)`);
+  return v.value;
+};
+
+function nthNum(row: readonly number[], i: number, what: string): number {
+  for (const [j, v] of row.entries()) if (j === i) return v;
+  throw new Error(`conciseDateFormat: missing ${what} ${i}`);
+}
+function nthStr(arr: readonly string[], i: number, what: string): string {
+  for (const [j, v] of arr.entries()) if (j === i) return v;
+  throw new Error(`conciseDateFormat: missing ${what} ${i}`);
+}
+function nthDT(arr: readonly DT[], i: number): DT {
+  for (const [j, v] of arr.entries()) if (j === i) return v;
+  throw new Error(`conciseDateFormat: missing tick ${i}`);
+}
+
+/**
+ * ConciseDateFormatter.format_ticks + get_offset (matplotlib 3.11.2). Returns tick labels and the
+ * offset string shown at the axis end. Level selection and zero-formats match the Python exactly.
+ */
+export function conciseDateFormat(
+  locs: readonly number[],
+  opts: ConciseDateOptions,
+): { readonly labels: readonly string[]; readonly offset: string } {
+  if (locs.length === 0) return { labels: [], offset: '' };
+  const fmts = six('formats', opts.formats, DEFAULT_FORMATS);
+  let zerofmts: readonly string[];
+  if (opts.zeroFormats.kind === 'some') zerofmts = six('zero_formats', opts.zeroFormats, DEFAULT_ZERO);
+  else if (opts.formats.kind === 'some') zerofmts = ['', ...fmts.slice(0, 5)];
+  else zerofmts = DEFAULT_ZERO;
+  const offsetfmts = six('offset_formats', opts.offsetFormats, DEFAULT_OFFSET);
+  let showOffset = opts.showOffset;
+
+  const tickdatetime: readonly DT[] = locs.map((x) => num2date(x));
+  // timetuple()[:6] → (y, m, d, hh, mm, ss); level index 0..5
+  const tickdate: readonly (readonly number[])[] = tickdatetime.map((t) => {
+    const c = civil(t);
+    return [c.y, c.m, c.d, c.hh, c.mm, c.ss];
+  });
+
+  let level = 5;
+  for (let lv = 5; lv >= 0; lv--) {
+    const seen = new Set<number>();
+    for (const row of tickdate) seen.add(nthNum(row, lv, 'tick field'));
+    if (seen.size > 1) {
+      if (lv < 2 && [...seen].some((u) => u === 1)) showOffset = false;
+      level = lv;
+      break;
+    } else if (lv === 0) {
+      level = 5;
+    }
+  }
+
+  const zerovals: readonly number[] = [0, 1, 1, 0, 0, 0];
+  const labels: string[] = [];
+  for (let nn = 0; nn < tickdate.length; nn++) {
+    const t = nthDT(tickdatetime, nn);
+    let found: Option<readonly number[]> = none;
+    for (const [j, r] of tickdate.entries()) if (j === nn) { found = some(r); break; }
+    if (found.kind === 'none') throw new Error('conciseDateFormat: internal length mismatch');
+    const rowN = found.value;
+    let fmt: string;
+    if (level < 5) {
+      fmt = nthNum(rowN, level, 'field') === nthNum(zerovals, level, 'zeroval')
+        ? nthStr(zerofmts, level, 'zero_format')
+        : nthStr(fmts, level, 'format');
+    } else {
+      const c = civil(t);
+      fmt = (c.ss === 0 && c.micro === 0) ? nthStr(zerofmts, level, 'zero_format') : nthStr(fmts, level, 'format');
+    }
+    labels.push(strftime(t, fmt));
+  }
+
+  // strip trailing zeros on second-level labels that contain a decimal
+  if (level >= 5) {
+    let trailing: Option<number> = none;
+    for (const s of labels) {
+      if (!s.includes('.')) continue;
+      const n = s.length - s.replace(/0+$/, '').length;
+      trailing = trailing.kind === 'none' ? some(n) : some(Math.min(trailing.value, n));
+    }
+    if (trailing.kind === 'some' && trailing.value > 0) {
+      const cut = trailing.value;
+      for (let i = 0; i < labels.length; i++) {
+        let cur: Option<string> = none;
+        for (const [j, s] of labels.entries()) if (j === i) { cur = some(s); break; }
+        if (cur.kind === 'some' && cur.value.includes('.')) {
+          let s = cur.value.slice(0, cur.value.length - cut);
+          if (s.endsWith('.')) s = s.slice(0, -1);
+          labels[i] = s;
+        }
+      }
+    }
+  }
+
+  let offset = '';
+  if (showOffset) {
+    const t = opts.inverted ? nthDT(tickdatetime, 0) : nthDT(tickdatetime, tickdatetime.length - 1);
+    offset = strftime(t, nthStr(offsetfmts, level, 'offset_format'));
+  }
+  return { labels, offset };
 }

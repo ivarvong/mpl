@@ -4,6 +4,7 @@
 import { parsePaint, parseRgb } from './core/colors.ts';
 import { isNumericColorArray, mapPaints, parseColormap, parseNormKw, requireColormap, scalarToPaints } from './core/colormap.ts';
 import { date2num, fromEpochMs } from './core/dates.ts';
+import { AutoDateLocator, ConciseDateFormatter, DateFormatter, formatterSpecOf, type MajorFormatter } from './core/date-formatters.ts';
 import { MARKERS } from './core/data/markers.ts';
 import type { Fmt, FmtShape } from './core/fmt.ts';
 import { dataExtents, unionExtent, viewLimits } from './core/autoscale.ts';
@@ -321,13 +322,15 @@ export type ErrorbarContainer = {
 
 type Units = { readonly kind: 'numeric' } | { readonly kind: 'category'; readonly names: readonly string[] } | { readonly kind: 'datetime' };
 
-class Axis {
+export class Axis {
   units: Units = { kind: 'numeric' };
   scale: Scale = { kind: 'linear' };
   /** matplotlib's viewLim (0, 1) with autoscale on and nothing pending, until data arrives */
   limits: Limits = { kind: 'view', lo: 0, hi: 1 };
   ticks: TickSpec = { kind: 'auto' };
   labels: LabelSpec = { kind: 'auto' };
+  /** Major tick formatter; only meaningful for datetime axes (AutoDateFormatter by default). */
+  formatter: MajorFormatter = { kind: 'auto' };
   /** StrCategoryConverter: strings map to 0..n-1 in first-seen order; the axis becomes categorical. */
   convert(s: Series): Float64Array {
     switch (s.kind) {
@@ -363,6 +366,32 @@ class Axis {
     }
     return err(`${what} must be a number, a Date, or a category name, got ${typeof v}`);
   }
+
+  /**
+   * Axis.set_major_formatter — DateFormatter / ConciseDateFormatter on a date axis.
+   * Numeric/category axes only accept the default ScalarFormatter (pass { kind: 'auto' } or omit);
+   * anything else throws. Unsupported formatter classes throw a typed TypeError.
+   */
+  set_major_formatter(fmt: unknown): this {
+    if (isPlainObject(fmt) && Object.prototype.hasOwnProperty.call(fmt, 'kind') && Reflect.get(fmt, 'kind') === 'auto') {
+      this.formatter = { kind: 'auto' }; return this;
+    }
+    if (fmt instanceof DateFormatter || fmt instanceof ConciseDateFormatter) {
+      this.formatter = fmt; return this;
+    }
+    throw new TypeError(
+      "set_major_formatter: unsupported formatter; supported: DateFormatter, ConciseDateFormatter, or { kind: 'auto' }",
+    );
+  }
+  /**
+   * Axis.set_major_locator — AutoDateLocator only (date axes). Other locators throw.
+   * Passing AutoDateLocator is currently a no-op: date axes already use AutoDateLocator.
+   */
+  set_major_locator(loc: unknown): this {
+    if (loc instanceof AutoDateLocator) return this;
+    throw new TypeError('set_major_locator: unsupported locator; supported: AutoDateLocator');
+  }
+
   setScale(v: unknown): void {
     if (v === 'linear') this.scale = { kind: 'linear' };
     else if (v === 'log') this.scale = { kind: 'log', base: 10 };
@@ -382,7 +411,7 @@ class Axis {
     switch (this.units.kind) {
       case 'numeric': return { kind: 'numeric', scale: this.scale, limits: this.limits, ticks: this.ticks, labels: this.labels };
       case 'category': return { kind: 'category', names: this.units.names, limits: this.limits, ticks: this.ticks, labels: this.labels };
-      case 'datetime': return { kind: 'datetime', limits: this.limits, ticks: this.ticks, labels: this.labels };
+      case 'datetime': return { kind: 'datetime', limits: this.limits, ticks: this.ticks, labels: this.labels, formatter: formatterSpecOf(this.formatter) };
       default: return assertNever(this.units);
     }
   }
@@ -1400,17 +1429,24 @@ export class Axes {
       color: kw.read(['color', 'c'], (v) => { const r = parseRgb(v, this.theme.axes.cycle); return r.ok ? ok(some(r.value)) : r; }, (): Option<Rgb> => none),
       sizePt: kw.read(['fontsize', 'size'], (v) => { const r = parseFontSize(v, this.theme.font.sizePt); return r.ok ? ok(some(r.value)) : r; }, (): Option<number> => none),
       weight: kw.read(['fontweight', 'weight'], (v) => { const r = weightOf(v); return r.ok ? ok(some(r.value)) : r; }, (): Option<number> => none),
+      rotation: kw.read(['rotation'], (v) => (typeof v === 'number' && Number.isFinite(v) ? ok(some(v)) : err('rotation must be a finite number of degrees')), (): Option<number> => none),
+      ha: kw.read(['ha', 'horizontalalignment'], (v) => (v === 'left' || v === 'center' || v === 'right' ? ok(some(v)) : err(`ha must be 'left', 'center' or 'right'`)), (): Option<HAlign> => none),
+      visible: kw.read(['visible'], (v) => (typeof v === 'boolean' ? ok(some(v)) : err('visible must be a boolean')), (): Option<boolean> => none),
     };
   }
   /** Merge `style` into major tick label i (only the properties it sets). */
   private styleTickLabel(a: 'x' | 'y', i: number, style: TickLabelStyle): void {
     const cur = new Map(this.labelStyles[a]);
     const old = lookup(cur, i);
-    const base: TickLabelStyle = old.kind === 'some' ? old.value : { color: none, sizePt: none, weight: none };
+    const empty: TickLabelStyle = { color: none, sizePt: none, weight: none, rotation: none, ha: none, visible: none };
+    const base: TickLabelStyle = old.kind === 'some' ? old.value : empty;
     cur.set(i, {
       color: style.color.kind === 'some' ? style.color : base.color,
       sizePt: style.sizePt.kind === 'some' ? style.sizePt : base.sizePt,
       weight: style.weight.kind === 'some' ? style.weight : base.weight,
+      rotation: style.rotation.kind === 'some' ? style.rotation : base.rotation,
+      ha: style.ha.kind === 'some' ? style.ha : base.ha,
+      visible: style.visible.kind === 'some' ? style.visible : base.visible,
     });
     this.labelStyles = { ...this.labelStyles, [a]: [...cur.entries()].toSorted((p, q) => p[0] - q[0]) };
   }
@@ -1420,12 +1456,24 @@ export class Axes {
     const i = this.fig.axes.indexOf(this);
     const meta = this.fig.meta[i];
     const texts = a === 'x' ? meta.x.labels : meta.y.labels;
-    const one = { color: none, sizePt: none, weight: none } as const;
+    const one: TickLabelStyle = { color: none, sizePt: none, weight: none, rotation: none, ha: none, visible: none };
     return texts.map((text, j): TickLabelText => ({
       get_text: () => text,
       set_fontweight: (w: unknown) => { this.styleTickLabel(a, j, { ...one, weight: some(unwrap(weightOf(w))) }); },
       set_color: (c: unknown) => { this.styleTickLabel(a, j, { ...one, color: some(unwrap(parseRgb(c, this.theme.axes.cycle))) }); },
       set_fontsize: (s: unknown) => { this.styleTickLabel(a, j, { ...one, sizePt: some(unwrap(parseFontSize(s, this.theme.font.sizePt))) }); },
+      set_rotation: (r: unknown) => {
+        if (typeof r !== 'number' || !Number.isFinite(r)) throw new TypeError('rotation must be a finite number of degrees');
+        this.styleTickLabel(a, j, { ...one, rotation: some(r) });
+      },
+      set_ha: (h: unknown) => {
+        if (h !== 'left' && h !== 'center' && h !== 'right') throw new TypeError(`ha must be 'left', 'center' or 'right'`);
+        this.styleTickLabel(a, j, { ...one, ha: some(h) });
+      },
+      set_visible: (v: unknown) => {
+        if (typeof v !== 'boolean') throw new TypeError('visible must be a boolean');
+        this.styleTickLabel(a, j, { ...one, visible: some(v) });
+      },
       set: (kwargs: Kwargs) => { const kw = new KwReader(kwargs, 'Text.set'); const st = this.readTextStyle(kw); kw.done(); this.styleTickLabel(a, j, st); },
     }));
   }
@@ -1990,6 +2038,52 @@ export class Figure {
     this.subplotpars = next;
     this.touch(); return this;
   }
+
+  /**
+   * Figure.autofmt_xdate(bottom=0.2, rotation=30, ha='right', which='major') — rotate and align x tick
+   * labels; on a shared-x grid, only the bottom row keeps visible labels (others hide labels and clear
+   * xlabel); when every Axes is a subplot, also subplots_adjust(bottom). Minor labels (which='minor'|'both')
+   * are not yet supported and throw.
+   */
+  autofmt_xdate(kwargs: Kwargs = {}): this {
+    const kw = new KwReader(kwargs, 'Figure.autofmt_xdate');
+    const bottom = kw.read(['bottom'], num('bottom'), () => 0.2);
+    const rotation = kw.read(['rotation'], (v) => (typeof v === 'number' && Number.isFinite(v) ? ok(v) : err('rotation must be a finite number')), () => 30);
+    const ha = kw.read(['ha'], (v) => (v === 'left' || v === 'center' || v === 'right' ? ok(v) : err(`ha must be 'left', 'center' or 'right'`)), (): HAlign => 'right');
+    const which = kw.read(['which'], (v) => (v === 'major' || v === 'minor' || v === 'both' ? ok(v) : err(`which must be 'major', 'minor' or 'both'`)), () => 'major' as const);
+    kw.done();
+    if (which !== 'major') {
+      throw new TypeError(`autofmt_xdate: which=${JSON.stringify(which)} is not supported yet (only 'major'); minor date labels are not implemented`);
+    }
+    const axes = this.axes.filter((ax) => !ax.colorbarMode && ax.role.kind !== 'colorbar');
+    const allsubplots = axes.length > 0; // every Axes we keep has a SubplotSpec cell
+    if (axes.length === 1) {
+      for (const only of axes) {
+        for (const tl of only.get_xticklabels()) {
+          tl.set_ha(ha);
+          tl.set_rotation(rotation);
+        }
+      }
+    } else if (allsubplots) {
+      for (const ax of axes) {
+        const { rows, grid } = ax.cell;
+        const lastRow = rows[1] === grid.nrows;
+        if (lastRow) {
+          for (const tl of ax.get_xticklabels()) {
+            tl.set_ha(ha);
+            tl.set_rotation(rotation);
+          }
+        } else {
+          for (const tl of ax.get_xticklabels()) tl.set_visible(false);
+          ax.set_xlabel('');
+        }
+      }
+    }
+    // matplotlib: engine is None or adjust_compatible → always true for our constrained/tight-free path
+    if (allsubplots) this.subplots_adjust({ bottom });
+    return this;
+  }
+
   /** tight_layout({ pad = 1.08, h_pad, w_pad, rect }) — _tight_layout.get_tight_layout_figure: lay out now,
    *  measure each subplot cell's tight bbox (an Axes and its twins), then subplots_adjust margins and
    *  wspace/hspace so the decorations fit with `pad` (h_pad/w_pad between cells) font sizes to spare.
@@ -2159,6 +2253,9 @@ export type TickLabelText = {
   readonly set_fontweight: (w: unknown) => void;
   readonly set_color: (c: unknown) => void;
   readonly set_fontsize: (s: unknown) => void;
+  readonly set_rotation: (r: unknown) => void;
+  readonly set_ha: (h: unknown) => void;
+  readonly set_visible: (v: unknown) => void;
   readonly set: (kwargs: Kwargs) => void;
 };
 export type TransformRef = { readonly kind: 'transform'; readonly coords: TextCoords };

@@ -108,9 +108,18 @@ function glyphText(n: Extract<Node, { kind: 'text' }>, ids: Ids): string {
   const defs: string[] = [], uses: string[] = [];
   for (const { gid, dx } of n.glyphs) {
     const id = glyphRef(face, gid, ids, defs);
-    const x = n.rotation === 'vertical' ? pyRound(64 * n.x) / 64 : pyRound(64 * (n.x + dx)) / 64;
-    const y = n.rotation === 'vertical' ? pyRound(64 * (n.y - dx)) / 64 : pyRound(64 * n.y) / 64;
-    const rot = n.rotation === 'vertical' ? ' rotate(-90)' : '';
+    const r = n.rotation;
+    let x: number, y: number, rot: string;
+    if (r === 'vertical') {
+      x = pyRound(64 * n.x) / 64; y = pyRound(64 * (n.y - dx)) / 64; rot = ' rotate(-90)';
+    } else if (r !== 'horizontal' && r.kind === 'angled') {
+      const rad = (r.deg * Math.PI) / 180, c = Math.cos(rad), sA = Math.sin(rad);
+      x = pyRound(64 * (n.x + dx * c)) / 64;
+      y = pyRound(64 * (n.y - dx * sA)) / 64;  // SVG y-down: mirror the FT +dx*sin used in agg
+      rot = ` rotate(${f(-r.deg)})`;
+    } else {
+      x = pyRound(64 * (n.x + dx)) / 64; y = pyRound(64 * n.y) / 64; rot = '';
+    }
     uses.push(`<use href="#${id}" transform="translate(${f(x)} ${f(y)})${rot} scale(${s} ${-s})"/>`);
   }
   const op = n.color.alpha !== 1 ? ` fill-opacity="${f(n.color.alpha)}"` : '';
@@ -144,7 +153,9 @@ function nodeIO(n: Node, ids: Ids): IOList {
     }
     case 'text': {
       if (ids.text === 'glyphs') return glyphText(n, ids);
-      const rot = n.rotation === 'vertical' ? ` transform="rotate(-90 ${f(n.x)} ${f(n.y)})"` : '';
+      const rot = n.rotation === 'vertical' ? ` transform="rotate(-90 ${f(n.x)} ${f(n.y)})"`
+        : (n.rotation !== 'horizontal' && n.rotation.kind === 'angled')
+          ? ` transform="rotate(${f(-n.rotation.deg)} ${f(n.x)} ${f(n.y)})"` : '';
       const op = n.color.alpha !== 1 ? ` fill-opacity="${f(n.color.alpha)}"` : '';
       const face = faceById(n.face);
       const wt = face.weight !== 400 ? ` font-weight="${face.weight}"` : '';
