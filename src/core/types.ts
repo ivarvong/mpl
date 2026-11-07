@@ -180,7 +180,11 @@ export type ScatterArtist = {
   readonly kind: 'scatter'; readonly x: Float64Array; readonly y: Float64Array;
   readonly shape: MarkerName; readonly edgeWidthPt: number; readonly label: Label; readonly clip: boolean;
   readonly collection: ScatterCollection;
+  /** Collection.zorder: default 1; honoured when given. */
+  readonly zorder: number;
 };
+/** Axes aspect: 'auto' (default) or a fixed data aspect ratio ('equal' → 1), with adjustable='box'. */
+export type Aspect = { readonly kind: 'auto' } | { readonly kind: 'equal' } | { readonly kind: 'ratio'; readonly value: number };
 /** A PathCollection's sizes (pt^2) and colours as given (get_sizes, get_facecolor, get_edgecolor): one each, or one
  *  per point, cycled over the points. Not broadcast, because the draw path and the legend handler depend on the
  *  lengths, and an empty scatter (a legend proxy) still has them. */
@@ -280,6 +284,8 @@ export type AxesSpec = {
   readonly role: AxesRole; readonly position: Position; readonly artists: readonly Artist[];
   readonly title: string; readonly titleLoc: HAlign; readonly titleWeight: number; readonly xlabel: string; readonly ylabel: string;
   readonly x: AxisSpec; readonly y: AxisSpec; readonly grid: AxesGrid; readonly legend: LegendSpec;
+  /** set_aspect: applied at draw (adjustable='box', anchor='C'). */
+  readonly aspect: Aspect;
   readonly spines: {
     readonly left: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };
     readonly right: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };

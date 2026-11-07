@@ -350,6 +350,47 @@ PAIR = [
 ]
 case("annotate_coord_pairs", ("plot", [DAYS14, VAL14]), *PAIR)
 
+# cmap-1: scatter zorder, numeric c + cmap, set_aspect
+SCX = lin(25, 0, 4); SCY = [math.sin(v * 1.7) + 0.15 * v for v in SCX]
+SCC = [v / 4 for v in SCX]
+case("scatter_zorder_over",
+     ("plot", [[0, 1, 2, 3], [0, 1, 0, 1]], {"lw": 10, "color": "C0", "zorder": 1, "label": "under"}),
+     ("scatter", [[0.5, 1.5, 2.5], [0.5, 0.5, 0.5]], {"s": 500, "c": "C1", "zorder": 3, "edgecolors": "k", "linewidths": 1, "label": "top"}),
+     ("plot", [[0, 3], [0.5, 0.5]], {"lw": 5, "color": "C2", "zorder": 2, "label": "mid"}),
+     ("legend", []))
+case("scatter_zorder_under",
+     ("scatter", [[0, 1, 2, 3], [0, 1, 0, 1]], {"s": 400, "c": "C3", "zorder": 0.5}),
+     ("plot", [[0, 1, 2, 3], [0, 1, 0, 1]], {"lw": 8, "color": "C0", "zorder": 2}))
+case("scatter_cmap_viridis",
+     ("scatter", [SCX, SCY], {"c": SCC, "cmap": "viridis", "s": 80, "edgecolors": "none"}),
+     ("set_title", ["viridis"]))
+case("scatter_cmap_plasma_vminvmax",
+     ("scatter", [SCX, SCY], {"c": SCC, "cmap": "plasma", "vmin": 0.2, "vmax": 0.8, "s": 90, "edgecolors": "k", "linewidths": 0.4}),
+     ("set_title", ["plasma vmin/vmax"]))
+case("scatter_cmap_coolwarm",
+     ("scatter", [SCX, [v - 1 for v in SCY]], {"c": [v - 0.5 for v in SCC], "cmap": "coolwarm", "s": 70}),
+     ("set_title", ["coolwarm"]))
+case("scatter_cmap_reversed",
+     ("scatter", [SCX, SCY], {"c": SCC, "cmap": "viridis_r", "s": 80}),
+     ("set_title", ["viridis_r"]))
+case("aspect_equal_line",
+     ("plot", [[0, 1, 2, 3, 4], [0, 0.5, 1, 0.5, 0]], {"marker": "o"}),
+     ("set_aspect", ["equal"]),
+     ("set_title", ["equal"]))
+case("aspect_equal_scatter",
+     ("scatter", [[0, 1, 2, 3], [0, 1, 0.5, 2]], {"s": 120, "c": "C1"}),
+     ("set_aspect", ["equal"]))
+case("aspect_ratio_2",
+     ("plot", [[0, 2, 4], [0, 1, 0]]),
+     ("set_aspect", [2]),
+     ("set_title", ["aspect=2"]))
+case("aspect_equal_grid",
+     ("$subplots", [1, 2], {"figsize": [8, 3.5]}),
+     ("plot", [[0, 1, 2], [0, 1, 0]], {"marker": "s"}), ("set_aspect", ["equal"]), ("set_title", ["equal"]),
+     ("sca", [1]), ("plot", [[0, 1, 2], [0, 2, 0]], {"marker": "o"}), ("set_aspect", ["equal"]), ("set_title", ["equal tall data"]),
+     ("fig.tight_layout", []))
+
+
 def run_case(name, calls):
     style = None
     rc_layer = {}

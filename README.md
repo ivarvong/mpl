@@ -136,6 +136,26 @@ ax2.errorbar(days, p50, { yerr: [below, above], fmt: 'o-', capsize: 4 });   // a
 
 <img src="docs/images/histogram_errorbar.svg" width="720" alt="Left: two overlaid semi-transparent stepfilled histograms of illustrative request latency with dashed median lines; right: daily median latency with asymmetric p10 to p90 error bars and caps">
 
+
+### Example: value-coloured scatter and equal aspect
+
+`scatter` takes a numeric `c` with `cmap` / `vmin` / `vmax` (matplotlib's ScalarMappable path). Viridis is
+built in; other colormaps (plasma, inferno, magma, cividis, twilight, turbo, coolwarm, RdBu, Greys, Blues,
+tab10, tab20, and each `_r`) are separate modules you register, like fonts. `set_aspect('equal' | number)`
+shrinks the Axes box (adjustable=`'box'`).
+
+```ts
+import { registerColormaps, subplots } from 'mpljs';
+import { plasma } from 'mpljs/colormaps/plasma';
+
+registerColormaps(plasma);
+const [fig, ax] = subplots();
+ax.scatter(x, y, { c: values, cmap: 'plasma', s: 40 });
+ax.set_aspect('equal');
+```
+
+<img src="docs/images/scatter_cmap.png" width="480" alt="scatter points coloured by a viridis colormap">
+
 `npm run build` emits plain ES modules plus `.d.ts` into `dist/browser` for use from a browser, a Cloudflare Worker, or any
 project that cannot run `.ts` files (Node refuses to strip types inside `node_modules`).
 
@@ -168,7 +188,7 @@ noise: 41 s at 9, 4 s at 6; a 3840×2880 chart: 1.7 s at 9).
 
 The API is matplotlib-shaped (`subplots`, `plot`, `step`, `bar`/`barh`, `hist`, `errorbar`, `fill_between`, `axhline`/`axvline`/`axline`,
 `hlines`/`vlines`, `text`, `legend`, `grid`, `set_xlim`, `set_yscale('log')`, `twinx`, `tight_layout`, styled tick labels, date axes,
-9+ bundled styles); unknown keyword arguments are errors, as in matplotlib. Subplot grids: `subplots(nrows, ncols, …)` with sharex/sharey, width/height ratios, `subplots_adjust` and grid `tight_layout`. Out of scope so far: boxplot/violinplot/pie/stem/stairs, spanning subplots (`subplot_mosaic`, gridspec slices), images and colormaps, general mathtext, constrained layout.
+9+ bundled styles); unknown keyword arguments are errors, as in matplotlib. Subplot grids: `subplots(nrows, ncols, …)` with sharex/sharey, width/height ratios, `subplots_adjust` and grid `tight_layout`. Out of scope so far: boxplot/violinplot/pie/stem/stairs, spanning subplots (`subplot_mosaic`, gridspec slices), imshow/colorbar, general mathtext, constrained layout.
 
 ## Runs in
 
@@ -188,9 +208,9 @@ Bundle size (esbuild minified + gzip -9, checked against `size-budget.json` with
 
 | scenario | minified | gzipped |
 |---|---|---|
-| core, without glyph data | 254 KiB | 87 KiB |
-| core + DejaVu Sans (the default import: `subplots`, `plot`, `toSVG`, `toPNGSync`) | 405 KiB | 144 KiB |
-| everything (every export and all 8 faces) | 1127 KiB | 352 KiB |
+| core, without glyph data | 267 KiB | 93 KiB |
+| core + DejaVu Sans (the default import: `subplots`, `plot`, `toSVG`, `toPNGSync`) | 418 KiB | 150 KiB |
+| everything (every export and all 8 faces) | 1140 KiB | 357 KiB |
 
 Each further face adds 16–17 KiB gzipped (an Inter weight) or 43–55 KiB (a DejaVu face), measured as a
 standalone minified module. Glyph data is packed losslessly (delta-coded integers as base64 VLQ), 36% smaller
@@ -386,7 +406,7 @@ Things that had to be verified against Agg rather than reasoned about:
 ## Out of scope so far
 
 Other plot types (`boxplot`, `violinplot`, `pie`, `stem`, `stairs`, `fill`/`fill_betweenx`), spanning subplots
-(`subplot_mosaic`, gridspec slices), images and colormaps, general mathtext (only the tick-label forms `10^{n}` /
+(`subplot_mosaic`, gridspec slices), imshow/colorbar, general mathtext (only the tick-label forms `10^{n}` /
 `2×10^{n}`), constrained layout. Within the plotting calls: hist's `hatch` and per-dataset `linestyle`, `axline` with a
 `transform`, and errorbar on polar axes or with timedelta errors on date axes.
 Text uses DejaVu Sans/Serif (or Inter) with ASCII plus Latin-1, Latin Extended-A, Greek letters, general punctuation,

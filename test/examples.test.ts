@@ -8,7 +8,7 @@ const examples = readdirSync(new URL('examples/', ROOT)).filter((f) => /^[a-z].*
 for (const f of examples) execFileSync(process.execPath, [`examples/${f}`], { cwd: ROOT, stdio: 'pipe' });
 
 let bad = 0;
-for (const name of ['quickstart', 'twinx_theme']) {
+for (const name of ['quickstart', 'twinx_theme', 'scatter_cmap']) {
   const made = readFileSync(new URL(`examples/out/${name}.png`, ROOT)), shown = readFileSync(new URL(`docs/images/${name}.png`, ROOT));
   if (!made.equals(shown)) { bad++; console.log(`docs/images/${name}.png differs from examples/${name}.ts output; refresh it`); }
 }
