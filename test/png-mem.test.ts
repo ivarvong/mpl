@@ -37,7 +37,7 @@ test('peak formula constants are exact and known', () => {
     ` budget=${mb(PNG_PEAK_BUDGET_BYTES)}MB square=${mb(PNG_PEAK_MAX_1X_SQUARE_BYTES)}MB`);
 });
 
-test('pngStreamSync concat == encodePNGSync; IDAT payloads ≤ max', async () => {
+test('pngStreamSync zlib payloads == encodePNGSync single IDAT; IDAT payloads ≤ max', async () => {
   const [fig, ax] = subplots(1, 1, { figsize: [4, 3] });
   ax.plot([1, 2, 3], [1, 4, 9]);
   const c = fig.toRGBA({ dpi: 100 });
@@ -51,18 +51,32 @@ test('pngStreamSync concat == encodePNGSync; IDAT payloads ≤ max', async () =>
     if (done) break;
     parts.push(value);
   }
+  const streamZ: Uint8Array[] = [];
   for (let i = 1; i < parts.length - 1; i++) {
-    const chunk = parts[i];
-    const dataLen = (chunk[0] << 24) | (chunk[1] << 16) | (chunk[2] << 8) | chunk[3];
+    const ch = parts[i];
+    const dataLen = (ch[0] << 24) | (ch[1] << 16) | (ch[2] << 8) | ch[3];
     assert.ok(dataLen <= PNG_IDAT_PAYLOAD_MAX, `IDAT data ${dataLen} > max`);
-    assert.equal(String.fromCharCode(chunk[4], chunk[5], chunk[6], chunk[7]), 'IDAT');
+    assert.equal(String.fromCharCode(ch[4], ch[5], ch[6], ch[7]), 'IDAT');
     maxPayload = Math.max(maxPayload, dataLen);
-    assert.ok(chunk.length <= PNG_IDAT_CHUNK_MAX);
+    assert.ok(ch.length <= PNG_IDAT_CHUNK_MAX);
+    streamZ.push(ch.subarray(8, 8 + dataLen));
   }
-  const cat = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let o = 0; for (const p of parts) { cat.set(p, o); o += p.length; }
-  assert.deepEqual(cat, sync);
-  console.log(`  stream chunks=${parts.length} maxPayload=${maxPayload} sync=${sync.length}`);
+  // encodePNGSync is single-IDAT (SVG / toPNGSync byte-stable); stream is multi-IDAT.
+  let syncZ: Uint8Array | undefined;
+  let nSyncIdat = 0, o = 8;
+  while (o < sync.length) {
+    const len = (sync[o] << 24) | (sync[o + 1] << 16) | (sync[o + 2] << 8) | sync[o + 3];
+    const type = String.fromCharCode(sync[o + 4], sync[o + 5], sync[o + 6], sync[o + 7]);
+    if (type === 'IDAT') { nSyncIdat++; syncZ = sync.subarray(o + 8, o + 8 + len); }
+    o += 12 + len;
+    if (type === 'IEND') break;
+  }
+  assert.equal(nSyncIdat, 1, 'encodePNGSync must emit exactly one IDAT');
+  assert.ok(syncZ);
+  const catZ = new Uint8Array(streamZ.reduce((n, p) => n + p.length, 0));
+  let zo = 0; for (const p of streamZ) { catZ.set(p, zo); zo += p.length; }
+  assert.deepEqual(catZ, syncZ);
+  console.log(`  stream chunks=${parts.length} nIdat=${streamZ.length} maxPayload=${maxPayload} sync=${sync.length}`);
 });
 
 test('clean-isolate measured peak ≤ pngPeakBytes (zero tolerance); report slack', () => {

@@ -4,12 +4,13 @@
 //                filtered and fed in bands, so memory stays O(band) beyond the canvas.
 //                (Platform zlib — not byte-identical to encodePNGSync.)
 //   encodePNG  — the stream, collected.
-//   encodePNGSync — synchronous custom deflate. Peak beyond the RGBA canvas is a known
-//                   constant: two TOK_BLOCK buffers + hash pools + ≤ one IDAT bit-writer
-//                   payload + one outbound IDAT chunk (see pngPeakBytes). Multi-IDAT;
-//                   pixels match the prior single-IDAT encoder; file bytes differ.
-//   pngStreamSync — pull-based ReadableStream of the same bytes; encoder advances only on
-//                   pull (real backpressure). Workers use this so encoded output never accumulates.
+//   encodePNGSync — synchronous custom deflate, **single IDAT** (byte-stable). Same zlib
+//                   stream as pngStreamSync; one chunk so SVG-embedded PNGs and toPNGSync
+//                   stay sha256-stable across the streaming encoder change. Peak is the
+//                   full file (materialized); see pngPeakBytes for the streaming bound.
+//   pngStreamSync — pull-based ReadableStream: multi-IDAT, ≤ one IDAT retained; advances
+//                   only on pull (real backpressure). Workers use this. Concat of IDAT
+//                   payloads == encodePNGSync's single IDAT payload (zlib-identical).
 
 // Each takes a PngOptions: colors none writes 8-bit RGBA (color type 6); colors n writes a palette PNG (color type 3)
 // of at most n entries, exact when the figure has that few colors (palette.ts), packed at the smallest bit depth.
@@ -933,26 +934,28 @@ export function encodePNGSync(c: Canvas, opts: PngSyncOptions = RGBA): Uint8Arra
   }
   if (opts.level.kind === 'some') return concat([header(c.w, c.h, c.dpi), chunk('IDAT', zlibSync(filteredBand(c, 0, c.h), c.w * 4 + 1, 4, effort)), IEND]);
   return tracer.span('png.sync', { w: c.w, h: c.h }, (sp) => {
-    // Multi-IDAT: one chunk per Huffman block; concat == pngStreamSync. Sync API still
-    // materializes the full file; the Worker path uses pngStreamSync without retaining it.
-    const parts: Uint8Array[] = [header(c.w, c.h, c.dpi)];
+    // Single IDAT: same zlib stream as pngStreamSync (payloads concat-identical), but one
+    // chunk so SVG data-URIs / toPNGSync stay byte-identical to the pre-streaming encoder.
+    // Workers that need O(1) retained output use pngStreamSync (multi-IDAT).
     const enc = zlibEncoder(c);
-    let zBytes = 0, nIdat = 0;
+    const zParts: Uint8Array[] = [];
+    let zBytes = 0, nPull = 0;
     for (;;) {
-      const p = tracer.span('png.idat', { i: nIdat }, (isp) => {
+      const p = tracer.span('png.idat', { i: nPull }, (isp) => {
         const r = enc.pullIdat();
-        if (r.kind === 'some') isp.setAttribute('zBytes', r.value.length).setAttribute('retained', enc.retainedHigh());
+        if (r.kind === 'some') isp.setAttribute('zBytes', r.value.length - 12).setAttribute('retained', enc.retainedHigh());
         return r;
       });
       if (p.kind === 'none') break;
-      zBytes += p.value.length - 12; // zlib payload inside framed IDAT
-      nIdat++;
-      parts.push(p.value); // already a full IDAT chunk
+      // pullIdat yields a framed IDAT; strip to zlib payload for the single-chunk file.
+      zParts.push(p.value.subarray(8, p.value.length - 4));
+      zBytes += p.value.length - 12;
+      nPull++;
     }
-    parts.push(IEND);
-    const out = concat(parts);
+    const z = concat(zParts);
+    const out = concat([header(c.w, c.h, c.dpi), chunk('IDAT', z), IEND]);
     sp.setAttribute('zBytes', zBytes).setAttribute('bytes', out.length)
-      .setAttribute('retained', enc.retainedHigh()).setAttribute('nIdat', nIdat);
+      .setAttribute('retained', enc.retainedHigh()).setAttribute('nIdat', 1).setAttribute('nPull', nPull);
     return out;
   });
 }
@@ -960,6 +963,7 @@ export function encodePNGSync(c: Canvas, opts: PngSyncOptions = RGBA): Uint8Arra
 /**
  * Pull-based PNG: signature+IHDR, then one IDAT per pull (≤ PNG_IDAT_PAYLOAD_MAX zlib bytes), then IEND.
  * Backpressure: the encoder only advances on pull. Retained encoded output ≤ one IDAT payload.
+ * Zlib payloads across IDATs concat to the same bytes as encodePNGSync's single IDAT (file framing differs).
  */
 export function pngStreamSync(c: Canvas, opts: PngSyncOptions = RGBA): ReadableStream<Uint8Array> {
   if (opts.colors.kind === 'some' || opts.level.kind === 'some') {
