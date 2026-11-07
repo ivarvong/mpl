@@ -2,7 +2,7 @@
 //   extents (shared across twins) -> view limits -> ticks -> artists -> axes -> spines -> text -> legend -> z-order
 import type { Extent } from './autoscale.ts';
 import { dataExtents, unionExtent, viewLimits } from './autoscale.ts';
-import type { AxisDrawn, Sides } from './draw-axis.ts';
+import type { AxisDrawn, Sides, UpEdges } from './draw-axis.ts';
 import { drawAxis, labelNodes } from './draw-axis.ts';
 import type { Drawn } from './draw-artists.ts';
 import { drawAxLine, drawBar, drawFill, drawLine, drawPolygon, drawSegments, drawText, drawScatter, drawSpan, drawAnnotation, drawImage, handleOf } from './draw-artists.ts';
@@ -15,11 +15,11 @@ import { tickLabelText } from './log.ts';
 import { inkOf, pathNode, rectNode, snap } from './scene.ts';
 import { lookup } from './std.ts';
 import type { TextBox } from './text.ts';
-import { placeText, pxPerPt } from './text.ts';
+import { measure, placeText, pxPerPt, windowExtent } from './text.ts';
 import { resolveFace } from './fonts.ts';
 import type { TickSet } from './ticks.ts';
 import { computeTicks, scaleOf, tickSpace } from './ticks.ts';
-import type { Option, Artist, AxesMeta, AxesRole, AxesSpec, AxisBelow, AxisMeta, Clip, FigureSpec, LegendEntry, Node, Placement, Position, PxBox, Rgb, Scale, Scene, Stroke, Theme, TickTheme } from './types.ts';
+import type { HAlign, Option, Artist, AxesMeta, AxesRole, AxesSpec, AxisBelow, AxisMeta, Clip, FigureSpec, LegendEntry, Node, Placement, Position, PxBox, Rgb, TightBox, Scale, Scene, Stroke, Theme, TickTheme } from './types.ts';
 import { assertNever, none, some } from './types.ts';
 import type { Tracer } from '../trace.ts';
 
@@ -173,11 +173,15 @@ function spinesForAxes(ax: AxesSpec, theme: Theme, f: Frame, k: number): readonl
   return nodes;
 }
 
-type AxisOut = { readonly near: readonly TextBox[]; readonly far: readonly TextBox[] };
+type AxisOut = { readonly near: readonly TextBox[]; readonly far: readonly TextBox[]; readonly nearUp: readonly UpEdges[] };
 
 /** What each decoration occupies, for Axes.get_tightbbox. An empty Text's extent is a point,
  *  which Axis.get_tightbbox drops (Bbox._is_finite), so empty labels take no room. */
-type DecoBoxes = { readonly x: readonly PxBox[]; readonly y: readonly PxBox[]; readonly title: Option<PxBox> };
+type DecoBoxes = {
+  readonly x: readonly PxBox[]; readonly y: readonly PxBox[]; readonly title: Option<PxBox>;
+  /** display y-up bottoms of the x offset text and xlabel (as `x`), and the title's top, in matplotlib's arithmetic */
+  readonly xUp: readonly UpEdges[]; readonly titleUp: Option<UpEdges>;
+};
 type Decorated = { readonly nodes: readonly Node[]; readonly boxes: DecoBoxes };
 /** for_layout_only: an x label keeps 1 px of its width, a y label 1 px of its height (centred) */
 const collapseX = (b: PxBox): PxBox => (b.x1 > b.x0 ? { ...b, x0: (b.x0 + b.x1) / 2 - 0.5, x1: (b.x0 + b.x1) / 2 + 0.5 } : b);
@@ -187,6 +191,15 @@ export const unionBox = (bs: readonly PxBox[]): PxBox => ({
   x0: Math.min(...bs.map((b) => b.x0)), y0: Math.min(...bs.map((b) => b.y0)),
   x1: Math.max(...bs.map((b) => b.x1)), y1: Math.max(...bs.map((b) => b.y1)),
 });
+
+const edges = (e: { readonly y0: number; readonly y1: number }): UpEdges => ({ b: e.y0, t: e.y1 });
+/** A tight bbox from its parts; a part's display y-up edge, when known in matplotlib's arithmetic, wins over H − y. */
+type TightPart = { readonly box: PxBox; readonly up: UpEdges };
+const flip = (H: number) => (box: PxBox): TightPart => ({ box, up: { b: H - box.y1, t: H - box.y0 } });
+function tightOf(parts: readonly TightPart[]): TightBox {
+  const u = unionBox(parts.map((p) => p.box));
+  return { ...u, b: Math.min(...parts.map((p) => p.up.b)), t: Math.max(...parts.map((p) => p.up.t)) };
+}
 
 /** Offset texts, axis labels, title (Axis._update_label_position / _update_offset_text_position). */
 function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: number, dpi: number, xt: TickSet, yt: TickSet, xb: AxisOut, yb: AxisOut): Decorated {
@@ -199,12 +212,22 @@ function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: numb
     return some({ x0: tb.x0, y0: tb.y0, x1: tb.x1, y1: tb.y1 });
   };
   const pad = theme.offsetTextPadPt * k, lp = A.labelPadPt * k;
-  const xBoxes: PxBox[] = [], yBoxes: PxBox[] = [];
+  const xBoxes: PxBox[] = [], yBoxes: PxBox[] = [], xUp: UpEdges[] = [];
+  // the same text's bottom edge in display y-up: XAxis._update_{offset_text,label}_position anchor it at
+  // union(tick labels, spine).y0 − pad·dpi/72, then Text.get_window_extent (va='top')
+  const bottomUp = (s: string, x: number, padPt: number, ha: HAlign, sizePt: number, weight: number): UpEdges =>
+    edges(windowExtent(measure(s, sizePt, dpi, resolveFace(theme.font.families, weight), ha), x, Math.min(f.H - (b.yBot + half), ...xb.nearUp.map((e) => e.b)) - padPt * dpi / 72, ha, 'top'));
   if (roles.x.kind === 'shown') {
     let bottom = b.yBot + half;
     for (const lb of xb.near) bottom = Math.max(bottom, lb.y1);
-    if (!ax.hiddenLabels.x) xBoxes.push(...optBox(put(xt.offset, b.x1, bottom + pad, { kind: 'horizontal', ha: 'right', va: 'top' }, theme.xtick.labelSizePt, theme.xtick.color)));
-    xBoxes.push(...optBox(put(ax.xlabel, (b.x0 + b.x1) / 2, bottom + lp, { kind: 'horizontal', ha: 'center', va: 'top' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseX));
+    if (!ax.hiddenLabels.x) {
+      const o = optBox(put(xt.offset, b.x1, bottom + pad, { kind: 'horizontal', ha: 'right', va: 'top' }, theme.xtick.labelSizePt, theme.xtick.color));
+      xBoxes.push(...o);
+      if (o.length > 0) xUp.push(bottomUp(xt.offset, b.x1, theme.offsetTextPadPt, 'right', theme.xtick.labelSizePt, theme.font.weight));
+    }
+    const l = optBox(put(ax.xlabel, (b.x0 + b.x1) / 2, bottom + lp, { kind: 'horizontal', ha: 'center', va: 'top' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseX);
+    xBoxes.push(...l);
+    if (l.length > 0) xUp.push(bottomUp(ax.xlabel, (b.x0 + b.x1) / 2, A.labelPadPt, 'center', A.labelSizePt, theme.font.labelWeight));
   }
   if (roles.yOnRight) {
     let right = b.x1 + half;
@@ -219,8 +242,13 @@ function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: numb
   }
   const tx0 = ax.titleLoc === 'left' ? b.x0 : ax.titleLoc === 'right' ? b.x1 : (b.x0 + b.x1) / 2;
   const tb = put(ax.title, tx0, b.yTop - A.titlePadPt * k, { kind: 'horizontal', ha: ax.titleLoc, va: 'baseline' }, A.titleSizePt, A.titleColor, ax.titleWeight);
+  // the title's top in display y-up: transAxes + ScaledTranslation(0, pad/72) maps (x, 1) to h·1 + (b + pad/72·dpi)
+  // (moved above top tick labels, it has no exact form here: fall back to the flipped box)
+  const titleUp: Option<UpEdges> = tb.kind !== 'some' ? none
+    : some(xb.far.length > 0 ? { b: f.H - tb.value.y1, t: f.H - tb.value.y0 }
+      : edges(windowExtent(measure(ax.title, A.titleSizePt, dpi, resolveFace(theme.font.families, ax.titleWeight), ax.titleLoc), tx0, b.h * 1.0 + (b.b + (A.titlePadPt / 72) * dpi), ax.titleLoc, 'baseline')));
   // Axes.get_tightbbox keeps 1 px of a title's width; zero-size boxes (empty titles) drop out
-  return { nodes: out, boxes: { x: xBoxes, y: yBoxes, title: tb.kind === 'some' ? some(collapseX(tb.value)) : none } };
+  return { nodes: out, boxes: { x: xBoxes, y: yBoxes, title: tb.kind === 'some' ? some(collapseX(tb.value)) : none, xUp, titleUp } };
 }
 
 /** Spine.get_window_extent: the spine's path, padded by the ticks it carries (not their labels). */
@@ -267,7 +295,7 @@ function spineBoxes(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: numbe
   return boxes;
 }
 
-const NOTHING: AxisDrawn = { grid: [], marks: [], nearBoxes: [], farBoxes: [] };
+const NOTHING: AxisDrawn = { grid: [], marks: [], nearBoxes: [], farBoxes: [], nearUp: [], farUp: [] };
 function shown(v: AxisVisibility, draw: (sides: Sides) => AxisDrawn): AxisDrawn {
   switch (v.kind) {
     case 'hidden': return NOTHING;
@@ -384,7 +412,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, tracer: Trac
     drawAxis('y', yt, ax.tick.y, sides, ax.grid.y, ax.tickLabels.y, f, theme, dpi, tracer, bases)));
   const decTheme: Theme = { ...theme, xtick: ax.tick.x, ytick: ax.tick.y };
   const deco = tracer.span('decorations', { role: ax.role.kind }, () =>
-    decorations(ax, roles, decTheme, f, k, dpi, xt, yt, { near: xa.nearBoxes, far: xa.farBoxes }, { near: ya.nearBoxes, far: ya.farBoxes }));
+    decorations(ax, roles, decTheme, f, k, dpi, xt, yt, { near: xa.nearBoxes, far: xa.farBoxes, nearUp: xa.nearUp }, { near: ya.nearBoxes, far: ya.farBoxes, nearUp: ya.nearUp }));
 
   const entries = legendEntries(ax, drawn);
   const axesUp: Box = { x0: box.x0, x1: box.x1, y0: box.b, y1: box.t };
@@ -411,13 +439,20 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, tracer: Trac
     meta: {
       x: axisMeta(xlim, xt, ax.hiddenLabels.x), y: axisMeta(ylim, yt, ax.hiddenLabels.y),
       frame: { box: { x0: box.x0, x1: box.x1, yTop: box.yTop, yBot: box.yBot }, xlim, ylim, xscale: xs, yscale: ys, H },
-      tight: unionBox([
-        { x0: box.x0, y0: box.yTop, x1: box.x1, y1: box.yBot },
-        ...(roles.x.kind === 'shown' ? [...xa.nearBoxes, ...xa.farBoxes, ...deco.boxes.x] : []),
-        ...(roles.y.kind === 'shown' ? [...ya.nearBoxes, ...ya.farBoxes, ...deco.boxes.y] : []),
-        ...(deco.boxes.title.kind === 'some' ? [deco.boxes.title.value] : []),
-        ...spineBoxes(ax, roles, theme, f, k, xt, yt),
-        ...(legend.kind === 'some' ? [{ x0: legend.value.out.box.x0, x1: legend.value.out.box.x1, y0: H - legend.value.out.box.y1, y1: H - legend.value.out.box.y0 }] : []),
+      tight: tightOf([
+        { box: { x0: box.x0, y0: box.yTop, x1: box.x1, y1: box.yBot }, up: { b: box.b, t: box.t } },
+        // the axes patch (a default bbox extra artist) maps the unit square through transAxes: its top is h·1 + b
+        ...(roles.patch ? [{ box: { x0: box.x0, y0: box.yTop, x1: box.x1, y1: box.yBot }, up: { b: box.h * 0 + box.b, t: box.h * 1 + box.b } }] : []),
+        ...(roles.x.kind === 'shown' ? [
+          ...xa.nearBoxes.map((bx, i) => ({ box: bx, up: xa.nearUp[i] })), ...xa.farBoxes.map((bx, i) => ({ box: bx, up: xa.farUp[i] })),
+          ...deco.boxes.x.map((bx, i) => ({ box: bx, up: deco.boxes.xUp[i] }))] : []),
+        ...(roles.y.kind === 'shown' ? [
+          ...ya.nearBoxes.map((bx, i) => ({ box: bx, up: ya.nearUp[i] })), ...ya.farBoxes.map((bx, i) => ({ box: bx, up: ya.farUp[i] })),
+          ...deco.boxes.y.map(flip(H))] : []),
+        ...(deco.boxes.title.kind === 'some' && deco.boxes.titleUp.kind === 'some' ? [{ box: deco.boxes.title.value, up: deco.boxes.titleUp.value }] : []),
+        ...spineBoxes(ax, roles, theme, f, k, xt, yt).map(flip(H)),
+        ...(legend.kind === 'some' ? [{ box: { x0: legend.value.out.box.x0, x1: legend.value.out.box.x1, y0: H - legend.value.out.box.y1, y1: H - legend.value.out.box.y0 },
+                                        up: { b: legend.value.out.box.y0, t: legend.value.out.box.y1 } }] : []),
       ]),
       legend: legend.kind === 'some'
         ? some({ loc: legend.value.code.kind === 'best' ? 0 : legend.value.code.code, x0: legend.value.out.box.x0, x1: legend.value.out.box.x1,
@@ -496,7 +531,7 @@ function layoutParts(fig: FigureSpec, mode: LayoutMode, tracer: Tracer): readonl
 }
 
 /** Each Axes' tight bbox (px, y down), as layoutFigure's meta[i].tight, without drawing what does not enter it. */
-export function tightBoxes(fig: FigureSpec, tracer: Tracer): readonly PxBox[] {
+export function tightBoxes(fig: FigureSpec, tracer: Tracer): readonly TightBox[] {
   return layoutParts(fig, 'tight', tracer).map((p) => p.meta.tight);
 }
 

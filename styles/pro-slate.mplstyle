@@ -1,0 +1,50 @@
+# pro-slate: soft light: off-white, muted indigo and violet accents, generous space
+# Bundled with mpljs. Use it in matplotlib too: plt.style.use("path/to/pro-slate.mplstyle")
+
+figure.facecolor: fbfbfd
+axes.facecolor: fbfbfd
+axes.edgecolor: c9ccd8
+grid.color: eceef4
+text.color: 1f2233
+axes.titlecolor: 1f2233
+axes.labelcolor: 6b7085
+xtick.color: c9ccd8
+ytick.color: c9ccd8
+xtick.labelcolor: 6b7085
+ytick.labelcolor: 6b7085
+patch.edgecolor: fbfbfd
+axes.prop_cycle: cycler('color', ['5e6ad2', '9b8afb', '26b5ce', 'eb5757', 'f2994a', '8a8fa8'])
+font.family: Inter
+font.size: 9
+figure.figsize: 7.2, 4.2
+axes.spines.top: False
+axes.spines.right: False
+axes.spines.left: False
+axes.grid: True
+axes.grid.axis: y
+axes.axisbelow: True
+axes.linewidth: 0.8
+axes.titlesize: 12
+axes.titlelocation: left
+axes.titlepad: 10
+axes.labelsize: 9
+axes.labelpad: 6
+grid.linestyle: -
+grid.linewidth: 0.6
+lines.linewidth: 1.6
+lines.solid_capstyle: round
+lines.markersize: 5
+patch.linewidth: 0
+xtick.major.size: 3
+xtick.major.width: 0.8
+xtick.major.pad: 5
+xtick.labelsize: 8.5
+xtick.direction: out
+ytick.major.size: 0
+ytick.major.pad: 6
+ytick.labelsize: 8.5
+legend.frameon: False
+legend.fontsize: 8.5
+legend.handlelength: 1.4
+legend.handletextpad: 0.6
+legend.columnspacing: 1.4

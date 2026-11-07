@@ -1,0 +1,50 @@
+# pro-dark: dark dashboard: deep navy, faint grid, muted ticks, vivid restrained accents
+# Bundled with mpljs. Use it in matplotlib too: plt.style.use("path/to/pro-dark.mplstyle")
+
+figure.facecolor: 0b1020
+axes.facecolor: 0b1020
+axes.edgecolor: 334155
+grid.color: 1e2638
+text.color: e2e8f0
+axes.titlecolor: e2e8f0
+axes.labelcolor: 8b97ab
+xtick.color: 334155
+ytick.color: 334155
+xtick.labelcolor: 8b97ab
+ytick.labelcolor: 8b97ab
+patch.edgecolor: 0b1020
+axes.prop_cycle: cycler('color', ['4f8ff7', 'f5a623', '2dd4bf', 'f0506e', 'a78bfa', '94a3b8'])
+font.family: Inter
+font.size: 9
+figure.figsize: 7.2, 4.2
+axes.spines.top: False
+axes.spines.right: False
+axes.spines.left: False
+axes.grid: True
+axes.grid.axis: y
+axes.axisbelow: True
+axes.linewidth: 0.8
+axes.titlesize: 12
+axes.titlelocation: left
+axes.titlepad: 10
+axes.labelsize: 9
+axes.labelpad: 6
+grid.linestyle: -
+grid.linewidth: 0.6
+lines.linewidth: 1.6
+lines.solid_capstyle: round
+lines.markersize: 5
+patch.linewidth: 0
+xtick.major.size: 3
+xtick.major.width: 0.8
+xtick.major.pad: 5
+xtick.labelsize: 8.5
+xtick.direction: out
+ytick.major.size: 0
+ytick.major.pad: 6
+ytick.labelsize: 8.5
+legend.frameon: False
+legend.fontsize: 8.5
+legend.handlelength: 1.4
+legend.handletextpad: 0.6
+legend.columnspacing: 1.4

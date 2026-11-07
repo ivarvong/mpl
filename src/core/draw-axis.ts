@@ -2,11 +2,12 @@
 // a spine along its outward normal; labels sit outside the tick by its pad.
 import type { Frame } from './frame.ts';
 import { tx, ty } from './frame.ts';
+import { forward } from './scale.ts';
 import { lineStroke } from './marks.ts';
 import { resolveFace } from './fonts.ts';
 import { pathNode, snap, snapOffset } from './scene.ts';
 import type { TextBox } from './text.ts';
-import { measureLabel, placeLayout, pxPerPt, strokePx } from './text.ts';
+import { measureLabel, placeLayout, pxPerPt, strokePx, windowExtent } from './text.ts';
 import type { TickSet } from './ticks.ts';
 import type { TickLabelStyles, AxisGrid, GridLines, Node, Rgb, Seg, Stroke, Theme, TickDirection, TickTheme, TickGrid } from './types.ts';
 import { assertNever, none } from './types.ts';
@@ -15,9 +16,14 @@ import type { Tracer } from '../trace.ts';
 
 /** Which spines carry ticks and which side gets labels (x: near=bottom, y: near=left). */
 export type Sides = { readonly near: boolean; readonly far: boolean; readonly labels: 'near' | 'far' | 'none' };
+export type UpEdges = { readonly b: number; readonly t: number };
+const flipped = (H: number, b: TextBox): UpEdges => ({ b: H - b.y1, t: H - b.y0 });
+const upOf = (e: { readonly y0: number; readonly y1: number }): UpEdges => ({ b: e.y0, t: e.y1 });
 export type AxisDrawn = {
   readonly grid: readonly Node[]; readonly marks: readonly Node[];
   readonly nearBoxes: readonly TextBox[]; readonly farBoxes: readonly TextBox[];
+  /** each near / far label's bottom and top edges in display y-up, in matplotlib's arithmetic */
+  readonly nearUp: readonly UpEdges[]; readonly farUp: readonly UpEdges[];
 };
 
 function tickExtent(dir: TickDirection, size: number): readonly [number, number] {
@@ -66,6 +72,8 @@ export function drawAxis(
   const bases = base;
   const majorSegs: Seg[] = [], minorSegs: Seg[] = [], majorGrid: Seg[] = [], minorGrid: Seg[] = [], labels: Node[] = [];
   const nearBoxes: TextBox[] = [], farBoxes: TextBox[] = [];
+  // labels' edges in display y-up, in matplotlib's arithmetic (flipped from y-down under a spine offset)
+  const nearUp: UpEdges[] = [], farUp: UpEdges[] = [];
   const face = resolveFace(theme.font.families, theme.font.weight);
   const styles = new Map(labelStyles);
   for (const t of ticks.visible) {
@@ -75,6 +83,8 @@ export function drawAxis(
       const pad = (t.minor ? tt.minorPadPt : tt.padPt) * k;
       const [e0, e1] = tickExtent(tt.direction, size);
       const out = tickPadding(tt.direction, size) + pad;
+      // Tick._pad (points) = base pad + get_tick_padding; the label sits ScaledTranslation(0, ∓_pad/72) off the spine
+      const padPts = (t.minor ? tt.minorPadPt : tt.padPt) + tickPadding(tt.direction, t.minor ? tt.minorSizePt : tt.sizePt);
       const segs = t.minor ? minorSegs : majorSegs;
       // Ticks are markers: Agg snaps the marker path (offsets from the tick origin) and the origin separately.
       const te = (b0: number, e: number): number => Math.floor(b0 + 0.5) + Math.floor(e + 0.5) + snapOffset(width);
@@ -92,15 +102,23 @@ export function drawAxis(
         if (gridOn) gridSegs.push(['M', snap(d, glw), snap(bases.yBottom, glw)], ['L', snap(d, glw), snap(bases.yTop, glw)]);
         if (sides.near) segs.push(['M', x, te(bases.yBottom, e0)], ['L', x, te(bases.yBottom, e1)]);          // bottom: outward is +y
         if (sides.far) segs.push(['M', x, te(bases.yTop, -e0)], ['L', x, te(bases.yTop, -e1)]);           // top: outward is -y
-        if (sides.labels === 'near') { const b = placeLayout(lay, d, bases.yBottom + out, { kind: 'horizontal', ha: 'center', va: 'top' }); nearBoxes.push(b); labels.push(...labelNodes(b, k, lcolor)); }
-        if (sides.labels === 'far') { const b = placeLayout(lay, d, bases.yTop - out, { kind: 'horizontal', ha: 'center', va: 'bottom' }); farBoxes.push(b); labels.push(...labelNodes(b, k, lcolor)); }
+        if (sides.labels === 'near') {
+          const b = placeLayout(lay, d, bases.yBottom + out, { kind: 'horizontal', ha: 'center', va: 'top' }); nearBoxes.push(b); labels.push(...labelNodes(b, k, lcolor));
+          nearUp.push(bases.yBottom === f.box.yBot ? upOf(windowExtent(lay, d, f.box.b + (-1 * padPts / 72) * dpi, 'center', 'top')) : flipped(f.H, b));
+        }
+        if (sides.labels === 'far') {
+          const b = placeLayout(lay, d, bases.yTop - out, { kind: 'horizontal', ha: 'center', va: 'bottom' }); farBoxes.push(b); labels.push(...labelNodes(b, k, lcolor));
+          farUp.push(bases.yTop === f.box.yTop ? upOf(windowExtent(lay, d, f.box.t + (padPts / 72) * dpi, 'center', 'bottom')) : flipped(f.H, b));
+        }
       } else {
         const d = ty(f, t.loc), y = snap(d, width);
         if (gridOn) gridSegs.push(['M', snap(bases.xLeft, glw), snap(d, glw)], ['L', snap(bases.xRight, glw), snap(d, glw)]);
         if (sides.near) segs.push(['M', te(bases.xLeft, -e0), y], ['L', te(bases.xLeft, -e1), y]);          // left: outward is -x
         if (sides.far) segs.push(['M', te(bases.xRight, e0), y], ['L', te(bases.xRight, e1), y]);           // right: outward is +x
-        if (sides.labels === 'near') { const b = placeLayout(lay, bases.xLeft - out, d, { kind: 'horizontal', ha: 'right', va: 'center_baseline' }); nearBoxes.push(b); labels.push(...labelNodes(b, k, lcolor)); }
-        if (sides.labels === 'far') { const b = placeLayout(lay, bases.xRight + out, d, { kind: 'horizontal', ha: 'left', va: 'center_baseline' }); farBoxes.push(b); labels.push(...labelNodes(b, k, lcolor)); }
+        // a y label's anchor is transData's y (the ScaledTranslation is horizontal): (v·a + 0) + c
+        const yUp = forward(f.yscale, t.loc) * f.ay + f.cy;
+        if (sides.labels === 'near') { const b = placeLayout(lay, bases.xLeft - out, d, { kind: 'horizontal', ha: 'right', va: 'center_baseline' }); nearBoxes.push(b); labels.push(...labelNodes(b, k, lcolor)); nearUp.push(upOf(windowExtent(lay, b.x1, yUp, 'right', 'center_baseline'))); }
+        if (sides.labels === 'far') { const b = placeLayout(lay, bases.xRight + out, d, { kind: 'horizontal', ha: 'left', va: 'center_baseline' }); farBoxes.push(b); labels.push(...labelNodes(b, k, lcolor)); farUp.push(upOf(windowExtent(lay, b.x0, yUp, 'left', 'center_baseline'))); }
       }
       sp.setAttribute('w', +lay.width.toFixed(2));
     });
@@ -116,6 +134,6 @@ export function drawAxis(
   return {
     grid: [...gridPath(majorGrid, grid.major.lines), ...gridPath(minorGrid, grid.minor.lines)],
     marks: [...labels, ...tickPath(majorSegs, tt.widthPt), ...tickPath(minorSegs, tt.minorWidthPt)],
-    nearBoxes, farBoxes,
+    nearBoxes, farBoxes, nearUp, farUp,
   };
 }

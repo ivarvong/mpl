@@ -466,19 +466,117 @@ case("colorbar_extend_max_horizontal",
 case("colorbar_horizontal",
      ("imshow", [IM], {"cmap": "plasma", "interpolation": "nearest"}),
      ("fig.colorbar", [], {"orientation": "horizontal", "label": "h"}))
+# ---- bundled pro themes (styles/*.mplstyle): matplotlib renders the same sheet from its file ----
+STYLES = {}
+STYLE_DIR = os.path.join(ROOT, "..", "styles")
+# the pro sheets use Inter: matplotlib must load the same static v4.0 OTFs mpljs baked (scripts/gen_fonts.py)
+INTER_DIR = os.environ.get("INTER_DIR", "/usr/share/fonts/opentype/inter")
+def use_static_inter():
+    from matplotlib import font_manager as fm
+    # drop any other Inter build (e.g. a system variable font) so findfont cannot pick it
+    fm.fontManager.ttflist = [f for f in fm.fontManager.ttflist if f.name != "Inter" or os.path.dirname(os.path.realpath(f.fname)) == os.path.realpath(INTER_DIR)]
+    for w in ("Regular", "Medium", "SemiBold", "Bold"):
+        path = os.path.join(INTER_DIR, f"Inter-{w}.otf")
+        if not any(os.path.realpath(f.fname) == os.path.realpath(path) for f in fm.fontManager.ttflist):
+            fm.fontManager.addfont(path)
+    got = fm.findfont(fm.FontProperties(family="Inter"), fallback_to_default=False)
+    if os.path.realpath(got) != os.path.realpath(os.path.join(INTER_DIR, "Inter-Regular.otf")):
+        raise RuntimeError(f"Inter resolves to {got}, not the static Inter v4.0 OTFs in INTER_DIR")
+def styled(style, name, *calls):
+    case(name, *calls); STYLES[name] = style
+TX = list(range(24))
+P50 = [round(40 + 6 * math.sin(i / 3) + i * 0.4, 2) for i in TX]
+P95 = [round(v * 1.8 + 4 * math.cos(i / 2), 2) for i, v in zip(TX, P50)]
+P99 = [round(v * 1.35 + 6, 2) for v in P95]
+HRS = ["00", "04", "08", "12", "16", "20"]
+OKR, ERR4, ERR5 = [120, 90, 210, 340, 300, 180], [12, 8, 25, 40, 33, 20], [3, 2, 9, 14, 6, 4]
+SCT = [(i * 0.37) % 10 for i in range(40)]
+SCV = [round(2 + 0.6 * v + 2.5 * math.sin(i * 1.7), 3) for i, v in enumerate(SCT)]
+SCZ = [round(abs(math.sin(i * 0.9)) * 100, 2) for i in range(40)]
+for st in ["pro-dark", "pro-mono", "pro-ember", "pro-slate"]:
+    tag = st.replace("-", "_")
+    styled(st, f"theme_{tag}_bands",
+           ("fill_between", [TX, P50, P99], {"alpha": 0.15, "color": "C0", "linewidth": 0}),
+           ("fill_between", [TX, P50, P95], {"alpha": 0.25, "color": "C0", "linewidth": 0}),
+           ("plot", [TX, P50], {"label": "p50"}), ("plot", [TX, P95], {"label": "p95"}), ("plot", [TX, P99], {"label": "p99", "linestyle": "--"}),
+           ("legend", [], {"loc": "upper left", "ncols": 3}), ("set_title", ["Latency (ms)"]), ("set_xlabel", ["hour"]))
+    styled(st, f"theme_{tag}_stacked",
+           ("bar", [HRS, OKR], {"label": "2xx", "width": 0.7}),
+           ("bar", [HRS, ERR4], {"bottom": OKR, "label": "4xx", "width": 0.7}),
+           ("bar", [HRS, ERR5], {"bottom": [a + b for a, b in zip(OKR, ERR4)], "label": "5xx", "width": 0.7}),
+           ("legend", [], {"loc": "upper left"}), ("set_title", ["Requests / min"]), ("set_ylabel", ["requests"]))
+    styled(st, f"theme_{tag}_scatter",
+           ("scatter", [SCT, SCV], {"c": SCZ, "cmap": "viridis", "s": 28}),
+           ("scatter", [[1, 5, 9], [9, 3, 6]], {"s": 40, "color": "C1", "label": "outliers"}),
+           ("legend", []), ("set_title", ["Duration vs size"]), ("set_xlabel", ["payload (kB)"]), ("set_ylabel", ["ms"]))
+    styled(st, f"theme_{tag}_multiples",
+           ("$subplots", [1, 3], {"figsize": [9, 2.8], "sharey": True}),
+           ("plot", [TX, [round(abs(math.sin(i / 4)) * 2, 3) for i in TX]], {"color": "C0"}), ("set_title", ["api"]),
+           ("sca", [1]), ("plot", [TX, [round(abs(math.cos(i / 5)) * 1.5, 3) for i in TX]], {"color": "C1"}), ("set_title", ["web"]),
+           ("sca", [2]), ("plot", [TX, [round(0.3 + (i % 7) * 0.2, 3) for i in TX]], {"color": "C3"}), ("set_title", ["worker"]),
+           ("fig.tight_layout", []))
+# the examples/themes/dashboard.ts figures, call for call (test/examples.test.ts checks the example renders these pixels)
+DASH = json.load(open(os.path.join(ROOT, "..", "examples", "themes", "data.json")))
+TICKS, TICKL = [0, 6, 12, 18, 24], ["00:00", "06:00", "12:00", "18:00", "24:00"]
+for st, cmap, vmin, heat in [("pro-dark", "viridis", -20, "magma"), ("pro-mono", "Blues", -40, "Greys"), ("pro-ember", "inferno", -40, "inferno"), ("pro-slate", "plasma", -10, "Blues")]:
+    D = DASH
+    calls = [("$subplots", [2, 3], {"figsize": [13, 7]}),
+             ("fill_between", [D["hours"], D["p50"], D["p99"]], {"color": "C0", "alpha": 0.12, "linewidth": 0}),
+             ("fill_between", [D["hours"], D["p50"], D["p95"]], {"color": "C0", "alpha": 0.22, "linewidth": 0}),
+             ("plot", [D["hours"], D["p50"]], {"color": "C0", "label": "p50"}),
+             ("plot", [D["hours"], D["p95"]], {"color": "C1", "label": "p95"}),
+             ("plot", [D["hours"], D["p99"]], {"color": "C3", "label": "p99", "linestyle": "--"}),
+             ("axhline", [150], {"color": "C5", "linewidth": 0.8, "linestyle": ":"}),
+             ("set_xticks", [TICKS]), ("set_xticklabels", [TICKL]), ("set_ylim", [0, 220]),
+             ("legend", [], {"loc": "upper left", "ncols": 3}), ("set_title", ["Latency (ms)"]),
+             ("sca", [1]),
+             ("bar", [D["bucket"], D["ok"]], {"color": "C0", "width": 0.72, "label": "2xx"}),
+             ("bar", [D["bucket"], D["e4"]], {"bottom": D["ok"], "color": "C1", "width": 0.72, "label": "4xx"}),
+             ("bar", [D["bucket"], D["e5"]], {"bottom": [a + b for a, b in zip(D["ok"], D["e4"])], "color": "C3", "width": 0.72, "label": "5xx"}),
+             ("legend", [], {"loc": "upper left", "ncols": 3}), ("set_ylim", [0, 1900]), ("set_title", ["Requests / 2 h"]),
+             ("sca", [2]),
+             ("imshow", [{"$array": D["heat"]}], {"cmap": heat, "origin": "lower", "aspect": "auto", "interpolation": "nearest", "extent": [0, 24, 0, 320]}),
+             ("set_xticks", [TICKS]), ("set_xticklabels", [TICKL]), ("set_title", ["Latency heatmap (ms)"]),
+             ("fig.colorbar", [], {"label": "requests"})]
+    for i, svc in enumerate(["api", "web"]):
+        col = f"C{i}"
+        calls += [("sca", [3 + i]),
+                  ("fill_between", [D["hours"], 0, D["errors"][svc]], {"color": col, "alpha": 0.18, "linewidth": 0}),
+                  ("plot", [D["hours"], D["errors"][svc]], {"color": col, "linewidth": 1.2}),
+                  ("axhline", [1.5], {"color": "C5", "linewidth": 0.8, "linestyle": "--"}),
+                  ("set_ylim", [0, 2.6]), ("set_xticks", [TICKS]), ("set_xticklabels", [TICKL]), ("set_title", [f"{svc} error rate (%)"])]
+    calls += [("sca", [5]),("scatter", [D["size"], D["dur"]], {"c": D["cache"], "cmap": cmap, "vmin": vmin, "vmax": 100, "s": 14, "alpha": 0.9}),
+             ("set_title", ["Duration vs payload (colour: cache hit %)"]), ("set_xscale", ["log"]), ("set_xlabel", ["payload (kB)"])]
+    calls += [("fig.suptitle", [f"checkout service \u00b7 last 24 h \u00b7 {st}"]),
+              ("fig.subplots_adjust", [], {"left": 0.045, "right": 0.975, "bottom": 0.07, "top": 0.89, "wspace": 0.3, "hspace": 0.42})]
+    styled(st, f"theme_{st.replace('-', '_')}_dashboard", *calls)
+# marker paths at full precision: a 6-digit unit circle flattens differently, moving antialiased edge pixels
+MPX = [round(0.37 * i % 10, 4) for i in range(300)]
+MPY = [round((0.61 * i) % 7 + 0.013 * i, 4) for i in range(300)]
+case("scatter_marker_precision", ("scatter", [MPX, MPY], {"c": [i % 17 for i in range(300)], "s": 14}),
+     ("scatter", [[v + 0.05 for v in MPX], MPY], {"c": [i % 5 for i in range(300)], "s": 40, "marker": "o", "cmap": "plasma"}))
+# tight_layout with no titles: the top is the axes patch (h·1 + b) and the bottom the x tick labels, both y-up
+styled("pro-mono", "theme_pro_mono_tight_untitled",
+       ("$subplots", [1, 3], {"figsize": [9, 2.8], "sharey": True}),
+       ("sca", [2]), ("plot", [TX, [round(0.3 + (i % 7) * 0.2, 3) for i in TX]]),
+       ("fig.tight_layout", []))
 
 
 def run_case(name, calls):
-    style = None
+    style = STYLES.get(name)
     rc_layer = {}
-    with matplotlib.rc_context(), (plt.style.context(style) if style else contextlib.nullcontext()):
+    sheet = os.path.join(STYLE_DIR, f"{style}.mplstyle") if style else None
+    with matplotlib.rc_context(), (plt.style.context(sheet) if sheet else contextlib.nullcontext()):
         # Guardrail: these fixtures must be rendered with FreeType 2.14.3 and no hinting
         # (stock matplotlib 3.11.2 wheels); this reproduces the committed oracle PNGs.
         ver = getattr(ft, "__freetype_version__", "")
         if ver != "2.14.3":
             raise RuntimeError(f"FreeType mismatch: expected 2.14.3, got {ver}. "
                                "Use the stock matplotlib 3.11.2 wheel that bundles FreeType 2.14.3.")
-        matplotlib.rcParams["font.family"] = "DejaVu Sans"
+        if not style:   # a pro sheet names its own font
+            matplotlib.rcParams["font.family"] = "DejaVu Sans"
+        else:
+            use_static_inter()
         matplotlib.rcParams["text.hinting"] = "none"
         # "$rc" steps configure the figure before it exists (replay builds the Figure with fx.rc)
         for fn, _args, kwargs in calls:

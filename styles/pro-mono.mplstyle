@@ -1,0 +1,50 @@
+# pro-mono: crisp black on white, hairline grid, grayscale with one blue accent
+# Bundled with mpljs. Use it in matplotlib too: plt.style.use("path/to/pro-mono.mplstyle")
+
+figure.facecolor: ffffff
+axes.facecolor: ffffff
+axes.edgecolor: 111111
+grid.color: e5e5e5
+text.color: 0a0a0a
+axes.titlecolor: 0a0a0a
+axes.labelcolor: 666666
+xtick.color: 111111
+ytick.color: 111111
+xtick.labelcolor: 666666
+ytick.labelcolor: 666666
+patch.edgecolor: ffffff
+axes.prop_cycle: cycler('color', ['0070f3', '111111', '666666', '999999', 'c4c4c4'])
+font.family: Inter
+font.size: 9
+figure.figsize: 7.2, 4.2
+axes.spines.top: False
+axes.spines.right: False
+axes.spines.left: False
+axes.grid: True
+axes.grid.axis: y
+axes.axisbelow: True
+axes.linewidth: 0.8
+axes.titlesize: 12
+axes.titlelocation: left
+axes.titlepad: 10
+axes.labelsize: 9
+axes.labelpad: 6
+grid.linestyle: -
+grid.linewidth: 0.6
+lines.linewidth: 1.6
+lines.solid_capstyle: round
+lines.markersize: 5
+patch.linewidth: 0
+xtick.major.size: 3
+xtick.major.width: 0.8
+xtick.major.pad: 5
+xtick.labelsize: 8.5
+xtick.direction: out
+ytick.major.size: 0
+ytick.major.pad: 6
+ytick.labelsize: 8.5
+legend.frameon: False
+legend.fontsize: 8.5
+legend.handlelength: 1.4
+legend.handletextpad: 0.6
+legend.columnspacing: 1.4

@@ -33,7 +33,7 @@ marks = {}
 for m in names + list(CODES):
     ms = MarkerStyle(CODES.get(m, m))
     p = ms.get_transform().transform_path(ms.get_path())
-    v = np.round(p.vertices, 6).tolist()
+    v = p.vertices.tolist()   # full precision: 6-digit rounding moved curve flattening (circle edges ±1)
     codes = p.codes.tolist() if p.codes is not None else [1] + [2] * (len(v) - 1)
     segs, i = [], 0
     while i < len(v):

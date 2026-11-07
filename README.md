@@ -246,6 +246,36 @@ Nearest interpolation and data-stage resampling use only the trunc/round LUTs an
 
 `set_aspect('equal' | 'auto' | number)` shrinks the Axes box (adjustable='box'). Scatter accepts `zorder` and a numeric `c` with `cmap`/`norm`/`vmin`/`vmax`.
 
+## Themes
+
+Four dashboard-style sheets ship with mpljs, next to matplotlib's own. They are plain `.mplstyle` files
+([`styles/`](styles/)), so matplotlib renders them too (`plt.style.use("styles/pro-dark.mplstyle")`), and every
+figure below is pixel-exact against that render (`fixtures/ref/theme_*`, 21 cases).
+
+| style | look |
+|---|---|
+| `pro-dark` | deep navy dashboard: faint grid, muted ticks, vivid but restrained accents |
+| `pro-mono` | crisp black on white: hairline grid, grayscale with one blue accent |
+| `pro-ember` | warm charcoal with an orange accent |
+| `pro-slate` | soft off-white with muted indigo and violet accents |
+
+All four use Inter, left-aligned titles, a y-only grid, no top/left/right spines and a frameless legend.
+
+```ts
+import { registerFonts, subplots } from 'mpljs';
+import { interRegular } from 'mpljs/fonts/inter-regular';
+
+registerFonts(interRegular);                       // the sheets set font.family: Inter
+const [fig, ax] = subplots({ style: 'pro-dark' });  // or ['pro-slate', { 'lines.linewidth': 2 }]
+```
+
+[`examples/themes/dashboard.ts`](examples/themes/dashboard.ts) draws the same service dashboard in each:
+
+<img src="docs/images/themes/pro-dark.svg" alt="service dashboard in the pro-dark style: latency percentiles with bands, stacked requests, a latency heatmap with a colorbar, error rates and a value-coloured scatter, rendered by mpljs">
+<img src="docs/images/themes/pro-mono.svg" alt="the same dashboard in the pro-mono style">
+<img src="docs/images/themes/pro-ember.svg" alt="the same dashboard in the pro-ember style">
+<img src="docs/images/themes/pro-slate.svg" alt="the same dashboard in the pro-slate style">
+
 ## Commands
 
 | command | what it does |
@@ -358,7 +388,7 @@ Layers, each a partial rc, later wins:
 DEFAULTS  <  style sheet(s)  <  per-figure rc overrides  <  per-artist kwargs
 ```
 
-A style is a bundled matplotlib name (`'ggplot'`, `'dark_background'`, `'fivethirtyeight'`, `'seaborn-v0_8-darkgrid'`, …),
+A style is a bundled matplotlib name (`'ggplot'`, `'dark_background'`, `'fivethirtyeight'`, `'seaborn-v0_8-darkgrid'`, …) or one of the [pro themes](#themes),
 raw `.mplstyle` text, or an rc object. They compose: `subplots({ style: ['seaborn-v0_8-whitegrid', { 'lines.linewidth': 3 }] })`.
 Because the keys and the parser are matplotlib's, the bundled styles are *verified against matplotlib's rendering of the same style*
 (18 fixtures). Two matplotlib behaviours this exposed: lines and filled patches have **independent** color cycles

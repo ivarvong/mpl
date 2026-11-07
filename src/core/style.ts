@@ -1,5 +1,6 @@
 // Style sheets: matplotlib .mplstyle text -> RcLayer, and composition of layers.
 //   DEFAULTS < style sheet(s) < per-figure rc < per-artist kwargs
+import { PRO_STYLES } from './data/prostyles.ts';
 import { STYLELIB } from './data/stylelib.ts';
 import { DEFAULTS, mergeLayers } from './rc.ts';
 import type { RcLayer, RcValue } from './rc.ts';
@@ -83,8 +84,9 @@ export function parseStyle(text: string): Result<RcLayer> {
 }
 
 export function bundledStyle(name: string): Result<RcLayer> {
-  const text = lookup(STYLELIB, name);
-  if (text.kind === 'none') return err(`unknown style ${JSON.stringify(name)}; bundled: ${[...STYLELIB.keys()].join(', ')}`);
+  const mpl = lookup(STYLELIB, name);
+  const text = mpl.kind === 'some' ? mpl : lookup(PRO_STYLES, name);
+  if (text.kind === 'none') return err(`unknown style ${JSON.stringify(name)}; bundled: ${availableStyles().join(', ')}`);
   return parseStyle(text.value);
 }
 
@@ -101,4 +103,4 @@ export function composeStyles(specs: readonly StyleSpec[]): Result<RcLayer> {
   return ok(mergeLayers(layers));
 }
 
-export const availableStyles = (): readonly string[] => [...STYLELIB.keys()];
+export const availableStyles = (): readonly string[] => [...STYLELIB.keys(), ...PRO_STYLES.keys()];
