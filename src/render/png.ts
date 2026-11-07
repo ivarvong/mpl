@@ -4,11 +4,13 @@
 //                filtered and fed in bands, so memory stays O(band) beyond the canvas.
 //                (Platform zlib — not byte-identical to encodePNGSync.)
 //   encodePNG  — the stream, collected.
-//   encodePNGSync — synchronous custom deflate, byte-stable. Peak memory beyond the RGBA
-//                   canvas is fixed: two TOK_BLOCK Int32 buffers + hash pools + a bit writer
-//                   that grows with the compressed stream (≪ canvas). Token Huffman blocks
-//                   flush every TOK_BLOCK tokens (same boundaries as before), so bytes match
-//                   the prior whole-buffer tokenizer.
+//   encodePNGSync — synchronous custom deflate. Peak beyond the RGBA canvas is a known
+//                   constant: two TOK_BLOCK buffers + hash pools + ≤ one IDAT bit-writer
+//                   payload + one outbound IDAT chunk (see pngPeakBytes). Multi-IDAT;
+//                   pixels match the prior single-IDAT encoder; file bytes differ.
+//   pngStreamSync — pull-based ReadableStream of the same bytes; encoder advances only on
+//                   pull (real backpressure). Workers use this so encoded output never accumulates.
+
 // Each takes a PngOptions: colors none writes 8-bit RGBA (color type 6); colors n writes a palette PNG (color type 3)
 // of at most n entries, exact when the figure has that few colors (palette.ts), packed at the smallest bit depth.
 import type { Canvas } from './agg/canvas.ts';
@@ -235,23 +237,40 @@ for (let s = 0; s < 30; s++) DSYM.fill(s, DBASE[s], s < 29 ? DBASE[s + 1] : 3276
 const distSym = (d: number): number => DSYM[d];
 const rev = (code: number, len: number): number => { let r = 0; for (let i = 0; i < len; i++) { r = (r << 1) | (code & 1); code >>= 1; } return r; };
 
-/** Reused across encodes: cold isolates pay for one allocation, not one per PNG. */
-let BITS_BUF = new Uint8Array(1 << 18);
+/**
+ * Max zlib bytes retained for one Huffman block before it is wrapped as an IDAT.
+ * writeBlock reserves (nTok·6+8) bytes; that is the hard ceiling for one Huffman block.
+ */
+export const PNG_IDAT_PAYLOAD_MAX: number = (1 << 16) * 6 + 256;  // writeBlock reserve: TOK_BLOCK·6+8
+
+/** Reused across encodes: fixed cap so the bit writer never holds more than one IDAT payload. */
+const BITS_BUF = new Uint8Array(PNG_IDAT_PAYLOAD_MAX);
 class Bits {
   buf = BITS_BUF; n = 0; acc = 0; cnt = 0;
-  reset(): void { this.buf = BITS_BUF; this.n = 0; this.acc = 0; this.cnt = 0; }
+  /** Instrumentation: high-water mark of complete bytes held (tests). */
+  retainedHigh = 0;
+  reset(): void { this.buf = BITS_BUF; this.n = 0; this.acc = 0; this.cnt = 0; this.retainedHigh = 0; }
   put(v: number, len: number): void {
     this.acc |= v << this.cnt; this.cnt += len;
     while (this.cnt >= 8) {
-      if (this.n >= this.buf.length) { const b = new Uint8Array(this.buf.length * 2); b.set(this.buf); this.buf = b; BITS_BUF = b; }
+      if (this.n >= this.buf.length) throw new RangeError(`PNG bit writer exceeded PNG_IDAT_PAYLOAD_MAX (${PNG_IDAT_PAYLOAD_MAX})`);
       this.buf[this.n++] = this.acc & 255; this.acc >>>= 8; this.cnt -= 8;
     }
+    if (this.n > this.retainedHigh) this.retainedHigh = this.n;
   }
   reserve(bytes: number): void {
-    if (this.n + bytes <= this.buf.length) return;
-    const b = new Uint8Array(Math.max(this.buf.length * 2, this.n + bytes)); b.set(this.buf.subarray(0, this.n)); this.buf = b; BITS_BUF = b;
+    if (this.n + bytes > this.buf.length) throw new RangeError(`PNG bit writer reserve ${this.n + bytes} > PNG_IDAT_PAYLOAD_MAX`);
   }
-  flush(): Uint8Array { if (this.cnt > 0) this.put(0, 8 - this.cnt); return this.buf.subarray(0, this.n); }
+  /** Copy out complete bytes and compact; bit accumulator unchanged. */
+  takeBytes(): Uint8Array {
+    const out = this.buf.slice(0, this.n);
+    this.n = 0;
+    return out;
+  }
+  flush(): Uint8Array {
+    if (this.cnt > 0) this.put(0, 8 - this.cnt);
+    return this.takeBytes();
+  }
 }
 const BITS = new Bits();
 
@@ -507,14 +526,63 @@ const ADLER_SINGLES = 512;
  */
 export const TOK_BLOCK: number = 1 << 16;
 
-/** Fixed scratch beyond the RGBA canvas for the default sync encoder (bytes). Excludes the bit writer
- *  (grows with compressed size ≪ canvas) and the final PNG buffer. */
+/**
+ * Module-pooled scratch retained across encodes (bytes). Independent of w·h.
+ * Includes the bit writer cap (one IDAT zlib payload) and both token blocks.
+ * Intervals L/U grow with width — counted in pngPeakBytes via pngIntervalsBytes(w).
+ */
 export const PNG_SYNC_FIXED_SCRATCH_BYTES: number =
-  2 * TOK_BLOCK * 4 +           // active + held token blocks
+  2 * TOK_BLOCK * 4 +           // TOK_A + TOK_B
   (1 << 15) * 4 +               // TOK_HEAD
   PIX_RING * 4 +                // TOK_PREV
   (1 << 15) * 4 +               // TOK_AGE
-  2048 * 4 * 2;                 // Intervals L/U initial (grow to O(w), see ensure)
+  2048 * 4 * 2 +                // Intervals L/U initial capacity
+  PNG_IDAT_PAYLOAD_MAX +        // BITS_BUF — one in-flight zlib payload
+  4 * 256 * 4 +                 // CRC4
+  259 + 32769 +                 // LSYM + DSYM
+  286 * 8 + 600 * 8 + 600 * 4 + 600 * 4 + 286 * 4 +  // CL_F/W/P/H/USED
+  286 + 286 + 19 +              // CL_OUT_*
+  286 * 4 + 30 * 4 + 19 * 4 +   // WB_LF/DF/CF
+  316 * 3;                      // WB_SEQ/CL/CE
+
+/** One enqueued IDAT chunk: length(4)+type(4)+payload+crc(4). Stream retains at most one. */
+export const PNG_IDAT_CHUNK_MAX: number = 12 + PNG_IDAT_PAYLOAD_MAX;
+
+/** Interval arrays L/U after ensure(w): 2 · (w+4) · 4 bytes. */
+export const pngIntervalsBytes = (w: number): number => 2 * (w + 4) * 4;
+
+/** Block-state bytes on a canvas of size w×h (Agg BLOCK=32). */
+export const canvasBlockBytes = (w: number, h: number): number => {
+  const nb = (w + 31) >> 5;
+  return nb * h * 4 + nb * h;
+};
+
+/**
+ * Exact peak arrayBuffers bound for the streaming RGBA encode path (bytes):
+ *   4·w·h  +  canvasBlockBytes(w,h)  +  PNG_SYNC_FIXED_SCRATCH_BYTES
+ *   +  max(0, pngIntervalsBytes(w) − 2·2048·4)  +  PNG_IDAT_CHUNK_MAX
+ *
+ * Full-frame RGBA is the one O(w·h) term (band rasterization rejected: AA identity /
+ * ≥15% warm CPU — perf-out/stream2/band-verdict.md). Encoded output does not accumulate:
+ * pull-based IDATs, retained ≤ one chunk. Sync encodePNGSync materializes the file for its
+ * return value; Workers use pngStreamSync.
+ *
+ * Under mpl-web LIMITS.pixels (= MAX_FRAME_PIXELS), max width is MAX_FRAME_PIXELS (h=1), so
+ * the O(w) intervals term is a known constant ≤ pngIntervalsBytes(MAX_FRAME_PIXELS).
+ */
+export const pngPeakBytes = (w: number, h: number): number => {
+  const intervalsExtra = Math.max(0, pngIntervalsBytes(w) - 2 * 2048 * 4);
+  return 4 * w * h + canvasBlockBytes(w, h) + PNG_SYNC_FIXED_SCRATCH_BYTES + intervalsExtra + PNG_IDAT_CHUNK_MAX;
+};
+
+/** Max 1× pixels (mpl-web LIMITS.pixels). */
+export const MAX_FRAME_PIXELS: number = 4 * 1024 * 1024;
+
+/** Known-constant peak at the widest legal 1× frame (w=MAX_FRAME_PIXELS, h=1). */
+export const PNG_PEAK_MAX_1X_WIDE_BYTES: number = pngPeakBytes(MAX_FRAME_PIXELS, 1);
+
+/** Known-constant peak at the square max-1× frame (2048×2048). */
+export const PNG_PEAK_MAX_1X_SQUARE_BYTES: number = pngPeakBytes(2048, 2048);
 
 /** [start, end) pairs of pixels where a predicate holds, in x order, with a forward cursor. */
 class Intervals {
@@ -563,163 +631,231 @@ function alongMatch(iv: Intervals, px: Uint8Array, W: number, pb: number, xb: nu
 }
 
 /**
- * Canvas-aware LZ77 → dynamic-Huffman zlib, flushing a Huffman block every TOK_BLOCK tokens.
- * Same tokens and block boundaries as the historical whole-buffer path; peak token memory is O(1).
+ * Canvas-aware LZ77 → dynamic-Huffman zlib as pull-driven IDAT payloads.
+ * Each pull after the header yields at most one IDAT whose zlib payload is ≤ PNG_IDAT_PAYLOAD_MAX.
+ * Token scratch stays 2·TOK_BLOCK; bit writer is compacted after every IDAT.
  */
-function zlibFromCanvas(c: Canvas): Uint8Array {
+type ZlibEnc = {
+  pullIdat(): Option<Uint8Array>;  // none when finished (Adler already emitted in last payload)
+  retainedHigh(): number;
+};
+
+function zlibEncoder(c: Canvas): ZlibEnc {
   const W = c.w, H = c.h, px = c.px, RB = W * 4, S = RB + 1, nb = c.nb, mix = c.mix;
   const u = c.i32, blk = c.blkI32;
   const head = TOK_HEAD, prev = TOK_PREV, age = TOK_AGE;
   let epoch = TOK_EPOCH + 1;
   if (epoch > 0x7fffffff) { age.fill(0); epoch = 1; }
   TOK_EPOCH = epoch;
-  let tok = TOK_A, n = 0;
-  // box: nested push mutates; CFA would otherwise keep held as none after the loop
+  let tok = TOK_A, nTok = 0;
   const hold: { cur: Option<Int32Array> } = { cur: none };
   const L = TOK_L, U = TOK_U; L.ensure(W); U.ensure(W);
   const bw = BITS; bw.reset();
   bw.put(0x78, 8); bw.put(0x9c, 8);
 
+  let y = 0, xb = 0, rowStarted = false;
+  let a = 1, b = 0, pending = 0;
+  let phase: 'rows' | 'flush' | 'adler' | 'done' = 'rows';
+  let flushKind: 'hold' | 'tail' | 'empty' = 'hold';
+  const upOk = S <= 32768;
+  let high = 0;
+
   const emitFull = (buf: Int32Array, last: boolean): void => { writeBlock(bw, buf, 0, TOK_BLOCK, last); };
-  const push = (v: number): void => {
-    tok[n++] = v;
-    if (n === TOK_BLOCK) {
-      if (hold.cur.kind === 'some') emitFull(hold.cur.value, false);
+  const push = (v: number): boolean => {
+    // returns true if a full held block was Huffman-coded (caller should takeBytes)
+    tok[nTok++] = v;
+    if (nTok === TOK_BLOCK) {
+      if (hold.cur.kind === 'some') {
+        emitFull(hold.cur.value, false);
+        hold.cur = some(tok);
+        tok = tok === TOK_A ? TOK_B : TOK_A;
+        nTok = 0;
+        return true;
+      }
       hold.cur = some(tok);
       tok = tok === TOK_A ? TOK_B : TOK_A;
-      n = 0;
+      nTok = 0;
     }
+    return false;
   };
 
-  let a = 1, b = 0, pending = 0;
-  const upOk = S <= 32768;
-  for (let y = 0; y < H; y++) {
-    const row = y * W, rowB = row * 4, brow = y * nb;
-    {
-      const le = L.e, ue = U.e;
-      let ln = 0, lo = -1, un = 0, uo = -1, last = u[row];
-      for (let j = 0; j < nb; j++) {
-        const bs = j << BLOCK_SHIFT, be = Math.min(bs + BLOCK, W), bi = brow + j;
-        if (mix[bi] === 0) {
-          const col = blk[bi];
-          if (bs > 0 && col === last) { if (lo < 0) lo = bs; }
-          else { if (lo >= 0) { le[ln++] = lo; le[ln++] = bs; } lo = be - bs > 1 ? bs + 1 : -1; }
-          last = col;
+  const startRow = (): boolean => {
+    const row = y * W, brow = y * nb;
+    const le = L.e, ue = U.e;
+    let ln = 0, lo = -1, un = 0, uo = -1, last = u[row];
+    for (let j = 0; j < nb; j++) {
+      const bs = j << BLOCK_SHIFT, be = Math.min(bs + BLOCK, W), bi = brow + j;
+      if (mix[bi] === 0) {
+        const col = blk[bi];
+        if (bs > 0 && col === last) { if (lo < 0) lo = bs; }
+        else { if (lo >= 0) { le[ln++] = lo; le[ln++] = bs; } lo = be - bs > 1 ? bs + 1 : -1; }
+        last = col;
+      } else {
+        for (let x = bs; x < be; x++) {
+          const v = u[row + x];
+          if (x > 0 && v === last) { if (lo < 0) lo = x; }
+          else if (lo >= 0) { le[ln++] = lo; le[ln++] = x; lo = -1; }
+          last = v;
+        }
+      }
+      if (y > 0) {
+        if (mix[bi] === 0 && mix[bi - nb] === 0) {
+          if (blk[bi] === blk[bi - nb]) { if (uo < 0) uo = bs; }
+          else if (uo >= 0) { ue[un++] = uo; ue[un++] = bs; uo = -1; }
         } else {
           for (let x = bs; x < be; x++) {
-            const v = u[row + x];
-            if (x > 0 && v === last) { if (lo < 0) lo = x; }
-            else if (lo >= 0) { le[ln++] = lo; le[ln++] = x; lo = -1; }
-            last = v;
-          }
-        }
-        if (y > 0) {
-          if (mix[bi] === 0 && mix[bi - nb] === 0) {
-            if (blk[bi] === blk[bi - nb]) { if (uo < 0) uo = bs; }
-            else if (uo >= 0) { ue[un++] = uo; ue[un++] = bs; uo = -1; }
-          } else {
-            for (let x = bs; x < be; x++) {
-              if (u[row + x] === u[row + x - W]) { if (uo < 0) uo = x; }
-              else if (uo >= 0) { ue[un++] = uo; ue[un++] = x; uo = -1; }
-            }
+            if (u[row + x] === u[row + x - W]) { if (uo < 0) uo = x; }
+            else if (uo >= 0) { ue[un++] = uo; ue[un++] = x; uo = -1; }
           }
         }
       }
-      if (lo >= 0) { le[ln++] = lo; le[ln++] = W; }
-      if (uo >= 0) { ue[un++] = uo; ue[un++] = W; }
-      L.n = ln; L.k = 0; U.n = un; U.k = 0;
     }
+    if (lo >= 0) { le[ln++] = lo; le[ln++] = W; }
+    if (uo >= 0) { ue[un++] = uo; ue[un++] = W; }
+    L.n = ln; L.k = 0; U.n = un; U.k = 0;
     a = modA(a); b = modA(b + a); pending = 0;
     for (let k = 0, x = 0; x < W;) {
       const s0 = k < L.n ? L.e[k] - 1 : W;
       const end = x < s0 ? s0 : L.e[k + 1];
       const len = x < s0 ? 1 : end - x;
       const q = (row + x) * 4, x0 = px[q], x1 = px[q + 1], x2 = px[q + 2], x3 = px[q + 3];
-      const sum = x0 + x1 + x2 + x3, t = 4 * x0 + 3 * x1 + 2 * x2 + x3;
+      const sum = x0 + x1 + x2 + x3, tsum = 4 * x0 + 3 * x1 + 2 * x2 + x3;
       if (len === 1) {
-        b += 4 * a + t; a += sum;
+        b += 4 * a + tsum; a += sum;
         if (++pending === ADLER_SINGLES) { a = modA(a); b = modA(b); pending = 0; }
         x++;
       } else {
-        b = modA(b + 4 * a * len + len * t + 2 * sum * len * (len - 1));
+        b = modA(b + 4 * a * len + len * tsum + 2 * sum * len * (len - 1));
         a = modA(a + len * sum);
         pending = 0; x = end; k += 2;
       }
     }
-    push(0);
-    let xb = 0;
-    while (xb < RB) {
-      const pb = rowB + xb, max = Math.min(258, RB - xb);
-      let best = 0, dist = 0;
-      if (max >= 3) {
-        if (xb >= 4) { best = alongMatch(L, px, W, pb, xb, 4, max); dist = 4; }
-        if (y > 0 && upOk && best < max) { const l = alongMatch(U, px, W, pb, xb, RB, max); if (l > best) { best = l; dist = S; } }
-        if (best < 32 && (xb & 3) === 0) {
-          const p = pb >> 2;
-          const hh = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
-          let j = age[hh] === epoch ? head[hh] : -1, chain = CHAIN;
-          while (j >= 0 && chain-- > 0 && p - j <= RM) {
-            const qy = (j / W) | 0, qxb = (j - qy * W) * 4, bd = (y - qy) * S + xb - qxb;
-            if (bd > 32768) break;
-            const mlen = Math.min(max, RB - qxb);
-            if (best < mlen && px[j * 4 + best] === px[pb + best]) {
-              const l = runBytes(px, u, pb, j * 4, mlen);
-              if (l > best) { best = l; dist = bd; }
+    const coded = push(0);
+    xb = 0;
+    rowStarted = true;
+    return coded;
+  };
+
+  const take = (): Uint8Array => {
+    const out = bw.takeBytes();
+    if (bw.retainedHigh > high) high = bw.retainedHigh;
+    if (out.length > high) high = out.length;
+    return out;
+  };
+
+  const pullIdat = (): Option<Uint8Array> => {
+    for (;;) {
+      if (phase === 'done') return none;
+      if (phase === 'adler') {
+        a = modA(a); b = modA(b);
+        const adler = ((b << 16) | a) >>> 0;
+        const tail = bw.flush();
+        const out = new Uint8Array(tail.length + 4);
+        out.set(tail, 0); out.set(u32(adler), tail.length);
+        if (out.length > high) high = out.length;
+        phase = 'done';
+        return some(out);
+      }
+      if (phase === 'flush') {
+        if (flushKind === 'hold' && hold.cur.kind === 'some' && nTok > 0) {
+          emitFull(hold.cur.value, false); hold.cur = none;
+          flushKind = 'tail';
+          return some(take());
+        }
+        if (flushKind === 'hold' && hold.cur.kind === 'some') {
+          emitFull(hold.cur.value, true); hold.cur = none;
+          phase = 'adler';
+          return some(take());
+        }
+        if (flushKind === 'tail' || nTok > 0) {
+          writeBlock(bw, tok, 0, nTok, true); nTok = 0;
+          phase = 'adler';
+          return some(take());
+        }
+        bw.put(1, 1); bw.put(1, 2); bw.put(0, 7);
+        phase = 'adler';
+        return some(take());
+      }
+      // phase === 'rows'
+      if (y >= H) {
+        phase = 'flush';
+        flushKind = hold.cur.kind === 'some' || nTok > 0 ? 'hold' : 'empty';
+        continue;
+      }
+      if (!rowStarted) {
+        if (startRow()) return some(take());
+      }
+      const row = y * W, rowB = row * 4;
+      while (xb < RB) {
+        const pb = rowB + xb, max = Math.min(258, RB - xb);
+        let best = 0, dist = 0;
+        if (max >= 3) {
+          if (xb >= 4) { best = alongMatch(L, px, W, pb, xb, 4, max); dist = 4; }
+          if (y > 0 && upOk && best < max) { const l = alongMatch(U, px, W, pb, xb, RB, max); if (l > best) { best = l; dist = S; } }
+          if (best < 32 && (xb & 3) === 0) {
+            const p = pb >> 2;
+            const hh = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
+            let j = age[hh] === epoch ? head[hh] : -1, chain = CHAIN;
+            while (j >= 0 && chain-- > 0 && p - j <= RM) {
+              const qy = (j / W) | 0, qxb = (j - qy * W) * 4, bd = (y - qy) * S + xb - qxb;
+              if (bd > 32768) break;
+              const mlen = Math.min(max, RB - qxb);
+              if (best < mlen && px[j * 4 + best] === px[pb + best]) {
+                const l = runBytes(px, u, pb, j * 4, mlen);
+                if (l > best) { best = l; dist = bd; }
+              }
+              const pj = prev[j & RM];
+              if (pj >= j) break;
+              j = pj;
             }
-            const pj = prev[j & RM];
-            if (pj >= j) break;
-            j = pj;
           }
         }
-      }
-      if (best >= 3) {
-        if (dist === 4 && best === 258 && (xb & 3) === 0) {
-          for (;;) {
-            push(256 + ((258 << 16) | 4));
-            const p1 = (rowB + xb + 258) >> 2;
-            for (let p = p1 - 2; p < p1; p++) {
+        let coded = false;
+        if (best >= 3) {
+          if (dist === 4 && best === 258 && (xb & 3) === 0) {
+            for (;;) {
+              coded = push(256 + ((258 << 16) | 4)) || coded;
+              const p1 = (rowB + xb + 258) >> 2;
+              for (let p = p1 - 2; p < p1; p++) {
+                const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
+                prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
+              }
+              xb += 258;
+              if (xb + 258 > RB) break;
+              const more = L.from(xb >> 2);
+              if (more < 64) break;
+              if (more < 65) break;
+              if (coded) break;
+            }
+          } else {
+            coded = push(256 + ((best << 16) | dist));
+            const p0 = (rowB + ((xb + 3) & ~3)) >> 2, p1 = (pb + best) >> 2;
+            for (let p = best <= 32 ? p0 : Math.max(p0, p1 - 2); p < p1; p++) {
               const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
               prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
             }
-            xb += 258;
-            if (xb + 258 > RB) break;
-            const more = L.from(xb >> 2);
-            if (more < 64) break;
-            if (more < 65) break;
+            xb += best;
           }
-          continue;
+        } else {
+          coded = push(px[pb]);
+          if ((xb & 3) === 0) {
+            const p = pb >> 2, h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
+            prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
+          }
+          xb++;
         }
-        push(256 + ((best << 16) | dist));
-        const p0 = (rowB + ((xb + 3) & ~3)) >> 2, p1 = (pb + best) >> 2;
-        for (let p = best <= 32 ? p0 : Math.max(p0, p1 - 2); p < p1; p++) {
-          const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
-          prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
-        }
-        xb += best;
-      } else {
-        push(px[pb]);
-        if ((xb & 3) === 0) {
-          const p = pb >> 2, h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
-          prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
-        }
-        xb++;
+        if (coded) return some(take());
       }
+      y++; rowStarted = false;
     }
-  }
-  a = modA(a); b = modA(b);
-  const adler = ((b << 16) | a) >>> 0;
+  };
 
-  // Flush with the same BFINAL placement as zlibFrom over a monolithic token buffer.
-  if (hold.cur.kind === 'some' && n > 0) { emitFull(hold.cur.value, false); writeBlock(bw, tok, 0, n, true); }
-  else if (hold.cur.kind === 'some') emitFull(hold.cur.value, true);
-  else if (n > 0) writeBlock(bw, tok, 0, n, true);
-  else { bw.put(1, 1); bw.put(1, 2); bw.put(0, 7); }
-
-  const body = bw.flush();
-  const out = new Uint8Array(body.length + 4);
-  out.set(body, 0); out.set(u32(adler), body.length);
-  return out;
+  return {
+    retainedHigh: (): number => Math.max(high, bw.retainedHigh),
+    pullIdat,
+  };
 }
+
 
 export function encodePNGSync(c: Canvas, opts: PngSyncOptions = RGBA): Uint8Array {
   const effort = opts.level.kind === 'some' ? effortOf(opts.level.value) : FAST;
@@ -727,53 +863,69 @@ export function encodePNGSync(c: Canvas, opts: PngSyncOptions = RGBA): Uint8Arra
     const ix = quantize(c, opts.colors.value);
     return concat([headerIndexed(c.w, c.h, c.dpi, ix), chunk('IDAT', zlibSync(indexedBand(ix, c.w, 0, c.h), indexedStride(ix, c.w), 1, effort)), IEND]);
   }
-  // an explicit level runs the generic tokenizer over the filtered rows; the default keeps the canvas-aware one
   if (opts.level.kind === 'some') return concat([header(c.w, c.h, c.dpi), chunk('IDAT', zlibSync(filteredBand(c, 0, c.h), c.w * 4 + 1, 4, effort)), IEND]);
   return tracer.span('png.sync', { w: c.w, h: c.h }, (sp) => {
-    const z = tracer.span('png.deflate', { w: c.w, h: c.h, tokBlock: TOK_BLOCK }, () => zlibFromCanvas(c));
-    sp.setAttribute('zBytes', z.length);
-    const head = header(c.w, c.h, c.dpi);
-    const out = new Uint8Array(head.length + 12 + z.length + IEND.length);
-    out.set(head, 0);
-    const o = head.length;
-    out[o] = (z.length >>> 24) & 255; out[o + 1] = (z.length >>> 16) & 255; out[o + 2] = (z.length >>> 8) & 255; out[o + 3] = z.length & 255;
-    out[o + 4] = 73; out[o + 5] = 68; out[o + 6] = 65; out[o + 7] = 84; // IDAT
-    out.set(z, o + 8);
-    const crc = tracer.span('png.crc', { zBytes: z.length }, () => crc32([out.subarray(o + 4, o + 8), z]));
-    const cOff = o + 8 + z.length;
-    out[cOff] = (crc >>> 24) & 255; out[cOff + 1] = (crc >>> 16) & 255; out[cOff + 2] = (crc >>> 8) & 255; out[cOff + 3] = crc & 255;
-    out.set(IEND, cOff + 4);
-    sp.setAttribute('bytes', out.length);
+    // Multi-IDAT: one chunk per Huffman block; concat == pngStreamSync. Sync API still
+    // materializes the full file; the Worker path uses pngStreamSync without retaining it.
+    const parts: Uint8Array[] = [header(c.w, c.h, c.dpi)];
+    const enc = zlibEncoder(c);
+    let zBytes = 0, nIdat = 0;
+    for (;;) {
+      const p = tracer.span('png.idat', { i: nIdat }, (isp) => {
+        const r = enc.pullIdat();
+        if (r.kind === 'some') isp.setAttribute('zBytes', r.value.length).setAttribute('retained', enc.retainedHigh());
+        return r;
+      });
+      if (p.kind === 'none') break;
+      zBytes += p.value.length;
+      nIdat++;
+      parts.push(chunk('IDAT', p.value));
+    }
+    parts.push(IEND);
+    const out = concat(parts);
+    sp.setAttribute('zBytes', zBytes).setAttribute('bytes', out.length)
+      .setAttribute('retained', enc.retainedHigh()).setAttribute('nIdat', nIdat);
     return out;
   });
 }
 
 /**
- * Byte-identical to encodePNGSync (concat of chunks), but yields signature+IHDR, one IDAT, IEND
- * as separate stream chunks so a Worker can start sending the header while deflate runs.
- * Peak memory matches encodePNGSync (canvas + fixed scratch + zlib body).
+ * Pull-based PNG: signature+IHDR, then one IDAT per pull (≤ PNG_IDAT_PAYLOAD_MAX zlib bytes), then IEND.
+ * Backpressure: the encoder only advances on pull. Retained encoded output ≤ one IDAT payload.
  */
 export function pngStreamSync(c: Canvas, opts: PngSyncOptions = RGBA): ReadableStream<Uint8Array> {
   if (opts.colors.kind === 'some' || opts.level.kind === 'some') {
-    // palette / explicit level: fall back to collecting the sync encoder
     const body = encodePNGSync(c, opts);
-    return new ReadableStream({
-      start(ctl) { ctl.enqueue(body); ctl.close(); },
-    });
+    return new ReadableStream({ start(ctl) { ctl.enqueue(body); ctl.close(); } });
   }
-  let state: 'head' | 'idat' | 'end' | 'done' = 'head';
+  let state: 'head' | 'body' | 'end' | 'done' = 'head';
+  let enc: Option<ZlibEnc> = none;
+  let nIdat = 0;
   return new ReadableStream({
     pull(ctl) {
       switch (state) {
         case 'head':
-          ctl.enqueue(header(c.w, c.h, c.dpi));
-          state = 'idat';
-          return;
-        case 'idat': {
-          const z = tracer.span('png.deflate', { w: c.w, h: c.h, tokBlock: TOK_BLOCK }, () => zlibFromCanvas(c));
-          ctl.enqueue(chunk('IDAT', z));
-          state = 'end';
-          return;
+          return tracer.span('png.stream.head', { w: c.w, h: c.h }, () => {
+            ctl.enqueue(header(c.w, c.h, c.dpi));
+            enc = some(zlibEncoder(c));
+            state = 'body';
+          });
+        case 'body': {
+          return tracer.span('png.stream.idat', { i: nIdat }, (sp) => {
+            if (enc.kind !== 'some') throw new Error('pngStreamSync: encoder missing');
+            const z = enc.value;
+            const p = z.pullIdat();
+            if (p.kind === 'some') {
+              sp.setAttribute('zBytes', p.value.length).setAttribute('retained', z.retainedHigh());
+              nIdat++;
+              ctl.enqueue(chunk('IDAT', p.value));
+              return;
+            }
+            sp.setAttribute('nIdat', nIdat);
+            ctl.enqueue(IEND);
+            state = 'done';
+            ctl.close();
+          });
         }
         case 'end':
           ctl.enqueue(IEND);
