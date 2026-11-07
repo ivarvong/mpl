@@ -6,6 +6,12 @@
 //   node scripts/gen_api_docs.ts --check  exit 1 if docs/api.md is out of date
 import { readFileSync, writeFileSync } from 'node:fs';
 import { FACE_CATALOG } from '../src/core/fontcodec.ts';
+import {
+  PNG_ARRAYBUFFERS_BASELINE_BYTES,
+  PNG_IDAT_CHUNK_MAX,
+  PNG_PEAK_BUDGET_BYTES,
+  PNG_SYNC_FIXED_SCRATCH_BYTES,
+} from '../src/render/png.ts';
 
 const ROOT = new URL('../', import.meta.url);
 const SRC = readFileSync(new URL('src/api.ts', ROOT), 'utf8');
@@ -147,6 +153,38 @@ function fonts(): string {
   ].join('\n');
 }
 
+
+/** PNG peak-memory contract; every number is taken from src/render/png.ts. */
+function peakMemorySection(): string {
+  const budgetMiB = PNG_PEAK_BUDGET_BYTES / (1024 * 1024);
+  const baselineKiB = PNG_ARRAYBUFFERS_BASELINE_BYTES / 1024;
+  const scratchKiB = Math.round(PNG_SYNC_FIXED_SCRATCH_BYTES / 1024);
+  const idatKiB = Math.round(PNG_IDAT_CHUNK_MAX / 1024);
+  const prose =
+    'Streaming RGBA encode peak is bounded by `pngPeakBytes(w, h)` (canvas + fixed scratch ' +
+    `(~${scratchKiB} KiB) + ≤ one IDAT chunk (~${idatKiB} KiB) + a measured Node/V8 ` +
+    `arrayBuffers baseline of ${baselineKiB} KiB). Workers enforce \`PNG_PEAK_BUDGET_BYTES\` ` +
+    `(${budgetMiB} MB) before allocating the canvas so \`@2x\`/\`@3x\` of a large 1× figure ` +
+    'return 400 rather than OOM. Helpers: `pngPeakFitsBudget(w, h)`, ' +
+    '`maxPngScaleForFigure(widthIn, heightIn, dpi)`.';
+  return [
+    '### PNG peak memory (`pngPeakBytes`, `PNG_PEAK_BUDGET_BYTES`)',
+    '',
+    prose,
+    '',
+    '',
+  ].join('\n');
+}
+
+/** Figure API section with the PNG peak-memory note inserted after `toPNGSync`. */
+function figureSection(): string {
+  const body = section('Figure', 'Create one with `subplots()` or `new Figure({ style, rc, figsize, dpi })`.');
+  const next = '### `Figure.pngStream(kwargs?)`';
+  const j = body.indexOf(next);
+  if (j < 0) throw new Error('Figure.pngStream anchor missing in generated docs');
+  return body.slice(0, j) + peakMemorySection() + body.slice(j);
+}
+
 export function render(): string {
   return [
     '# API reference',
@@ -161,7 +199,7 @@ export function render(): string {
     '',
     functions(),
     fonts(),
-    section('Figure', 'Create one with `subplots()` or `new Figure({ style, rc, figsize, dpi })`.'),
+    figureSection(),
     section('Axes', 'Returned by `subplots()`, `fig.add_subplot()` and `ax.twinx()`.'),
   ].join('\n').replace(/\n{3,}/g, '\n\n');
 }

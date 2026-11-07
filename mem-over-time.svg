@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400">
+<rect width="800" height="400" fill="#ffffff"/>
+<rect x="71" y="36" width="714" height="306" fill="#ffffff" stroke="none"/>
+<text x="133.5881" y="362.219" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">140</text>
+<text x="243.5156" y="362.219" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">160</text>
+<text x="353.4431" y="362.219" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">180</text>
+<text x="463.3706" y="362.219" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">200</text>
+<text x="573.298" y="362.219" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">220</text>
+<text x="683.2255" y="362.219" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">240</text>
+<path d="M147.5 342.5 L147.5 347.5 M257.5 342.5 L257.5 347.5 M367.5 342.5 L367.5 347.5 M477.5 342.5 L477.5 347.5 M587.5 342.5 L587.5 347.5 M696.5 342.5 L696.5 347.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<text x="43.2882" y="342.4213" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">50</text>
+<text x="43.2882" y="308.1199" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">75</text>
+<text x="34.4444" y="273.8185" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">100</text>
+<text x="34.4444" y="239.5171" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">125</text>
+<text x="34.4444" y="205.2157" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">150</text>
+<text x="34.4444" y="170.9143" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">175</text>
+<text x="34.4444" y="136.6129" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">200</text>
+<text x="34.4444" y="102.3115" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">225</text>
+<text x="34.4444" y="68.0101" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">250</text>
+<path d="M71.5 337.5 L66.5 337.5 M71.5 303.5 L66.5 303.5 M71.5 269.5 L66.5 269.5 M71.5 234.5 L66.5 234.5 M71.5 200.5 L66.5 200.5 M71.5 166.5 L66.5 166.5 M71.5 131.5 L66.5 131.5 M71.5 97.5 L66.5 97.5 M71.5 63.5 L66.5 63.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c0"><rect x="70.6979" y="36.0052" width="714.3021" height="305.9392"/></clipPath>
+<g clip-path="url(#c0)" data-artist="artist/0/line">
+<path d="M176.8154 328.0381L712.5788 49.9115" fill="none" stroke="#d62728" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c1"><rect x="70.6979" y="36.0052" width="714.3021" height="305.9392"/></clipPath>
+<g clip-path="url(#c1)" data-artist="artist/1/line">
+<path d="M103.1662 327.6032L752.5317 323.8233" fill="none" stroke="#1f77b4" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c2"><rect x="70.6979" y="36.0052" width="714.3021" height="305.9392"/></clipPath>
+<g clip-path="url(#c2)" data-artist="artist/2/line">
+<path d="M71.5 230.5L785.5 230.5" fill="none" stroke="#666666" stroke-width="1.3889" stroke-linejoin="round" stroke-dasharray="5.1389 2.2222"/>
+</g>
+<path d="M71.5 342.5 L71.5 36.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M785.5 342.5 L785.5 36.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M71.5 342.5 L785.5 342.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M71.5 36.5 L785.5 36.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="417.4661" y="381.6634" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">ms</text>
+<text x="25.5523" y="244.8342" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-90 25.5523 244.8342)">arrayBuffers MB</text>
+<text x="203.7083" y="27.6719" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">Memory over time during encode (demo 4200×3150)</text>
+<path d="M80.5 89.5 L261.5 89.5 Q264.5 89.5 264.5 86.5 L264.5 46.5 Q264.5 43.5 261.5 43.5 L80.5 43.5 Q78.5 43.5 78.5 46.5 L78.5 86.5 Q78.5 89.5 80.5 89.5 Z" fill="#ffffff" fill-opacity="0.8" stroke="#cccccc" stroke-width="1.3889" stroke-opacity="0.8"/>
+<path d="M83 54L97 54L111 54" fill="none" stroke="#d62728" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+<text x="122.0868" y="59.0575" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">1a7b197 demo@3x</text>
+<path d="M83 75L97 75L111 75" fill="none" stroke="#1f77b4" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+<text x="122.0868" y="79.8908" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">stream demo@3x</text>
+</svg>

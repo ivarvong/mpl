@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+<rect width="800" height="450" fill="#ffffff"/>
+<rect x="71" y="36" width="714" height="375" fill="#ffffff" stroke="none"/>
+<text x="38.003" y="460.4033" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-25 38.003 460.4033)">demo@1x</text>
+<text x="167.8761" y="460.4033" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-25 167.8761 460.4033)">demo@2x</text>
+<text x="297.7492" y="460.4033" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-25 297.7492 460.4033)">demo@3x</text>
+<text x="433.0885" y="457.8544" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-25 433.0885 457.8544)">dash@1x</text>
+<text x="562.9616" y="457.8544" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-25 562.9616 457.8544)">dash@2x</text>
+<text x="692.8347" y="457.8544" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-25 692.8347 457.8544)">dash@3x</text>
+<path d="M103.5 411.5 L103.5 416.5 M233.5 411.5 L233.5 416.5 M363.5 411.5 L363.5 416.5 M493.5 411.5 L493.5 416.5 M623.5 411.5 L623.5 416.5 M753.5 411.5 L753.5 416.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<text x="52.1319" y="416.665" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">0</text>
+<text x="43.2882" y="349.6322" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">50</text>
+<text x="34.4444" y="282.5994" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">100</text>
+<text x="34.4444" y="215.5666" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">150</text>
+<text x="34.4444" y="148.5338" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">200</text>
+<text x="34.4444" y="81.501" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">250</text>
+<path d="M71.5 411.5 L66.5 411.5 M71.5 344.5 L66.5 344.5 M71.5 277.5 L66.5 277.5 M71.5 210.5 L66.5 210.5 M71.5 143.5 L66.5 143.5 M71.5 76.5 L66.5 76.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c0"><rect x="70.6979" y="36.0052" width="714.3021" height="375.3837"/></clipPath>
+<g clip-path="url(#c0)" data-artist="artist/0/line">
+<path d="M103.1662 370.6732L233.0393 254.4249L362.9124 63.6898L492.7855 384.4015L622.6586 310.2364L752.5317 188.8132" fill="none" stroke="#d62728" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+<defs><path id="m1" d="M0 4.1667 C1.105 4.1667 2.1649 3.7276 2.9463 2.9463 C3.7276 2.1649 4.1667 1.105 4.1667 0 C4.1667 -1.105 3.7276 -2.1649 2.9463 -2.9463 C2.1649 -3.7276 1.105 -4.1667 0 -4.1667 C-1.105 -4.1667 -2.1649 -3.7276 -2.9463 -2.9463 C-3.7276 -2.1649 -4.1667 -1.105 -4.1667 0 C-4.1667 1.105 -3.7276 2.1649 -2.9463 2.9463 C-2.1649 3.7276 -1.105 4.1667 0 4.1667 Z" fill="#d62728" stroke="#d62728" stroke-width="1.3889" stroke-linejoin="round"/></defs>
+<use href="#m1" x="103.5" y="371.5"/><use href="#m1" x="233.5" y="254.5"/><use href="#m1" x="363.5" y="64.5"/><use href="#m1" x="493.5" y="384.5"/><use href="#m1" x="623.5" y="310.5"/><use href="#m1" x="753.5" y="189.5"/>
+</g>
+<clipPath id="c2"><rect x="70.6979" y="36.0052" width="714.3021" height="375.3837"/></clipPath>
+<g clip-path="url(#c2)" data-artist="artist/1/line">
+<path d="M103.1662 399.4571L233.0393 372.3624L362.9124 331.3383L492.7855 402.0713L622.6586 383.5435L752.5317 356.6499" fill="none" stroke="#1f77b4" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+<defs><path id="m3" d="M-4 4 L4 4 L4 -4 L-4 -4 Z" fill="#1f77b4" stroke="#1f77b4" stroke-width="1.3889"/></defs>
+<use href="#m3" x="103.5" y="399.5"/><use href="#m3" x="233.5" y="372.5"/><use href="#m3" x="363.5" y="331.5"/><use href="#m3" x="493.5" y="402.5"/><use href="#m3" x="623.5" y="384.5"/><use href="#m3" x="753.5" y="357.5"/>
+</g>
+<clipPath id="c4"><rect x="70.6979" y="36.0052" width="714.3021" height="375.3837"/></clipPath>
+<g clip-path="url(#c4)" data-artist="artist/2/line">
+<path d="M71.5 240.5L785.5 240.5" fill="none" stroke="#666666" stroke-width="1.3889" stroke-linejoin="round" stroke-dasharray="5.1389 2.2222"/>
+</g>
+<path d="M71.5 411.5 L71.5 36.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M785.5 411.5 L785.5 36.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M71.5 411.5 L785.5 411.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M71.5 36.5 L785.5 36.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="25.5523" y="304.1502" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-90 25.5523 304.1502)">peak arrayBuffers (MB)</text>
+<text x="207.0677" y="27.6719" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">PNG encode peak memory: old vs fixed-block stream</text>
+<path d="M80.5 110.5 L309.5 110.5 Q312.5 110.5 312.5 107.5 L312.5 46.5 Q312.5 43.5 309.5 43.5 L80.5 43.5 Q78.5 43.5 78.5 46.5 L78.5 107.5 Q78.5 110.5 80.5 110.5 Z" fill="#ffffff" fill-opacity="0.8" stroke="#cccccc" stroke-width="1.3889" stroke-opacity="0.8"/>
+<path d="M83 54L97 54L111 54" fill="none" stroke="#d62728" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+<defs><path id="m5" d="M0 4.1667 C1.105 4.1667 2.1649 3.7276 2.9463 2.9463 C3.7276 2.1649 4.1667 1.105 4.1667 0 C4.1667 -1.105 3.7276 -2.1649 2.9463 -2.9463 C2.1649 -3.7276 1.105 -4.1667 0 -4.1667 C-1.105 -4.1667 -2.1649 -3.7276 -2.9463 -2.9463 C-3.7276 -2.1649 -4.1667 -1.105 -4.1667 0 C-4.1667 1.105 -3.7276 2.1649 -2.9463 2.9463 C-2.1649 3.7276 -1.105 4.1667 0 4.1667 Z" fill="#d62728" stroke="#d62728" stroke-width="1.3889" stroke-linejoin="round"/></defs>
+<use href="#m5" x="97.5" y="54.5"/>
+<text x="122.0868" y="59.0575" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">1a7b197 (prealloc tok)</text>
+<path d="M83 75L97 75L111 75" fill="none" stroke="#1f77b4" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+<defs><path id="m6" d="M-4 4 L4 4 L4 -4 L-4 -4 Z" fill="#1f77b4" stroke="#1f77b4" stroke-width="1.3889"/></defs>
+<use href="#m6" x="97.5" y="75.5"/>
+<text x="122.0868" y="79.8908" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">stream (fixed TOK_BLOCK)</text>
+<path d="M83.5 96.5L97.5 96.5L111.5 96.5" fill="none" stroke="#666666" stroke-width="1.3889" stroke-linejoin="round" stroke-dasharray="5.1389 2.2222"/>
+<text x="122.0868" y="100.7242" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">Workers 128 MB</text>
+</svg>

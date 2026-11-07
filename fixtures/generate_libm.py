@@ -1,5 +1,5 @@
 """Oracle for src/core/libm.ts: 60-digit log10 and exp, rounded once to double, plus numpy's results.
-   /workspace/mplstock/bin/python fixtures/generate_libm.py  ->  fixtures/ref/_libm.json"""
+   python3 fixtures/generate_libm.py  ->  fixtures/ref/_libm.json"""
 import json, os
 from decimal import Decimal as D, getcontext
 import numpy as np
