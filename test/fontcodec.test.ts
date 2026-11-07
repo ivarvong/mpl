@@ -1,9 +1,9 @@
 // Per-face font modules: the encoding is lossless, and the registry never substitutes a face.
-// Runs in its own process so the registry starts empty, as an application's does.
+// Runs in its own process against mpl/core so the registry starts empty (lean entry).
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { decodeFace, decodeVlq, FACE_CATALOG } from '../src/core/fontcodec.ts';
-import { FACE_LOADS, FontNotLoadedError, registerFonts, registeredFonts, subplots } from '../src/index.ts';
+import { FACE_LOADS, FontNotLoadedError, registerFonts, registeredFonts, subplots } from '../src/core.ts';
 import { allFonts, dejavuSans, dejavuSansBold, interMedium, interRegular } from '../src/fonts/all.ts';
 import { encodeFace } from '../scripts/encode_fonts.ts';
 

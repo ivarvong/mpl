@@ -1,9 +1,6 @@
 // Two y axes (twinx) in a bundled matplotlib style: examples/out/twinx_theme.{svg,png}
-import { registerFonts, subplots } from '../src/index.ts';
-import { dejavuSans } from '../src/fonts/dejavu-sans.ts';
+import { subplots } from '../src/index.ts';
 import { save } from './_save.ts';
-
-registerFonts(dejavuSans);
 
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
 const revenue = [12, 15, 14, 19, 24, 27];

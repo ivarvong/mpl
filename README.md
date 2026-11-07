@@ -16,10 +16,8 @@ npm run example        # writes examples/out/quickstart.svg and .png
 The example is six lines of TypeScript, run directly by Node (it strips the types itself):
 
 ```ts
-import { registerFonts, subplots } from '../src/index.ts';
-import { dejavuSans } from '../src/fonts/dejavu-sans.ts';
+import { subplots } from '../src/index.ts';
 
-registerFonts(dejavuSans);
 const x = Array.from({ length: 200 }, (_, i) => (i / 199) * 4 * Math.PI);
 const [fig, ax] = subplots();
 ax.plot(x, x.map(Math.sin), { label: 'sin(x)' });
@@ -63,10 +61,8 @@ cd your-project && npm install ../mpl                                 # "mpl": "
 Then, in an ES module (Node 24+, browsers, Workers):
 
 ```ts
-import { registerFonts, subplots } from 'mpl';
-import { dejavuSans } from 'mpl/fonts/dejavu-sans';
+import { subplots } from 'mpl';
 
-registerFonts(dejavuSans);
 const [fig, ax] = subplots();
 ax.barh([0, 1, 2], [3, 2, 4], { left: [0, 3, 5] });
 fig.tight_layout();
@@ -75,27 +71,27 @@ const svg = fig.toSVG(), png = fig.toPNGSync();
 
 ### Fonts: you pay only for the faces you render
 
-Each font face is its own module. Nothing is registered by default — import and `registerFonts` every face your
-chart will select (matplotlib's default face is DejaVu Sans at weight 400):
+Each font face is its own module. The default `mpl` entry registers DejaVu Sans (matplotlib's default), so a
+quickstart needs no `registerFonts` call. Other faces you import and register before rendering:
 
 ```ts
 import { registerFonts, subplots } from 'mpl';
-import { dejavuSans } from 'mpl/fonts/dejavu-sans';
 import { dejavuSansBold } from 'mpl/fonts/dejavu-sans-bold';
 
-registerFonts(dejavuSans, dejavuSansBold);
+registerFonts(dejavuSansBold);
 const [fig, ax] = subplots();
 ax.set_title('Checkout latency', { fontweight: 'bold' });
 ```
 
 | to render | register |
 |---|---|
-| default rc: anything in `sans-serif` at normal weight | `dejavuSans` |
-| bold text (`fontweight: 'bold'`, bold tick labels or titles) | `dejavuSansBold` (plus `dejavuSans` for the rest) |
+| default rc: anything in `sans-serif` at normal weight | nothing on the main entry (DejaVu Sans is built in) |
+| bold text (`fontweight: 'bold'`, bold tick labels or titles) | `dejavuSansBold` |
 | `font.family: 'serif'`, the `paperClassic` preset | `dejavuSerif` (+ `dejavuSerifBold` for bold) |
 | the `paperModern` preset | `interRegular` |
 | the `modern` and `modernDark` presets | `interRegular`, `interSemibold` |
 | everything, when size does not matter | `import { allFonts } from 'mpl/fonts/all'`, then `registerFonts(...allFonts)` |
+| Workers / lean bundles — pay only for what you use | import from [`mpl/core`](#lean-loading-workers) and register every face |
 
 Font selection works as in matplotlib, over every face mpl ships. Registering a face never changes which face
 a text gets. If the selected face is not registered, rendering throws a `FontNotLoadedError` that names the import
@@ -144,17 +140,15 @@ ax2.errorbar(days, p50, { yerr: [below, above], fmt: 'o-', capsize: 4 });   // a
 
 ### Example: value-coloured scatter and equal aspect
 
-`scatter` takes a numeric `c` with `cmap` / `vmin` / `vmax` (matplotlib's ScalarMappable path). Every
-colormap (viridis, plasma, inferno, magma, cividis, twilight, turbo, coolwarm, RdBu, Greys, Blues,
-tab10, tab20, and each `_r`) is its own module you register, like fonts. An unregistered name throws
-`ColormapNotLoadedError`. `set_aspect('equal' | number)` shrinks the Axes box (adjustable=`'box'`).
+`scatter` takes a numeric `c` with `cmap` / `vmin` / `vmax` (matplotlib's ScalarMappable path). Viridis is
+built into the main entry; other colormaps (plasma, inferno, magma, cividis, twilight, turbo, coolwarm, RdBu,
+Greys, Blues, tab10, tab20, and each `_r`) are separate modules you register, like fonts. An unregistered
+name throws `ColormapNotLoadedError`. `set_aspect('equal' | number)` shrinks the Axes box (adjustable=`'box'`).
 
 ```ts
-import { registerColormaps, registerFonts, subplots } from 'mpl';
-import { dejavuSans } from 'mpl/fonts/dejavu-sans';
+import { registerColormaps, subplots } from 'mpl';
 import { plasma } from 'mpl/colormaps/plasma';
 
-registerFonts(dejavuSans);
 registerColormaps(plasma);
 const [fig, ax] = subplots();
 ax.scatter(x, y, { c: values, cmap: 'plasma', s: 40 });
@@ -166,13 +160,34 @@ ax.set_aspect('equal');
 `npm run build` emits plain ES modules plus `.d.ts` into `dist/browser` for use from a browser, a Cloudflare Worker, or any
 project that cannot run `.ts` files (Node refuses to strip types inside `node_modules`).
 
+## Lean loading (Workers)
+
+The main entry keeps matplotlib's defaults so existing apps need no register calls. For a Cloudflare Worker
+(or any bundle that should pay only for the faces and colormaps a chart uses), import the lean entry and
+register explicitly. Nothing is side-registered; an unregistered face or colormap throws
+`FontNotLoadedError` / `ColormapNotLoadedError` — never a silent fallback:
+
+```ts
+import { registerColormapRgba, registerColormaps, registerFonts, subplots } from 'mpl/core';
+import { interRegular, interMedium, interSemibold, interBold } from 'mpl/fonts/all';
+import { magma } from 'mpl/colormaps/magma';
+import { magma_rgba } from 'mpl/colormaps/magma.rgba';
+import { viridis } from 'mpl/colormaps/viridis';
+import { viridis_rgba } from 'mpl/colormaps/viridis.rgba';
+
+registerFonts(interRegular, interMedium, interSemibold, interBold);
+registerColormaps(magma, viridis);
+registerColormapRgba(magma_rgba, viridis_rgba);
+```
+
+`import { allFonts } from 'mpl/fonts/all'` and `allColormaps` / `allColormapRgba` still register everything when
+size does not matter. Package export: `mpl/core`.
+
 ## API overview
 
 ```ts
-import { registerFonts, subplots } from './src/index.ts';
-import { dejavuSans } from './src/fonts/dejavu-sans.ts';
+import { subplots } from './src/index.ts';
 
-registerFonts(dejavuSans);
 const [fig, ax] = subplots({ style: 'ggplot' });          // any bundled .mplstyle, or your own
 ax.plot(x, y, 'o--', { label: 'observed', color: 'C1' });
 ax.bar(['apples', 'bananas', 'cherries'], [23, 17, 35], { label: 'count' });
@@ -229,15 +244,10 @@ gzipped than the JSON tables it replaced.
 ## Colormaps and images
 
 `imshow`, value-coloured `scatter`, and `colorbar` are supported with matplotlib's colormaps
-(viridis, plasma, inferno, magma, cividis, twilight, turbo, coolwarm, RdBu, Greys, Blues, tab10, tab20, and `_r` reversed variants). None is registered by default; load what you need through `mpl/colormaps/*` like the font split. `import { allColormaps } from 'mpl/colormaps/all'` registers every pack when size does not matter.
+(viridis, plasma, inferno, magma, cividis, twilight, turbo, coolwarm, RdBu, Greys, Blues, tab10, tab20, and `_r` reversed variants). The main entry includes viridis; other faces load through `mpl/colormaps/*` like the font split. For Workers, see [Lean loading](#lean-loading-workers).
 
 ```ts
-import { registerColormaps, registerFonts, subplots } from 'mpl';
-import { dejavuSans } from 'mpl/fonts/dejavu-sans';
-import { viridis } from 'mpl/colormaps/viridis';
-
-registerFonts(dejavuSans);
-registerColormaps(viridis);
+import { subplots } from 'mpl';
 const [fig, ax] = subplots();
 const im = ax.imshow([[0,1,2],[3,4,5],[6,7,8]], { cmap: 'viridis' });
 fig.colorbar(im, { label: 'value' });
@@ -245,15 +255,13 @@ fig.colorbar(im, { label: 'value' });
 
 ![imshow + colorbar](docs/images/imshow_colorbar.png)
 
-When `imshow` downsamples with hanning/bilinear (matplotlib's rgba-stage), it needs the colormap's exact float32 LUT. Register the `.rgba` sidecar alongside the base pack, or rendering throws `MissingColormapRgbaError` instead of silently approximating:
+When `imshow` downsamples with hanning/bilinear (matplotlib's rgba-stage), it needs the colormap's exact float32 LUT. Viridis ships that LUT on the main entry; for other colormaps register the `.rgba` sidecar alongside the base pack, or rendering throws `MissingColormapRgbaError` instead of silently approximating:
 
 ```ts
-import { registerColormapRgba, registerColormaps, registerFonts, subplots } from 'mpl';
-import { dejavuSans } from 'mpl/fonts/dejavu-sans';
+import { registerColormapRgba, registerColormaps, subplots } from 'mpl';
 import { plasma } from 'mpl/colormaps/plasma';
 import { plasma_rgba } from 'mpl/colormaps/plasma.rgba';
 
-registerFonts(dejavuSans);
 registerColormaps(plasma);
 registerColormapRgba(plasma_rgba);  // also accept plasma_r_rgba; skipped if plasma_r is not registered
 ```

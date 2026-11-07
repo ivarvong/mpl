@@ -1,9 +1,6 @@
 // A date axis: AutoDateLocator / AutoDateFormatter pick ticks for the range: examples/out/dates.{svg,png}
-import { registerFonts, subplots } from '../src/index.ts';
-import { dejavuSans } from '../src/fonts/dejavu-sans.ts';
+import { subplots } from '../src/index.ts';
 import { save } from './_save.ts';
-
-registerFonts(dejavuSans);
 
 const day = 24 * 3600 * 1000;
 const start = Date.UTC(2026, 0, 1);

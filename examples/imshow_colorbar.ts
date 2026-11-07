@@ -1,12 +1,5 @@
 import { writeFileSync } from 'node:fs';
-import { registerColormapRgba, registerColormaps, registerFonts, subplots } from '../src/index.ts';
-import { dejavuSans } from '../src/fonts/dejavu-sans.ts';
-import { viridis } from '../src/colormaps/viridis.ts';
-import { viridis_rgba } from '../src/colormaps/viridis.rgba.ts';
-
-registerFonts(dejavuSans);
-registerColormaps(viridis);
-registerColormapRgba(viridis_rgba);
+import { subplots } from '../src/index.ts';
 
 const Z = [
   [0.0, 0.2, 0.4, 0.6, 0.8],

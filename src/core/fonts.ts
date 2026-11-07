@@ -114,10 +114,11 @@ function load(d: FaceData): Face {
 
 // ------------------------------------------------------------------ the face registry
 // Each shipped face is its own module (mpl/fonts/<name>), so a bundle carries only the faces an
-// application imports. No face is registered by default: pass every face you need to registerFonts().
-// A face decodes on first use. Font selection always runs over the whole catalog, as matplotlib's
-// does over its installed fonts, so registering faces never changes which face a text gets; selecting
-// a face that is not registered throws FontNotLoadedError instead of silently drawing another one.
+// application imports. The default entry (mpl) registers DejaVu Sans; mpl/core registers nothing —
+// pass every face you need to registerFonts(). A face decodes on first use. Font selection always
+// runs over the whole catalog, as matplotlib's does over its installed fonts, so registering faces
+// never changes which face a text gets; selecting a face that is not registered throws
+// FontNotLoadedError instead of silently drawing another one.
 
 /** Rendering needed a shipped face that has not been passed to registerFonts(). */
 export class FontNotLoadedError extends Error {

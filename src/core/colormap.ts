@@ -1,6 +1,7 @@
 // Colormaps and norms, matching matplotlib.colors (3.11.2): LUT lookup, Normalize,
 // LogNorm, TwoSlopeNorm, and Colormap.__call__(…, bytes=True).
-// Each face of LUT data is its own module under src/colormaps/; none is registered by default.
+// Each face of LUT data is its own module under src/colormaps/. The default entry (mpl) registers
+// viridis; mpl/core registers nothing — pass every pack you need to registerColormaps().
 import { CMAP_NAMES } from './data/colormaps.ts';
 import { log10 } from './libm.ts';
 import { isPlainObject, lookup, prop } from './std.ts';

@@ -1,10 +1,7 @@
 // Lines: `npm run example`  ->  examples/out/quickstart.{svg,png}
 // In your own project the import is `from 'mpl'`; inside this repo it is the TypeScript source.
-import { registerFonts, subplots } from '../src/index.ts';
-import { dejavuSans } from '../src/fonts/dejavu-sans.ts';
+import { subplots } from '../src/index.ts';
 import { save } from './_save.ts';
-
-registerFonts(dejavuSans);
 
 const x = Array.from({ length: 200 }, (_, i) => (i / 199) * 4 * Math.PI);
 

@@ -3,23 +3,23 @@
 <rect x="71" y="36" width="814" height="375" fill="#ffffff" stroke="none"/>
 <clipPath id="c0"><rect x="70.6979" y="36.0052" width="814.3021" height="375.3837"/></clipPath>
 <g clip-path="url(#c0)" data-artist="artist/0/bar">
-<rect x="108" y="221" width="38" height="190" fill="#1f77b4" stroke="none"/>
+<rect x="108" y="224" width="38" height="187" fill="#1f77b4" stroke="none"/>
 <rect x="203" y="383" width="38" height="28" fill="#1f77b4" stroke="none"/>
 <rect x="298" y="410" width="37" height="1" fill="#1f77b4" stroke="none"/>
 <rect x="487" y="388" width="38" height="23" fill="#1f77b4" stroke="none"/>
-<rect x="582" y="59" width="38" height="352" fill="#1f77b4" stroke="none"/>
+<rect x="582" y="65" width="38" height="346" fill="#1f77b4" stroke="none"/>
 <rect x="677" y="406" width="38" height="5" fill="#1f77b4" stroke="none"/>
-<rect x="772" y="295" width="38" height="116" fill="#1f77b4" stroke="none"/>
+<rect x="772" y="297" width="38" height="114" fill="#1f77b4" stroke="none"/>
 </g>
 <clipPath id="c1"><rect x="70.6979" y="36.0052" width="814.3021" height="375.3837"/></clipPath>
 <g clip-path="url(#c1)" data-artist="artist/1/bar">
-<rect x="146" y="223" width="38" height="188" fill="#ff7f0e" stroke="none"/>
-<rect x="241" y="382" width="38" height="29" fill="#ff7f0e" stroke="none"/>
+<rect x="146" y="236" width="38" height="175" fill="#ff7f0e" stroke="none"/>
+<rect x="241" y="383" width="38" height="28" fill="#ff7f0e" stroke="none"/>
 <rect x="335" y="408" width="38" height="3" fill="#ff7f0e" stroke="none"/>
 <rect x="525" y="388" width="38" height="23" fill="#ff7f0e" stroke="none"/>
 <rect x="620" y="54" width="38" height="357" fill="#ff7f0e" stroke="none"/>
 <rect x="715" y="406" width="38" height="5" fill="#ff7f0e" stroke="none"/>
-<rect x="810" y="294" width="38" height="117" fill="#ff7f0e" stroke="none"/>
+<rect x="810" y="295" width="38" height="116" fill="#ff7f0e" stroke="none"/>
 </g>
 <text x="126.6823" y="431.6634" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">index</text>
 <text x="223.144" y="431.6634" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">fonts</text>
@@ -32,27 +32,27 @@
 <path d="M146.5 411.5 L146.5 416.5 M241.5 411.5 L241.5 416.5 M335.5 411.5 L335.5 416.5 M430.5 411.5 L430.5 416.5 M525.5 411.5 L525.5 416.5 M620.5 411.5 L620.5 416.5 M715.5 411.5 L715.5 416.5 M810.5 411.5 L810.5 416.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
 <clipPath id="c2"><rect x="70.6979" y="36.0052" width="814.3021" height="375.3837"/></clipPath>
 <g clip-path="url(#c2)">
-<path d="M71.5 411.5 L885.5 411.5 M71.5 367.5 L885.5 367.5 M71.5 324.5 L885.5 324.5 M71.5 280.5 L885.5 280.5 M71.5 236.5 L885.5 236.5 M71.5 192.5 L885.5 192.5 M71.5 148.5 L885.5 148.5 M71.5 104.5 L885.5 104.5 M71.5 60.5 L885.5 60.5" fill="none" stroke="#b0b0b0" stroke-width="1.1111" stroke-opacity="0.3" stroke-linecap="square" stroke-linejoin="round"/>
+<path d="M71.5 411.5 L885.5 411.5 M71.5 368.5 L885.5 368.5 M71.5 325.5 L885.5 325.5 M71.5 282.5 L885.5 282.5 M71.5 239.5 L885.5 239.5 M71.5 195.5 L885.5 195.5 M71.5 152.5 L885.5 152.5 M71.5 109.5 L885.5 109.5 M71.5 66.5 L885.5 66.5" fill="none" stroke="#b0b0b0" stroke-width="1.1111" stroke-opacity="0.3" stroke-linecap="square" stroke-linejoin="round"/>
 </g>
 <text x="52.1319" y="416.665" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">0</text>
-<text x="43.2882" y="372.7451" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">25</text>
-<text x="43.2882" y="328.8252" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">50</text>
-<text x="43.2882" y="284.9052" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">75</text>
-<text x="34.4444" y="240.9853" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">100</text>
-<text x="34.4444" y="197.0654" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">125</text>
-<text x="34.4444" y="153.1454" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">150</text>
-<text x="34.4444" y="109.2255" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">175</text>
-<text x="34.4444" y="65.3056" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">200</text>
-<path d="M71.5 411.5 L66.5 411.5 M71.5 367.5 L66.5 367.5 M71.5 324.5 L66.5 324.5 M71.5 280.5 L66.5 280.5 M71.5 236.5 L66.5 236.5 M71.5 192.5 L66.5 192.5 M71.5 148.5 L66.5 148.5 M71.5 104.5 L66.5 104.5 M71.5 60.5 L66.5 60.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<text x="43.2882" y="373.4752" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">25</text>
+<text x="43.2882" y="330.2853" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">50</text>
+<text x="43.2882" y="287.0955" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">75</text>
+<text x="34.4444" y="243.9057" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">100</text>
+<text x="34.4444" y="200.7158" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">125</text>
+<text x="34.4444" y="157.526" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">150</text>
+<text x="34.4444" y="114.3361" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">175</text>
+<text x="34.4444" y="71.1463" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">200</text>
+<path d="M71.5 411.5 L66.5 411.5 M71.5 368.5 L66.5 368.5 M71.5 325.5 L66.5 325.5 M71.5 282.5 L66.5 282.5 M71.5 239.5 L66.5 239.5 M71.5 195.5 L66.5 195.5 M71.5 152.5 L66.5 152.5 M71.5 109.5 L66.5 109.5 M71.5 66.5 L66.5 66.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
 <path d="M71.5 411.5 L71.5 36.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
 <path d="M885.5 411.5 L885.5 36.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
 <path d="M71.5 411.5 L885.5 411.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
 <path d="M71.5 36.5 L885.5 36.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
 <text x="25.5523" y="318.0174" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-90 25.5523 318.0174)">p50 ms (8 fresh processes)</text>
-<text x="226.638" y="27.6719" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">Cold dashboard phases — --single-threaded (Workers proxy)</text>
-<path d="M683.5 89.5 L875.5 89.5 Q878.5 89.5 878.5 86.5 L878.5 46.5 Q878.5 43.5 875.5 43.5 L683.5 43.5 Q680.5 43.5 680.5 46.5 L680.5 86.5 Q680.5 89.5 683.5 89.5 Z" fill="#ffffff" fill-opacity="0.8" stroke="#cccccc" stroke-width="1.3889" stroke-opacity="0.8"/>
-<rect x="686" y="49" width="28" height="10" fill="#1f77b4" stroke="none"/>
-<text x="724.625" y="59.0575" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">before (410 ms total)</text>
-<rect x="686" y="70" width="28" height="10" fill="#ff7f0e" stroke="none"/>
-<text x="724.625" y="79.8908" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">after (419 ms total)</text>
+<text x="258.7786" y="27.6719" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">Cold dashboard — --single-threaded (Workers proxy)</text>
+<path d="M80.5 89.5 L332.5 89.5 Q335.5 89.5 335.5 86.5 L335.5 46.5 Q335.5 43.5 332.5 43.5 L80.5 43.5 Q78.5 43.5 78.5 46.5 L78.5 86.5 Q78.5 89.5 80.5 89.5 Z" fill="#ffffff" fill-opacity="0.8" stroke="#cccccc" stroke-width="1.3889" stroke-opacity="0.8"/>
+<rect x="83" y="49" width="28" height="10" fill="#1f77b4" stroke="none"/>
+<text x="122.0868" y="59.0575" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">72dc12f main (410 ms)</text>
+<rect x="83" y="70" width="28" height="10" fill="#ff7f0e" stroke="none"/>
+<text x="122.0868" y="79.8908" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">lean+Inter+2cmaps (409 ms)</text>
 </svg>

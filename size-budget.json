@@ -1,20 +1,20 @@
 {
   "tolerance": 0.02,
   "note": "bytes; esbuild --minify then gzip -9; see scripts/bundle_size.ts",
-  "core": {
+  "main": {
+    "min": 469547,
+    "gzip": 167508
+  },
+  "lean": {
     "min": 302924,
     "gzip": 102914
   },
-  "core+dejavu-sans": {
-    "min": 457710,
-    "gzip": 159973
-  },
-  "core+inter+2cmaps": {
+  "lean+inter+2cmaps": {
     "min": 653227,
     "gzip": 182624
   },
   "everything": {
-    "min": 1197499,
-    "gzip": 373383
+    "min": 1208688,
+    "gzip": 380550
   }
 }
