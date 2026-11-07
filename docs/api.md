@@ -168,7 +168,7 @@ Keyword arguments (unknown keys throw): `colors`, `level`, `dpi`, `scale`
 
 ### PNG peak memory (`pngPeakBytes`, `PNG_PEAK_BUDGET_BYTES`)
 
-Streaming RGBA encode peak is bounded by `pngPeakBytes(w, h)` (canvas + fixed scratch + ≤ one IDAT + a measured Node/V8 arrayBuffers baseline). Workers enforce `PNG_PEAK_BUDGET_BYTES` (64 MB) before allocating the canvas so `@2x`/`@3x` of a large 1× figure return 400 rather than OOM. Helpers: `pngPeakFitsBudget(w,h)`, `maxPngScaleForFigure(widthIn, heightIn, dpi)`.
+Streaming RGBA encode peak is bounded by `pngPeakBytes(w, h)` (canvas + fixed scratch (~1284 KiB) + ≤ one IDAT chunk (~384 KiB) + a measured Node/V8 arrayBuffers baseline of 256 KiB). Workers enforce `PNG_PEAK_BUDGET_BYTES` (64 MB) before allocating the canvas so `@2x`/`@3x` of a large 1× figure return 400 rather than OOM. Helpers: `pngPeakFitsBudget(w, h)`, `maxPngScaleForFigure(widthIn, heightIn, dpi)`.
 
 ### `Figure.pngStream(kwargs?)`
 
