@@ -476,18 +476,24 @@ export function drawImage(a: ImageArtist, f: Frame, clip: Clip): Drawn {
       throw new UnsupportedInterpolationError(mode, `RGB(A) images only support nearest so far (got ${mode})`);
     }
     const ch = a.channels;
+    const ixCol = new Int32Array(outW), iyRow = new Int32Array(outH);
+    for (let ox = 0; ox < outW; ox++) {
+      const xData = inverse(f.xscale, (x0 + ox + 0.5 - f.cx) / f.ax);
+      let ix = Math.floor(((xData - L) / xSpan) * a.cols - 1e-9);
+      if (ix < 0) ix = 0; else if (ix >= a.cols) ix = a.cols - 1;
+      ixCol[ox] = ix;
+    }
     for (let oy = 0; oy < outH; oy++) {
+      const yData = inverse(f.yscale, (f.H - (y0 + oy + 0.5) - f.cy) / f.ay);
+      const v = a.origin === 'upper' ? ((T - yData) / ySpan) * a.rows : ((yData - B) / ySpan) * a.rows;
+      let iy = Math.floor(v - 1e-9);
+      if (iy < 0) iy = 0; else if (iy >= a.rows) iy = a.rows - 1;
+      iyRow[oy] = iy;
+    }
+    for (let oy = 0; oy < outH; oy++) {
+      const row = iyRow[oy] * a.cols, oRow = oy * outW * 4;
       for (let ox = 0; ox < outW; ox++) {
-        const px = x0 + ox + 0.5, py = y0 + oy + 0.5;
-        const xData = inverse(f.xscale, (px - f.cx) / f.ax);
-        const yData = inverse(f.yscale, (f.H - py - f.cy) / f.ay);
-        const u = ((xData - L) / xSpan) * a.cols;
-        const v = a.origin === 'upper' ? ((T - yData) / ySpan) * a.rows : ((yData - B) / ySpan) * a.rows;
-        let ix = Math.floor(u - 1e-9), iy = Math.floor(v - 1e-9);
-        if (ix < 0) ix = 0; else if (ix >= a.cols) ix = a.cols - 1;
-        if (iy < 0) iy = 0; else if (iy >= a.rows) iy = a.rows - 1;
-        const s = (iy * a.cols + ix) * ch;
-        const o = (oy * outW + ox) * 4;
+        const s = (row + ixCol[ox]) * ch, o = oRow + ox * 4;
         rgba[o] = (clip01(a.values[s]) * 255) | 0;
         rgba[o + 1] = (clip01(a.values[s + 1]) * 255) | 0;
         rgba[o + 2] = (clip01(a.values[s + 2]) * 255) | 0;
@@ -500,17 +506,26 @@ export function drawImage(a: ImageArtist, f: Frame, clip: Clip): Drawn {
   }
 
   if (mode === 'nearest') {
+    // inverse() once per column / row (scales may be log); the inner loop is then a table lookup.
+    const ixCol = new Int32Array(outW), iyRow = new Int32Array(outH);
+    for (let ox = 0; ox < outW; ox++) {
+      const xData = inverse(f.xscale, (x0 + ox + 0.5 - f.cx) / f.ax);
+      let ix = Math.floor(((xData - L) / xSpan) * a.cols - 1e-9);
+      if (ix < 0) ix = 0; else if (ix >= a.cols) ix = a.cols - 1;
+      ixCol[ox] = ix;
+    }
     for (let oy = 0; oy < outH; oy++) {
+      const yData = inverse(f.yscale, (f.H - (y0 + oy + 0.5) - f.cy) / f.ay);
+      const v = a.origin === 'upper' ? ((T - yData) / ySpan) * a.rows : ((yData - B) / ySpan) * a.rows;
+      let iy = Math.floor(v - 1e-9);
+      if (iy < 0) iy = 0; else if (iy >= a.rows) iy = a.rows - 1;
+      iyRow[oy] = iy;
+    }
+    const alpha = a.alpha;
+    for (let oy = 0; oy < outH; oy++) {
+      const row = iyRow[oy] * a.cols, oRow = oy * outW * 4;
       for (let ox = 0; ox < outW; ox++) {
-        const px = x0 + ox + 0.5, py = y0 + oy + 0.5;
-        const xData = inverse(f.xscale, (px - f.cx) / f.ax);
-        const yData = inverse(f.yscale, (f.H - py - f.cy) / f.ay);
-        const u = ((xData - L) / xSpan) * a.cols;
-        const v = a.origin === 'upper' ? ((T - yData) / ySpan) * a.rows : ((yData - B) / ySpan) * a.rows;
-        let ix = Math.floor(u - 1e-9), iy = Math.floor(v - 1e-9);
-        if (ix < 0) ix = 0; else if (ix >= a.cols) ix = a.cols - 1;
-        if (iy < 0) iy = 0; else if (iy >= a.rows) iy = a.rows - 1;
-        const val = mid[iy * a.cols + ix];
+        const val = mid[row + ixCol[ox]];
         let li: number;
         if (Number.isNaN(val)) li = N + 2;
         else {
@@ -518,9 +533,9 @@ export function drawImage(a: ImageArtist, f: Frame, clip: Clip): Drawn {
           if (xa === N) xa = N - 1;
           if (xa < 0) li = N; else if (xa >= N) li = N + 1; else li = xa | 0;
         }
-        const s = li * 4, o = (oy * outW + ox) * 4;
+        const s = li * 4, o = oRow + ox * 4;
         rgba[o] = trunc[s]; rgba[o + 1] = trunc[s + 1]; rgba[o + 2] = trunc[s + 2];
-        rgba[o + 3] = Math.round(trunc[s + 3] * a.alpha);
+        rgba[o + 3] = Math.round(trunc[s + 3] * alpha);
       }
     }
   } else if (mode === 'hanning' || mode === 'bilinear') {

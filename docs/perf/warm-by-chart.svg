@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420">
+<rect width="900" height="420" fill="#0b1020"/>
+<rect x="113" y="50" width="697" height="324" fill="#0b1020" stroke="none"/>
+<text x="148.3534" y="396.3477" font-family="Inter" font-size="11.8056" fill="#8b97ab">dashboard</text>
+<text x="241.5793" y="396.3477" font-family="Inter" font-size="11.8056" fill="#8b97ab">mono dash</text>
+<text x="333.774" y="396.3477" font-family="Inter" font-size="11.8056" fill="#8b97ab">ember dash</text>
+<text x="432.8516" y="396.3477" font-family="Inter" font-size="11.8056" fill="#8b97ab">slate dash</text>
+<text x="536.4056" y="396.3477" font-family="Inter" font-size="11.8056" fill="#8b97ab">scatter</text>
+<text x="617.5925" y="396.3477" font-family="Inter" font-size="11.8056" fill="#8b97ab">imshow+cb</text>
+<text x="722.5763" y="396.3477" font-family="Inter" font-size="11.8056" fill="#8b97ab">hist+err</text>
+<path d="M178.5 374.5 L178.5 378.5 M273.5 374.5 L273.5 378.5 M367.5 374.5 L367.5 378.5 M461.5 374.5 L461.5 378.5 M556.5 374.5 L556.5 378.5 M650.5 374.5 L650.5 378.5 M744.5 374.5 L744.5 378.5" fill="none" stroke="#334155" stroke-width="1.1111"/>
+<clipPath id="c0"><rect x="112.5" y="50.4" width="697.5" height="323.4"/></clipPath>
+<g clip-path="url(#c0)">
+<path d="M113.5 374.5 L810.5 374.5 M113.5 333.5 L810.5 333.5 M113.5 292.5 L810.5 292.5 M113.5 251.5 L810.5 251.5 M113.5 210.5 L810.5 210.5 M113.5 169.5 L810.5 169.5 M113.5 129.5 L810.5 129.5 M113.5 88.5 L810.5 88.5" fill="none" stroke="#1e2638" stroke-width="0.8333" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="86.4479" y="379.5183" font-family="Inter" font-size="11.8056" fill="#8b97ab">0.0</text>
+<text x="86.5417" y="338.6478" font-family="Inter" font-size="11.8056" fill="#8b97ab">2.5</text>
+<text x="86.7292" y="297.7773" font-family="Inter" font-size="11.8056" fill="#8b97ab">5.0</text>
+<text x="88.526" y="256.9069" font-family="Inter" font-size="11.8056" fill="#8b97ab">7.5</text>
+<text x="81.651" y="216.0364" font-family="Inter" font-size="11.8056" fill="#8b97ab">10.0</text>
+<text x="81.7448" y="175.1659" font-family="Inter" font-size="11.8056" fill="#8b97ab">12.5</text>
+<text x="81.9323" y="134.2954" font-family="Inter" font-size="11.8056" fill="#8b97ab">15.0</text>
+<text x="83.7292" y="93.4249" font-family="Inter" font-size="11.8056" fill="#8b97ab">17.5</text>
+<path d="M113.5 374.5 L113.5 374.5 M113.5 333.5 L113.5 333.5 M113.5 292.5 L113.5 292.5 M113.5 251.5 L113.5 251.5 M113.5 210.5 L113.5 210.5 M113.5 169.5 L113.5 169.5 M113.5 129.5 L113.5 129.5 M113.5 88.5 L113.5 88.5" fill="none" stroke="#334155" stroke-width="1.1111"/>
+<clipPath id="c1"><rect x="112.5" y="50.4" width="697.5" height="323.4"/></clipPath>
+<g clip-path="url(#c1)" data-artist="artist/0/bar">
+<rect x="144" y="66" width="34" height="308" fill="#f5a623" stroke="none"/>
+<rect x="239" y="83" width="34" height="291" fill="#f5a623" stroke="none"/>
+<rect x="333" y="75" width="34" height="299" fill="#f5a623" stroke="none"/>
+<rect x="427" y="94" width="34" height="280" fill="#f5a623" stroke="none"/>
+<rect x="522" y="330" width="34" height="44" fill="#f5a623" stroke="none"/>
+<rect x="616" y="255" width="34" height="119" fill="#f5a623" stroke="none"/>
+<rect x="710" y="268" width="34" height="106" fill="#f5a623" stroke="none"/>
+</g>
+<clipPath id="c2"><rect x="112.5" y="50.4" width="697.5" height="323.4"/></clipPath>
+<g clip-path="url(#c2)" data-artist="artist/1/bar">
+<rect x="178" y="120" width="34" height="254" fill="#4f8ff7" stroke="none"/>
+<rect x="273" y="124" width="34" height="250" fill="#4f8ff7" stroke="none"/>
+<rect x="367" y="120" width="34" height="254" fill="#4f8ff7" stroke="none"/>
+<rect x="461" y="124" width="34" height="250" fill="#4f8ff7" stroke="none"/>
+<rect x="556" y="332" width="34" height="42" fill="#4f8ff7" stroke="none"/>
+<rect x="650" y="304" width="34" height="70" fill="#4f8ff7" stroke="none"/>
+<rect x="744" y="274" width="34" height="100" fill="#4f8ff7" stroke="none"/>
+</g>
+<path d="M113.5 374.5 L810.5 374.5" fill="none" stroke="#334155" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="70.3026" y="220.8734" font-family="Inter" font-size="12.5" fill="#8b97ab" transform="rotate(-90 70.3026 220.8734)">ms</text>
+<text x="112.5" y="36.5111" font-family="Inter" font-size="16.6667" fill="#e2e8f0">Warm PNG p50 by chart — Node 24 on the box (N=25, verified ~3 rounds)</text>
+<rect x="629" y="64" width="16" height="8" fill="#f5a623" stroke="none"/>
+<text x="652.4375" y="72.4616" font-family="Inter" font-size="11.8056" fill="#e2e8f0">fbedb44 warm p50</text>
+<rect x="629" y="84" width="16" height="9" fill="#4f8ff7" stroke="none"/>
+<text x="652.4375" y="92.6487" font-family="Inter" font-size="11.8056" fill="#e2e8f0">perf-raster-png warm p50</text>
+</svg>

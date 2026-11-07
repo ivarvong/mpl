@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="750" height="400" viewBox="0 0 750 400">
+<rect width="750" height="400" fill="#0b1020"/>
+<rect x="94" y="48" width="581" height="308" fill="#0b1020" stroke="none"/>
+<text x="142.5835" y="378.5477" font-family="Inter" font-size="11.8056" fill="#8b97ab">encodePNGSync</text>
+<text x="362.8047" y="378.5477" font-family="Inter" font-size="11.8056" fill="#8b97ab">toRGBA</text>
+<text x="343.0703" y="392.832" font-family="Inter" font-size="11.8056" fill="#8b97ab">(scene+raster)</text>
+<text x="570.104" y="378.5477" font-family="Inter" font-size="11.8056" fill="#8b97ab">full</text>
+<text x="546.6196" y="392.832" font-family="Inter" font-size="11.8056" fill="#8b97ab">toPNGSync</text>
+<path d="M190.5 356.5 L190.5 360.5 M384.5 356.5 L384.5 360.5 M579.5 356.5 L579.5 360.5" fill="none" stroke="#334155" stroke-width="1.1111"/>
+<clipPath id="c0"><rect x="93.75" y="48" width="581.25" height="308"/></clipPath>
+<g clip-path="url(#c0)">
+<path d="M94.5 356.5 L675.5 356.5 M94.5 319.5 L675.5 319.5 M94.5 281.5 L675.5 281.5 M94.5 244.5 L675.5 244.5 M94.5 206.5 L675.5 206.5 M94.5 169.5 L675.5 169.5 M94.5 132.5 L675.5 132.5 M94.5 94.5 L675.5 94.5 M94.5 57.5 L675.5 57.5" fill="none" stroke="#1e2638" stroke-width="0.8333" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="67.6979" y="361.7183" font-family="Inter" font-size="11.8056" fill="#8b97ab">0.0</text>
+<text x="67.7917" y="324.3033" font-family="Inter" font-size="11.8056" fill="#8b97ab">2.5</text>
+<text x="67.9792" y="286.8884" font-family="Inter" font-size="11.8056" fill="#8b97ab">5.0</text>
+<text x="69.776" y="249.4734" font-family="Inter" font-size="11.8056" fill="#8b97ab">7.5</text>
+<text x="62.901" y="212.0585" font-family="Inter" font-size="11.8056" fill="#8b97ab">10.0</text>
+<text x="62.9948" y="174.6435" font-family="Inter" font-size="11.8056" fill="#8b97ab">12.5</text>
+<text x="63.1823" y="137.2285" font-family="Inter" font-size="11.8056" fill="#8b97ab">15.0</text>
+<text x="64.9792" y="99.8136" font-family="Inter" font-size="11.8056" fill="#8b97ab">17.5</text>
+<text x="60.4948" y="62.3986" font-family="Inter" font-size="11.8056" fill="#8b97ab">20.0</text>
+<path d="M94.5 356.5 L94.5 356.5 M94.5 319.5 L94.5 319.5 M94.5 281.5 L94.5 281.5 M94.5 244.5 L94.5 244.5 M94.5 206.5 L94.5 206.5 M94.5 169.5 L94.5 169.5 M94.5 132.5 L94.5 132.5 M94.5 94.5 L94.5 94.5 M94.5 57.5 L94.5 57.5" fill="none" stroke="#334155" stroke-width="1.1111"/>
+<clipPath id="c1"><rect x="93.75" y="48" width="581.25" height="308"/></clipPath>
+<g clip-path="url(#c1)" data-artist="artist/0/bar">
+<rect x="120" y="224" width="70" height="132" fill="#f5a623" stroke="none"/>
+<rect x="314" y="198" width="70" height="158" fill="#f5a623" stroke="none"/>
+<rect x="509" y="63" width="70" height="293" fill="#f5a623" stroke="none"/>
+</g>
+<clipPath id="c2"><rect x="93.75" y="48" width="581.25" height="308"/></clipPath>
+<g clip-path="url(#c2)" data-artist="artist/1/bar">
+<rect x="190" y="249" width="70" height="107" fill="#4f8ff7" stroke="none"/>
+<rect x="384" y="231" width="70" height="125" fill="#4f8ff7" stroke="none"/>
+<rect x="579" y="124" width="70" height="232" fill="#4f8ff7" stroke="none"/>
+</g>
+<path d="M94.5 356.5 L675.5 356.5" fill="none" stroke="#334155" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="49.1463" y="246.9766" font-family="Inter" font-size="12.5" fill="#8b97ab" transform="rotate(-90 49.1463 246.9766)">ms (warm p50)</text>
+<text x="93.75" y="34.1111" font-family="Inter" font-size="16.6667" fill="#e2e8f0">pro-dark dashboard — warm stage split (Node 24, baseline fbedb44)</text>
+<rect x="104" y="62" width="17" height="8" fill="#f5a623" stroke="none"/>
+<text x="127.9861" y="70.0616" font-family="Inter" font-size="11.8056" fill="#e2e8f0">fbedb44</text>
+<rect x="104" y="82" width="17" height="8" fill="#4f8ff7" stroke="none"/>
+<text x="127.9861" y="90.2487" font-family="Inter" font-size="11.8056" fill="#e2e8f0">perf-raster-png</text>
+</svg>

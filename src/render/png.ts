@@ -12,7 +12,7 @@ import { BLOCK, BLOCK_SHIFT } from './agg/canvas.ts';
 import type { Indexed } from './palette.ts';
 import { quantize } from './palette.ts';
 import type { Option } from '../core/types.ts';
-import { none } from '../core/types.ts';
+import { none, some } from '../core/types.ts';
 
 /** colors: the palette budget (1..256), or none for full RGBA. */
 export type PngOptions = { readonly colors: Option<number> };
@@ -230,53 +230,80 @@ for (let s = 0; s < 30; s++) DSYM.fill(s, DBASE[s], s < 29 ? DBASE[s + 1] : 3276
 const distSym = (d: number): number => DSYM[d];
 const rev = (code: number, len: number): number => { let r = 0; for (let i = 0; i < len; i++) { r = (r << 1) | (code & 1); code >>= 1; } return r; };
 
+/** Reused across encodes: cold isolates pay for one allocation, not one per PNG. */
+let BITS_BUF = new Uint8Array(1 << 18);
 class Bits {
-  buf = new Uint8Array(1 << 16); n = 0; acc = 0; cnt = 0;
+  buf = BITS_BUF; n = 0; acc = 0; cnt = 0;
+  reset(): void { this.buf = BITS_BUF; this.n = 0; this.acc = 0; this.cnt = 0; }
   put(v: number, len: number): void {
     this.acc |= v << this.cnt; this.cnt += len;
     while (this.cnt >= 8) {
-      if (this.n >= this.buf.length) { const b = new Uint8Array(this.buf.length * 2); b.set(this.buf); this.buf = b; }
+      if (this.n >= this.buf.length) { const b = new Uint8Array(this.buf.length * 2); b.set(this.buf); this.buf = b; BITS_BUF = b; }
       this.buf[this.n++] = this.acc & 255; this.acc >>>= 8; this.cnt -= 8;
     }
   }
   reserve(bytes: number): void {
     if (this.n + bytes <= this.buf.length) return;
-    const b = new Uint8Array(Math.max(this.buf.length * 2, this.n + bytes)); b.set(this.buf.subarray(0, this.n)); this.buf = b;
+    const b = new Uint8Array(Math.max(this.buf.length * 2, this.n + bytes)); b.set(this.buf.subarray(0, this.n)); this.buf = b; BITS_BUF = b;
   }
   flush(): Uint8Array { if (this.cnt > 0) this.put(0, 8 - this.cnt); return this.buf.subarray(0, this.n); }
 }
+const BITS = new Bits();
 
-/** Length-limited Huffman code lengths: plain Huffman, frequencies flattened until it fits. */
-function codeLengths(freq: Uint32Array, limit: number): Uint8Array {
-  const n = freq.length, out = new Uint8Array(n);
-  const f = Float64Array.from(freq);
+/** Scratch for codeLengths: typed so unoptimized tiers do not box heap nodes. Sized for 286+285 internals. */
+const CL_F = new Float64Array(286), CL_W = new Float64Array(600), CL_P = new Int32Array(600), CL_H = new Int32Array(600), CL_USED = new Int32Array(286);
+const CL_OUT_A = new Uint8Array(286), CL_OUT_B = new Uint8Array(286), CL_OUT_CF = new Uint8Array(19);
+let CL_FLIP = 0;
+/** Length-limited Huffman code lengths: plain Huffman, frequencies flattened until it fits.
+ *  Alternates A/B so writeBlock can keep ll and dl; pass `into` for a third concurrent result (cf). */
+function codeLengths(freq: Uint32Array, limit: number, into: Option<Uint8Array>): Uint8Array {
+  const n = freq.length;
+  let out: Uint8Array;
+  if (into.kind === 'some') out = into.value.subarray(0, n);
+  else if (n <= 286) { CL_FLIP ^= 1; out = (CL_FLIP !== 0 ? CL_OUT_A : CL_OUT_B).subarray(0, n); }
+  else out = new Uint8Array(n);
+  const f = n <= CL_F.length ? CL_F.subarray(0, n) : new Float64Array(n);
+  for (let i = 0; i < n; i++) f[i] = freq[i];
+  const weight = CL_W, parent = CL_P, heap = CL_H, used = CL_USED;
   for (;;) {
-    const used: number[] = [];
-    for (let i = 0; i < n; i++) if (f[i] > 0) used.push(i);
+    let nu = 0;
+    for (let i = 0; i < n; i++) if (f[i] > 0) used[nu++] = i;
     out.fill(0);
-    if (used.length === 0) return out;
-    if (used.length === 1) { out[used[0]] = 1; return out; }
-    // nodes: leaves 0..n-1, internal n..; a simple binary heap on (weight, id)
-    const weight: number[] = [], parent: number[] = [];
-    const heap: number[] = [];
+    if (nu === 0) return out;
+    if (nu === 1) { out[used[0]] = 1; return out; }
+    let hs = 0;
     const less = (a: number, b: number): boolean => weight[a] < weight[b] || (weight[a] === weight[b] && a < b);
-    const push = (x: number): void => { heap.push(x); let i = heap.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (!less(heap[i], heap[p])) break; [heap[i], heap[p]] = [heap[p], heap[i]]; i = p; } };
+    const push = (x: number): void => {
+      let i = hs++; heap[i] = x;
+      while (i > 0) { const p = (i - 1) >> 1; if (!less(heap[i], heap[p])) break; const t = heap[i]; heap[i] = heap[p]; heap[p] = t; i = p; }
+    };
     const pop = (): number => {
-      const top = heap[0], last = heap[heap.length - 1];
-      heap.length--;
-      if (heap.length > 0) {
+      const top = heap[0], last = heap[--hs];
+      if (hs > 0) {
         heap[0] = last; let i = 0;
-        for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && less(heap[l], heap[m])) m = l; if (r < heap.length && less(heap[r], heap[m])) m = r; if (m === i) break; [heap[i], heap[m]] = [heap[m], heap[i]]; i = m; }
+        for (;;) {
+          const l = 2 * i + 1, r = l + 1; let m = i;
+          if (l < hs && less(heap[l], heap[m])) m = l;
+          if (r < hs && less(heap[r], heap[m])) m = r;
+          if (m === i) break;
+          const t = heap[i]; heap[i] = heap[m]; heap[m] = t; i = m;
+        }
       }
       return top;
     };
-    for (const i of used) { weight[i] = f[i]; parent[i] = -1; push(i); }
+    for (let k = 0; k < nu; k++) { const i = used[k]; weight[i] = f[i]; parent[i] = -1; push(i); }
     let next = n;
-    while (heap.length > 1) { const a = pop(), b = pop(); weight[next] = weight[a] + weight[b]; parent[next] = -1; parent[a] = next; parent[b] = next; push(next); next++; }
+    // pop() decrements hs (closed over); oxlint cannot see that
+    // oxlint-disable-next-line no-unmodified-loop-condition
+    while (hs > 1) { const a = pop(), b = pop(); weight[next] = weight[a] + weight[b]; parent[next] = -1; parent[a] = next; parent[b] = next; push(next); next++; }
     let max = 0;
-    for (const i of used) { let d = 0; for (let p = i; parent[p] !== -1; p = parent[p]) d++; out[i] = d; if (d > max) max = d; }
+    for (let k = 0; k < nu; k++) {
+      const i = used[k]; let d = 0;
+      for (let p = i; parent[p] !== -1; p = parent[p]) d++;
+      out[i] = d; if (d > max) max = d;
+    }
     if (max <= limit) return out;
-    for (const i of used) f[i] = Math.floor(f[i] / 2) + 1;
+    for (let k = 0; k < nu; k++) { const i = used[k]; f[i] = Math.floor(f[i] / 2) + 1; }
   }
 }
 
@@ -361,42 +388,45 @@ function tokenize(d: Uint8Array, rowDist: number, left: number, effort: Effort):
   return { tok, n };
 }
 
+const WB_LF = new Uint32Array(286), WB_DF = new Uint32Array(30), WB_CF = new Uint32Array(19);
+const WB_SEQ = new Uint8Array(316), WB_CL = new Uint8Array(316), WB_CE = new Uint8Array(316);
 /** One dynamic-Huffman block over tokens [a, b). */
 function writeBlock(bw: Bits, tok: Int32Array, a: number, b: number, last: boolean): void {
-  const lf = new Uint32Array(286), df = new Uint32Array(30);
+  const lf = WB_LF, df = WB_DF;
+  lf.fill(0); df.fill(0);
   for (let k = a; k < b; k++) {
     const t = tok[k];
     if (t < 256) lf[t]++;
     else { const m = t - 256, l = m >>> 16, dd = m & 0xffff; lf[257 + LSYM[l]]++; df[distSym(dd)]++; }
   }
   lf[256] = 1;
-  if (df.every((v) => v === 0)) df[0] = 1;
-  const ll = codeLengths(lf, 15), dl = codeLengths(df, 15);
+  let anyD = false; for (let i = 0; i < 30; i++) if (df[i] !== 0) { anyD = true; break; }
+  if (!anyD) df[0] = 1;
+  const ll = codeLengths(lf, 15, none), dl = codeLengths(df, 15, none);
   let hlit = 286; while (hlit > 257 && ll[hlit - 1] === 0) hlit--;
   let hdist = 30; while (hdist > 1 && dl[hdist - 1] === 0) hdist--;
-  // code-length alphabet with run-length codes 16 (repeat prev 3–6), 17 (zeros 3–10), 18 (zeros 11–138)
-  const seq = [...ll.subarray(0, hlit), ...dl.subarray(0, hdist)];
-  const cl: number[] = [], ce: number[] = [];
-  for (let i = 0; i < seq.length;) {
+  const seq = WB_SEQ, seqN = hlit + hdist;
+  seq.set(ll.subarray(0, hlit), 0); seq.set(dl.subarray(0, hdist), hlit);
+  const cl = WB_CL, ce = WB_CE; let cn = 0;
+  for (let i = 0; i < seqN;) {
     const v = seq[i];
-    let r = 1; while (i + r < seq.length && seq[i + r] === v) r++;
-    if (v === 0 && r >= 3) { const k = Math.min(r, 138); if (k >= 11) { cl.push(18); ce.push(k - 11); } else { cl.push(17); ce.push(k - 3); } i += k; continue; }
-    if (v !== 0 && r >= 4) { cl.push(v); ce.push(0); const k = Math.min(r - 1, 6); cl.push(16); ce.push(k - 3); i += k + 1; continue; }
-    cl.push(v); ce.push(0); i++;
+    let r = 1; while (i + r < seqN && seq[i + r] === v) r++;
+    if (v === 0 && r >= 3) { const k = Math.min(r, 138); if (k >= 11) { cl[cn] = 18; ce[cn++] = k - 11; } else { cl[cn] = 17; ce[cn++] = k - 3; } i += k; continue; }
+    if (v !== 0 && r >= 4) { cl[cn] = v; ce[cn++] = 0; const k = Math.min(r - 1, 6); cl[cn] = 16; ce[cn++] = k - 3; i += k + 1; continue; }
+    cl[cn] = v; ce[cn++] = 0; i++;
   }
-  const cf = new Uint32Array(19);
-  for (const c of cl) cf[c]++;
-  const cll = codeLengths(cf, 7), clc = canonical(cll);
+  const cf = WB_CF; cf.fill(0);
+  for (let i = 0; i < cn; i++) cf[cl[i]]++;
+  const cll = codeLengths(cf, 7, some(CL_OUT_CF)), clc = canonical(cll);
   let hclen = 19; while (hclen > 4 && cll[CL_ORDER[hclen - 1]] === 0) hclen--;
   bw.put(last ? 1 : 0, 1); bw.put(2, 2);
   bw.put(hlit - 257, 5); bw.put(hdist - 1, 5); bw.put(hclen - 4, 4);
   for (let k = 0; k < hclen; k++) bw.put(cll[CL_ORDER[k]], 3);
-  for (let k = 0; k < cl.length; k++) {
+  for (let k = 0; k < cn; k++) {
     bw.put(clc[cl[k]], cll[cl[k]]);
     if (cl[k] === 16) bw.put(ce[k], 2); else if (cl[k] === 17) bw.put(ce[k], 3); else if (cl[k] === 18) bw.put(ce[k], 7);
   }
   const lc = canonical(ll), dc = canonical(dl);
-  // the token loop keeps the bit accumulator in locals; at most 48 bits (6 bytes) per token
   bw.reserve((b - a) * 6 + 8);
   const buf = bw.buf;
   let acc = bw.acc, cnt = bw.cnt, o = bw.n;
@@ -419,7 +449,7 @@ function writeBlock(bw: Bits, tok: Int32Array, a: number, b: number, last: boole
 
 /** Token stream → zlib (RFC 1950): header, dynamic blocks of 2^16 tokens, Adler-32 trailer. */
 function zlibFrom(tok: Int32Array, n: number, adler: number): Uint8Array {
-  const bw = new Bits();
+  const bw = BITS; bw.reset();
   bw.put(0x78, 8); bw.put(0x9c, 8);
   const PER = 1 << 16;                                             // tokens per Huffman block
   if (n === 0) { bw.put(1, 1); bw.put(1, 2); bw.put(0, 7); }      // empty: one fixed block holding only end-of-block
@@ -469,8 +499,9 @@ type Tokens = { readonly tok: Int32Array; readonly n: number; readonly adler: nu
 
 /** [start, end) pairs of pixels where a predicate holds, in x order, with a forward cursor. */
 class Intervals {
-  readonly e: Int32Array; n = 0; k = 0;
-  constructor(w: number) { this.e = new Int32Array(w + 4); }
+  e: Int32Array; n = 0; k = 0;
+  constructor(cap: number) { this.e = new Int32Array(cap); }
+  ensure(w: number): void { if (this.e.length < w + 4) this.e = new Int32Array(w + 4); }
   /** Pixels from x on that satisfy the predicate (x never decreases between rows' resets). */
   from(x: number): number {
     const e = this.e;
@@ -481,43 +512,53 @@ class Intervals {
   }
 }
 
+const HBITS = 15, CHAIN = 4, RM = PIX_RING - 1;
+/** Pooled across encodes so a cold isolate pays once. head slots are tagged with TOK_EPOCH so a
+ *  fresh encode does not fill 128 KiB with −1; unread slots from a prior encode are ignored. */
+const TOK_HEAD = new Int32Array(1 << HBITS), TOK_PREV = new Int32Array(PIX_RING);
+let TOK_BUF = new Int32Array(1 << 18);
+const TOK_AGE = new Int32Array(1 << HBITS);
+let TOK_EPOCH = 1;
+const TOK_L = new Intervals(2048), TOK_U = new Intervals(2048);
+
+/** Common prefix of canvas bytes at a and b (same alignment mod 4), up to max. */
+function runBytes(px: Uint8Array, u: Int32Array, a: number, b: number, max: number): number {
+  let l = 0;
+  while (l < max && ((a + l) & 3) !== 0) { if (px[a + l] !== px[b + l]) return l; l++; }
+  while (l + 4 <= max && u[(a + l) >> 2] === u[(b + l) >> 2]) l += 4;
+  while (l < max && px[a + l] === px[b + l]) l++;
+  return l;
+}
+/** Match length at byte pb (row offset xb) against d bytes back, using intervals iv for whole pixels. */
+function alongMatch(iv: Intervals, px: Uint8Array, W: number, pb: number, xb: number, d: number, max: number): number {
+  let l = 0;
+  while (l < max && ((xb + l) & 3) !== 0) { if (px[pb + l] !== px[pb + l - d]) return l; l++; }
+  if (l >= max) return l;
+  const x = (xb + l) >> 2, np = iv.from(x);
+  l += 4 * np;
+  if (l >= max) return max;
+  if (x + np >= W) return l;
+  for (let t = 0; t < 3 && l < max && px[pb + l] === px[pb + l - d]; t++) l++;
+  return l;
+}
+
 function tokenizeCanvas(c: Canvas): Tokens {
   // Pixels and block colors are only compared for equality (and hashed via Math.imul, which takes ToInt32), so read
   // them as int32: an opaque pixel (0xFFxxxxxx) is then −2^24..−1, a Smi, where the Uint32 value (> 2^30) would be
   // boxed as a HeapNumber on every load in unoptimized code.
   const W = c.w, H = c.h, px = c.px, RB = W * 4, S = RB + 1, nb = c.nb, mix = c.mix;
-  const u = new Int32Array(c.u32.buffer, c.u32.byteOffset, c.u32.length);
-  const blk = new Int32Array(c.blk.buffer, c.blk.byteOffset, c.blk.length);
-  const HBITS = 15, CHAIN = 4, RM = PIX_RING - 1;
-  const head = new Int32Array(1 << HBITS).fill(-1), prev = new Int32Array(PIX_RING);
-  let tok = new Int32Array(1 << 16);
-  const L = new Intervals(W), U = new Intervals(W);
-  const hash = (p: number): number => Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS);
-  const insert = (p: number): void => { const h = hash(p); prev[p & RM] = head[h]; head[h] = p; };
-  /** Common prefix of canvas bytes at a and b (same alignment mod 4), up to max. */
-  const run = (a: number, b: number, max: number): number => {
-    let l = 0;
-    while (l < max && ((a + l) & 3) !== 0) { if (px[a + l] !== px[b + l]) return l; l++; }
-    while (l + 4 <= max && u[(a + l) >> 2] === u[(b + l) >> 2]) l += 4;
-    while (l < max && px[a + l] === px[b + l]) l++;
-    return l;
-  };
-  /** Match length at byte pb (row offset xb) against d bytes back, using intervals iv for whole pixels. */
-  const along = (iv: Intervals, pb: number, xb: number, d: number, max: number): number => {
-    let l = 0;
-    while (l < max && ((xb + l) & 3) !== 0) { if (px[pb + l] !== px[pb + l - d]) return l; l++; }
-    if (l >= max) return l;
-    const x = (xb + l) >> 2, np = iv.from(x);
-    l += 4 * np;
-    if (l >= max) return max;
-    if (x + np >= W) return l;
-    for (let t = 0; t < 3 && l < max && px[pb + l] === px[pb + l - d]; t++) l++;
-    return l;
-  };
+  const u = c.i32, blk = c.blkI32;
+  const head = TOK_HEAD, prev = TOK_PREV, age = TOK_AGE;
+  let epoch = TOK_EPOCH + 1;
+  if (epoch > 0x7fffffff) { age.fill(0); epoch = 1; }
+  TOK_EPOCH = epoch;
+  let tok = TOK_BUF;
+  const need = (RB + 1) * H + 8;
+  if (tok.length < need) { tok = new Int32Array(need); TOK_BUF = tok; }
+  const L = TOK_L, U = TOK_U; L.ensure(W); U.ensure(W);
   let a = 1, b = 0, n = 0, pending = 0;
   const upOk = S <= 32768;
   for (let y = 0; y < H; y++) {
-    if (tok.length < n + S + 8) { const t = new Int32Array(Math.max(tok.length * 2, n + S + 8)); t.set(tok.subarray(0, n)); tok = t; }
     const row = y * W, rowB = row * 4, brow = y * nb;
     // ---- intervals: equal to the left, equal to above (inlined: this loop sees every block)
     {
@@ -563,7 +604,6 @@ function tokenizeCanvas(c: Canvas): Tokens {
       const q = (row + x) * 4, x0 = px[q], x1 = px[q + 1], x2 = px[q + 2], x3 = px[q + 3];
       const sum = x0 + x1 + x2 + x3, t = 4 * x0 + 3 * x1 + 2 * x2 + x3;
       if (len === 1) {
-        // unreduced for up to ADLER_SINGLES singles: a and b stay below 2^30 (Smi range)
         b += 4 * a + t; a += sum;
         if (++pending === ADLER_SINGLES) { a = modA(a); b = modA(b); pending = 0; }
         x++;
@@ -574,22 +614,26 @@ function tokenizeCanvas(c: Canvas): Tokens {
       }
     }
     // ---- tokens
-    tok[n++] = 0;                                                     // filter byte: None
+    tok[n++] = 0;
     let xb = 0;
     while (xb < RB) {
       const pb = rowB + xb, max = Math.min(258, RB - xb);
       let best = 0, dist = 0;
       if (max >= 3) {
-        if (xb >= 4) { best = along(L, pb, xb, 4, max); dist = 4; }
-        if (y > 0 && upOk && best < max) { const l = along(U, pb, xb, RB, max); if (l > best) { best = l; dist = S; } }
+        if (xb >= 4) { best = alongMatch(L, px, W, pb, xb, 4, max); dist = 4; }
+        if (y > 0 && upOk && best < max) { const l = alongMatch(U, px, W, pb, xb, RB, max); if (l > best) { best = l; dist = S; } }
         if (best < 32 && (xb & 3) === 0) {
           const p = pb >> 2;
-          let j = head[hash(p)], chain = CHAIN;
+          const hh = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS);
+          let j = age[hh] === epoch ? head[hh] : -1, chain = CHAIN;
           while (j >= 0 && chain-- > 0 && p - j <= RM) {
             const qy = (j / W) | 0, qxb = (j - qy * W) * 4, bd = (y - qy) * S + xb - qxb;
-            if (bd > 32768) break;                                    // the chain only gets farther
-            const m = Math.min(max, RB - qxb);
-            if (best < m && px[j * 4 + best] === px[pb + best]) { const l = run(pb, j * 4, m); if (l > best) { best = l; dist = bd; } }
+            if (bd > 32768) break;
+            const mlen = Math.min(max, RB - qxb);
+            if (best < mlen && px[j * 4 + best] === px[pb + best]) {
+              const l = runBytes(px, u, pb, j * 4, mlen);
+              if (l > best) { best = l; dist = bd; }
+            }
             const pj = prev[j & RM];
             if (pj >= j) break;
             j = pj;
@@ -597,14 +641,39 @@ function tokenizeCanvas(c: Canvas): Tokens {
         }
       }
       if (best >= 3) {
+        // Long left-runs (flat fills): emit back-to-back 258-byte matches without re-probing
+        // hash/above. Same tokens as the loop would have produced one match at a time.
+        if (dist === 4 && best === 258 && (xb & 3) === 0) {
+          for (;;) {
+            tok[n++] = 256 + ((258 << 16) | 4);
+            const p1 = (rowB + xb + 258) >> 2;
+            for (let p = p1 - 2; p < p1; p++) {
+              const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS);
+              prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
+            }
+            xb += 258;
+            if (xb + 258 > RB) break;
+            const more = L.from(xb >> 2);
+            if (more < 64) break;   // 64 px = 256 bytes; alongMatch would return ≥258 only with ≥64.5 px of left-equality from a mid-pixel start, but we are aligned so need ≥64.5 → 65; use alongMatch for the tail
+            // aligned: need 258 bytes = 64.5 px → 65 px of left-equal from this x. more is pixels from x onward.
+            if (more < 65) break;
+            // continue emitting
+          }
+          continue;
+        }
         tok[n++] = 256 + ((best << 16) | dist);
-        // index the pixels the match covers: all of a short one, the last two of a long one
         const p0 = (rowB + ((xb + 3) & ~3)) >> 2, p1 = (pb + best) >> 2;
-        for (let p = best <= 32 ? p0 : Math.max(p0, p1 - 2); p < p1; p++) insert(p);
+        for (let p = best <= 32 ? p0 : Math.max(p0, p1 - 2); p < p1; p++) {
+          const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS);
+          prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
+        }
         xb += best;
       } else {
         tok[n++] = px[pb];
-        if ((xb & 3) === 0) insert(pb >> 2);
+        if ((xb & 3) === 0) {
+          const p = pb >> 2, h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS);
+          prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
+        }
         xb++;
       }
     }
@@ -622,5 +691,18 @@ export function encodePNGSync(c: Canvas, opts: PngSyncOptions = RGBA): Uint8Arra
   // an explicit level runs the generic tokenizer over the filtered rows; the default keeps the canvas-aware one
   if (opts.level.kind === 'some') return concat([header(c.w, c.h, c.dpi), chunk('IDAT', zlibSync(filteredBand(c, 0, c.h), c.w * 4 + 1, 4, effort)), IEND]);
   const { tok, n, adler } = tokenizeCanvas(c);
-  return concat([header(c.w, c.h, c.dpi), chunk('IDAT', zlibFrom(tok, n, adler)), IEND]);
+  const z = zlibFrom(tok, n, adler);
+  const head = header(c.w, c.h, c.dpi);
+  // one allocation for the whole file: avoids concat copying the zlib body a second time
+  const out = new Uint8Array(head.length + 12 + z.length + IEND.length);
+  out.set(head, 0);
+  const o = head.length;
+  out[o] = (z.length >>> 24) & 255; out[o + 1] = (z.length >>> 16) & 255; out[o + 2] = (z.length >>> 8) & 255; out[o + 3] = z.length & 255;
+  out[o + 4] = 73; out[o + 5] = 68; out[o + 6] = 65; out[o + 7] = 84; // IDAT
+  out.set(z, o + 8);
+  const crc = crc32([out.subarray(o + 4, o + 8), z]);
+  const cOff = o + 8 + z.length;
+  out[cOff] = (crc >>> 24) & 255; out[cOff + 1] = (crc >>> 16) & 255; out[cOff + 2] = (crc >>> 8) & 255; out[cOff + 3] = crc & 255;
+  out.set(IEND, cOff + 4);
+  return out;
 }
