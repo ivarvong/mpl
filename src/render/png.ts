@@ -2,9 +2,13 @@
 //   pngStream  — ReadableStream: signature + IHDR, then one IDAT per chunk that the
 //                platform's CompressionStream('deflate') yields, then IEND. Rows are
 //                filtered and fed in bands, so memory stays O(band) beyond the canvas.
+//                (Platform zlib — not byte-identical to encodePNGSync.)
 //   encodePNG  — the stream, collected.
-//   encodePNGSync — synchronous: our own deflate, tokenized from the canvas a pixel at a time
-//                   where it can be, with dynamic Huffman blocks.
+//   encodePNGSync — synchronous custom deflate, byte-stable. Peak memory beyond the RGBA
+//                   canvas is fixed: two TOK_BLOCK Int32 buffers + hash pools + a bit writer
+//                   that grows with the compressed stream (≪ canvas). Token Huffman blocks
+//                   flush every TOK_BLOCK tokens (same boundaries as before), so bytes match
+//                   the prior whole-buffer tokenizer.
 // Each takes a PngOptions: colors none writes 8-bit RGBA (color type 6); colors n writes a palette PNG (color type 3)
 // of at most n entries, exact when the figure has that few colors (palette.ts), packed at the smallest bit depth.
 import type { Canvas } from './agg/canvas.ts';
@@ -13,6 +17,7 @@ import type { Indexed } from './palette.ts';
 import { quantize } from './palette.ts';
 import type { Option } from '../core/types.ts';
 import { none, some } from '../core/types.ts';
+import { tracer } from '../trace.ts';
 
 /** colors: the palette budget (1..256), or none for full RGBA. */
 export type PngOptions = { readonly colors: Option<number> };
@@ -495,7 +500,21 @@ const modA = (v: number): number => {
  *  a < 0.59e6 and b < 6.7e8: both stay Smis (< 2^30), so unoptimized tiers never box them as HeapNumbers. */
 const ADLER_SINGLES = 512;
 
-type Tokens = { readonly tok: Int32Array; readonly n: number; readonly adler: number };
+/**
+ * Tokens per dynamic-Huffman block — same as zlibFrom's PER. Two buffers of this size are retained
+ * (active + one held-back full block) so BFINAL lands on the same block as the historical whole-buffer path.
+ * Peak token scratch: `2 · TOK_BLOCK · 4` bytes, independent of w·h.
+ */
+export const TOK_BLOCK: number = 1 << 16;
+
+/** Fixed scratch beyond the RGBA canvas for the default sync encoder (bytes). Excludes the bit writer
+ *  (grows with compressed size ≪ canvas) and the final PNG buffer. */
+export const PNG_SYNC_FIXED_SCRATCH_BYTES: number =
+  2 * TOK_BLOCK * 4 +           // active + held token blocks
+  (1 << 15) * 4 +               // TOK_HEAD
+  PIX_RING * 4 +                // TOK_PREV
+  (1 << 15) * 4 +               // TOK_AGE
+  2048 * 4 * 2;                 // Intervals L/U initial (grow to O(w), see ensure)
 
 /** [start, end) pairs of pixels where a predicate holds, in x order, with a forward cursor. */
 class Intervals {
@@ -512,14 +531,15 @@ class Intervals {
   }
 }
 
-const HBITS = 15, CHAIN = 4, RM = PIX_RING - 1;
+const HBITS_TOK = 15, CHAIN = 4, RM = PIX_RING - 1;
 /** Pooled across encodes so a cold isolate pays once. head slots are tagged with TOK_EPOCH so a
  *  fresh encode does not fill 128 KiB with −1; unread slots from a prior encode are ignored. */
-const TOK_HEAD = new Int32Array(1 << HBITS), TOK_PREV = new Int32Array(PIX_RING);
-let TOK_BUF = new Int32Array(1 << 18);
-const TOK_AGE = new Int32Array(1 << HBITS);
+const TOK_HEAD = new Int32Array(1 << HBITS_TOK), TOK_PREV = new Int32Array(PIX_RING);
+const TOK_AGE = new Int32Array(1 << HBITS_TOK);
 let TOK_EPOCH = 1;
 const TOK_L = new Intervals(2048), TOK_U = new Intervals(2048);
+/** Two fixed token blocks: `tok` is being filled; `held` is a full block waiting so BFINAL is correct. */
+const TOK_A = new Int32Array(TOK_BLOCK), TOK_B = new Int32Array(TOK_BLOCK);
 
 /** Common prefix of canvas bytes at a and b (same alignment mod 4), up to max. */
 function runBytes(px: Uint8Array, u: Int32Array, a: number, b: number, max: number): number {
@@ -542,25 +562,39 @@ function alongMatch(iv: Intervals, px: Uint8Array, W: number, pb: number, xb: nu
   return l;
 }
 
-function tokenizeCanvas(c: Canvas): Tokens {
-  // Pixels and block colors are only compared for equality (and hashed via Math.imul, which takes ToInt32), so read
-  // them as int32: an opaque pixel (0xFFxxxxxx) is then −2^24..−1, a Smi, where the Uint32 value (> 2^30) would be
-  // boxed as a HeapNumber on every load in unoptimized code.
+/**
+ * Canvas-aware LZ77 → dynamic-Huffman zlib, flushing a Huffman block every TOK_BLOCK tokens.
+ * Same tokens and block boundaries as the historical whole-buffer path; peak token memory is O(1).
+ */
+function zlibFromCanvas(c: Canvas): Uint8Array {
   const W = c.w, H = c.h, px = c.px, RB = W * 4, S = RB + 1, nb = c.nb, mix = c.mix;
   const u = c.i32, blk = c.blkI32;
   const head = TOK_HEAD, prev = TOK_PREV, age = TOK_AGE;
   let epoch = TOK_EPOCH + 1;
   if (epoch > 0x7fffffff) { age.fill(0); epoch = 1; }
   TOK_EPOCH = epoch;
-  let tok = TOK_BUF;
-  const need = (RB + 1) * H + 8;
-  if (tok.length < need) { tok = new Int32Array(need); TOK_BUF = tok; }
+  let tok = TOK_A, n = 0;
+  // box: nested push mutates; CFA would otherwise keep held as none after the loop
+  const hold: { cur: Option<Int32Array> } = { cur: none };
   const L = TOK_L, U = TOK_U; L.ensure(W); U.ensure(W);
-  let a = 1, b = 0, n = 0, pending = 0;
+  const bw = BITS; bw.reset();
+  bw.put(0x78, 8); bw.put(0x9c, 8);
+
+  const emitFull = (buf: Int32Array, last: boolean): void => { writeBlock(bw, buf, 0, TOK_BLOCK, last); };
+  const push = (v: number): void => {
+    tok[n++] = v;
+    if (n === TOK_BLOCK) {
+      if (hold.cur.kind === 'some') emitFull(hold.cur.value, false);
+      hold.cur = some(tok);
+      tok = tok === TOK_A ? TOK_B : TOK_A;
+      n = 0;
+    }
+  };
+
+  let a = 1, b = 0, pending = 0;
   const upOk = S <= 32768;
   for (let y = 0; y < H; y++) {
     const row = y * W, rowB = row * 4, brow = y * nb;
-    // ---- intervals: equal to the left, equal to above (inlined: this loop sees every block)
     {
       const le = L.e, ue = U.e;
       let ln = 0, lo = -1, un = 0, uo = -1, last = u[row];
@@ -595,7 +629,6 @@ function tokenizeCanvas(c: Canvas): Tokens {
       if (uo >= 0) { ue[un++] = uo; ue[un++] = W; }
       L.n = ln; L.k = 0; U.n = un; U.k = 0;
     }
-    // ---- Adler-32: the filter byte, then runs of identical pixels ([s − 1, e) per left interval)
     a = modA(a); b = modA(b + a); pending = 0;
     for (let k = 0, x = 0; x < W;) {
       const s0 = k < L.n ? L.e[k] - 1 : W;
@@ -613,8 +646,7 @@ function tokenizeCanvas(c: Canvas): Tokens {
         pending = 0; x = end; k += 2;
       }
     }
-    // ---- tokens
-    tok[n++] = 0;
+    push(0);
     let xb = 0;
     while (xb < RB) {
       const pb = rowB + xb, max = Math.min(258, RB - xb);
@@ -624,7 +656,7 @@ function tokenizeCanvas(c: Canvas): Tokens {
         if (y > 0 && upOk && best < max) { const l = alongMatch(U, px, W, pb, xb, RB, max); if (l > best) { best = l; dist = S; } }
         if (best < 32 && (xb & 3) === 0) {
           const p = pb >> 2;
-          const hh = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS);
+          const hh = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
           let j = age[hh] === epoch ? head[hh] : -1, chain = CHAIN;
           while (j >= 0 && chain-- > 0 && p - j <= RM) {
             const qy = (j / W) | 0, qxb = (j - qy * W) * 4, bd = (y - qy) * S + xb - qxb;
@@ -641,37 +673,33 @@ function tokenizeCanvas(c: Canvas): Tokens {
         }
       }
       if (best >= 3) {
-        // Long left-runs (flat fills): emit back-to-back 258-byte matches without re-probing
-        // hash/above. Same tokens as the loop would have produced one match at a time.
         if (dist === 4 && best === 258 && (xb & 3) === 0) {
           for (;;) {
-            tok[n++] = 256 + ((258 << 16) | 4);
+            push(256 + ((258 << 16) | 4));
             const p1 = (rowB + xb + 258) >> 2;
             for (let p = p1 - 2; p < p1; p++) {
-              const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS);
+              const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
               prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
             }
             xb += 258;
             if (xb + 258 > RB) break;
             const more = L.from(xb >> 2);
-            if (more < 64) break;   // 64 px = 256 bytes; alongMatch would return ≥258 only with ≥64.5 px of left-equality from a mid-pixel start, but we are aligned so need ≥64.5 → 65; use alongMatch for the tail
-            // aligned: need 258 bytes = 64.5 px → 65 px of left-equal from this x. more is pixels from x onward.
+            if (more < 64) break;
             if (more < 65) break;
-            // continue emitting
           }
           continue;
         }
-        tok[n++] = 256 + ((best << 16) | dist);
+        push(256 + ((best << 16) | dist));
         const p0 = (rowB + ((xb + 3) & ~3)) >> 2, p1 = (pb + best) >> 2;
         for (let p = best <= 32 ? p0 : Math.max(p0, p1 - 2); p < p1; p++) {
-          const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS);
+          const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
           prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
         }
         xb += best;
       } else {
-        tok[n++] = px[pb];
+        push(px[pb]);
         if ((xb & 3) === 0) {
-          const p = pb >> 2, h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS);
+          const p = pb >> 2, h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
           prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
         }
         xb++;
@@ -679,7 +707,18 @@ function tokenizeCanvas(c: Canvas): Tokens {
     }
   }
   a = modA(a); b = modA(b);
-  return { tok, n, adler: ((b << 16) | a) >>> 0 };
+  const adler = ((b << 16) | a) >>> 0;
+
+  // Flush with the same BFINAL placement as zlibFrom over a monolithic token buffer.
+  if (hold.cur.kind === 'some' && n > 0) { emitFull(hold.cur.value, false); writeBlock(bw, tok, 0, n, true); }
+  else if (hold.cur.kind === 'some') emitFull(hold.cur.value, true);
+  else if (n > 0) writeBlock(bw, tok, 0, n, true);
+  else { bw.put(1, 1); bw.put(1, 2); bw.put(0, 7); }
+
+  const body = bw.flush();
+  const out = new Uint8Array(body.length + 4);
+  out.set(body, 0); out.set(u32(adler), body.length);
+  return out;
 }
 
 export function encodePNGSync(c: Canvas, opts: PngSyncOptions = RGBA): Uint8Array {
@@ -690,19 +729,63 @@ export function encodePNGSync(c: Canvas, opts: PngSyncOptions = RGBA): Uint8Arra
   }
   // an explicit level runs the generic tokenizer over the filtered rows; the default keeps the canvas-aware one
   if (opts.level.kind === 'some') return concat([header(c.w, c.h, c.dpi), chunk('IDAT', zlibSync(filteredBand(c, 0, c.h), c.w * 4 + 1, 4, effort)), IEND]);
-  const { tok, n, adler } = tokenizeCanvas(c);
-  const z = zlibFrom(tok, n, adler);
-  const head = header(c.w, c.h, c.dpi);
-  // one allocation for the whole file: avoids concat copying the zlib body a second time
-  const out = new Uint8Array(head.length + 12 + z.length + IEND.length);
-  out.set(head, 0);
-  const o = head.length;
-  out[o] = (z.length >>> 24) & 255; out[o + 1] = (z.length >>> 16) & 255; out[o + 2] = (z.length >>> 8) & 255; out[o + 3] = z.length & 255;
-  out[o + 4] = 73; out[o + 5] = 68; out[o + 6] = 65; out[o + 7] = 84; // IDAT
-  out.set(z, o + 8);
-  const crc = crc32([out.subarray(o + 4, o + 8), z]);
-  const cOff = o + 8 + z.length;
-  out[cOff] = (crc >>> 24) & 255; out[cOff + 1] = (crc >>> 16) & 255; out[cOff + 2] = (crc >>> 8) & 255; out[cOff + 3] = crc & 255;
-  out.set(IEND, cOff + 4);
-  return out;
+  return tracer.span('png.sync', { w: c.w, h: c.h }, (sp) => {
+    const z = tracer.span('png.deflate', { w: c.w, h: c.h, tokBlock: TOK_BLOCK }, () => zlibFromCanvas(c));
+    sp.setAttribute('zBytes', z.length);
+    const head = header(c.w, c.h, c.dpi);
+    const out = new Uint8Array(head.length + 12 + z.length + IEND.length);
+    out.set(head, 0);
+    const o = head.length;
+    out[o] = (z.length >>> 24) & 255; out[o + 1] = (z.length >>> 16) & 255; out[o + 2] = (z.length >>> 8) & 255; out[o + 3] = z.length & 255;
+    out[o + 4] = 73; out[o + 5] = 68; out[o + 6] = 65; out[o + 7] = 84; // IDAT
+    out.set(z, o + 8);
+    const crc = tracer.span('png.crc', { zBytes: z.length }, () => crc32([out.subarray(o + 4, o + 8), z]));
+    const cOff = o + 8 + z.length;
+    out[cOff] = (crc >>> 24) & 255; out[cOff + 1] = (crc >>> 16) & 255; out[cOff + 2] = (crc >>> 8) & 255; out[cOff + 3] = crc & 255;
+    out.set(IEND, cOff + 4);
+    sp.setAttribute('bytes', out.length);
+    return out;
+  });
+}
+
+/**
+ * Byte-identical to encodePNGSync (concat of chunks), but yields signature+IHDR, one IDAT, IEND
+ * as separate stream chunks so a Worker can start sending the header while deflate runs.
+ * Peak memory matches encodePNGSync (canvas + fixed scratch + zlib body).
+ */
+export function pngStreamSync(c: Canvas, opts: PngSyncOptions = RGBA): ReadableStream<Uint8Array> {
+  if (opts.colors.kind === 'some' || opts.level.kind === 'some') {
+    // palette / explicit level: fall back to collecting the sync encoder
+    const body = encodePNGSync(c, opts);
+    return new ReadableStream({
+      start(ctl) { ctl.enqueue(body); ctl.close(); },
+    });
+  }
+  let state: 'head' | 'idat' | 'end' | 'done' = 'head';
+  return new ReadableStream({
+    pull(ctl) {
+      switch (state) {
+        case 'head':
+          ctl.enqueue(header(c.w, c.h, c.dpi));
+          state = 'idat';
+          return;
+        case 'idat': {
+          const z = tracer.span('png.deflate', { w: c.w, h: c.h, tokBlock: TOK_BLOCK }, () => zlibFromCanvas(c));
+          ctl.enqueue(chunk('IDAT', z));
+          state = 'end';
+          return;
+        }
+        case 'end':
+          ctl.enqueue(IEND);
+          state = 'done';
+          ctl.close();
+          return;
+        case 'done':
+          ctl.close();
+          return;
+        default:
+          throw new Error('unreachable');
+      }
+    },
+  });
 }
