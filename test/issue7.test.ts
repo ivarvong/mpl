@@ -57,7 +57,8 @@ const throwsKw = (f: () => unknown, key: string): void =>
   ax.plot([0, 1, 2], [0, 1, 2]);
   ax.set_yticks([0, 1, 2]);
   ax.set_yticklabels(['a', 'b', 'c'], { fontweight: 'bold', color: 'C3', fontsize: 12 });
-  throwsKw(() => ax.set_xticklabels(['a'], { rotation: 45 }), 'rotation');
+  // rotation is supported (autofmt_xdate); an unknown Text kw still throws
+  throwsKw(() => ax.set_xticklabels(['a'], { family: 'serif' }), 'family');
   const labels = ax.get_yticklabels();
   assert.deepEqual(labels.map((t) => t.get_text()), ['a', 'b', 'c']);
   labels[1].set_fontweight('normal');

@@ -217,8 +217,26 @@ type Tag = 'on' | 'conic' | 'cubic';
 type Pt = { x: number; y: number; tag: Tag };
 const tagOf = (t: number): Tag => (t === 1 ? 'on' : t === 2 ? 'cubic' : 'conic');
 
+/** FT_Set_Transform 16.16 matrix [[xx, xy], [yx, yy]] (identity when upright). */
+export type RotMat = { readonly xx: number; readonly xy: number; readonly yx: number; readonly yy: number };
+export const ROT_ID: RotMat = { xx: 0x10000, xy: 0, yx: 0, yy: 0x10000 };
+export const ROT_90: RotMat = { xx: 0, xy: -0x10000, yx: 0x10000, yy: 0 };
+/** matplotlib Agg: round(0x10000 * [[cos,-sin],[sin,cos]]) for angle degrees CCW in y-down screen space. */
+export function rotMatDeg(deg: number): RotMat {
+  const rad = (deg * Math.PI) / 180;
+  const c = Math.cos(rad), s = Math.sin(rad);
+  return {
+    xx: Math.round(0x10000 * c),
+    xy: Math.round(0x10000 * -s),
+    yx: Math.round(0x10000 * s),
+    yy: Math.round(0x10000 * c),
+  };
+}
+const applyMat = (m: RotMat, x: number, y: number): readonly [number, number] =>
+  [mulFix(x, m.xx) + mulFix(y, m.xy), mulFix(x, m.yx) + mulFix(y, m.yy)];
+
 /** Scaled (26.6), transformed and translated outline points per contour. */
-function loadGlyph(face: Face, gid: number, scale: number, rot90: boolean, ox: number, oy: number): Pt[][] {
+function loadGlyph(face: Face, gid: number, scale: number, rot: RotMat, ox: number, oy: number): Pt[][] {
   const o = lookup(face.outlines, gid);
   if (o.kind === 'none') return [];
   const offs = lookup(face.offsets, gid);
@@ -229,8 +247,7 @@ function loadGlyph(face: Face, gid: number, scale: number, rot90: boolean, ox: n
     const pts: Pt[] = [];
     for (let i = 0; i < flat.length; i += 3) {
       const x = mulFix(flat[i], scale) + dx, y = mulFix(flat[i + 1], scale) + dy;
-      // matrix [[0, -1], [1, 0]] in 16.16: x' = MulFix(y, -0x10000), y' = MulFix(x, 0x10000)
-      const tx = rot90 ? mulFix(y, -0x10000) : x, ty = rot90 ? mulFix(x, 0x10000) : y;
+      const [tx, ty] = applyMat(rot, x, y);
       pts.push({ x: tx + ox, y: ty + oy, tag: tagOf(flat[i + 2]) });
     }
     return pts;
@@ -299,16 +316,17 @@ const cboxOf = (contours: readonly Pt[][]): { x0: number; y0: number; x1: number
  * Render one glyph whose origin is (ox, oy) in 26.6 FreeType space (y up from the
  * canvas bottom) and blend it like RendererAgg::draw_text_image.
  */
-export function drawGlyph(c: Canvas, face: Face, gid: number, scale: number, rot90: boolean, ox: number, oy: number, color: Rgba8): void {
+export function drawGlyph(c: Canvas, face: Face, gid: number, scale: number, rot: RotMat | boolean, ox: number, oy: number, color: Rgba8): void {
+  const m: RotMat = typeof rot === 'boolean' ? (rot ? ROT_90 : ROT_ID) : rot;
   const all = { x0: 0, y0: 0, x1: c.w, y1: c.h };
-  const g = cachedGlyph(face, gid, scale, rot90, ox & 63, oy & 63);
+  const g = cachedGlyph(face, gid, scale, m, ox & 63, oy & 63);
   switch (g.kind) {
     case 'empty': return;
     case 'mask': {
       const px = ox >> 6, py = oy >> 6;
       // translation by whole pixels is exact while every coordinate stays ≥ 0 (see cachedGlyph)
       if (g.minX + 64 * px >= 0 && g.minY + 64 * py >= 0) { blendCoverage(c, g.cov, color, px, c.h - py, all); return; }
-      drawGlyphDirect(c, face, gid, scale, rot90, ox, oy, color);
+      drawGlyphDirect(c, face, gid, scale, m, ox, oy, color);
       return;
     }
     default: assertNever(g);
@@ -316,8 +334,9 @@ export function drawGlyph(c: Canvas, face: Face, gid: number, scale: number, rot
 }
 
 /** The uncached path: load, rasterize and blend at the real origin. */
-export function drawGlyphDirect(c: Canvas, face: Face, gid: number, scale: number, rot90: boolean, ox: number, oy: number, color: Rgba8): void {
-  const contours = loadGlyph(face, gid, scale, rot90, ox, oy);
+export function drawGlyphDirect(c: Canvas, face: Face, gid: number, scale: number, rot: RotMat | boolean, ox: number, oy: number, color: Rgba8): void {
+  const m: RotMat = typeof rot === 'boolean' ? (rot ? ROT_90 : ROT_ID) : rot;
+  const contours = loadGlyph(face, gid, scale, m, ox, oy);
   if (contours.length === 0) return;
   const b = cboxOf(contours);
   if (b.x1 <= b.x0 || b.y1 <= b.y0) return;
@@ -352,20 +371,20 @@ const GLYPHS = new Map<string, CachedGlyph>();
 const GLYPH_LIMIT = 8192;
 let glyphHits = 0, glyphMisses = 0;
 
-function cachedGlyph(face: Face, gid: number, scale: number, rot90: boolean, fx: number, fy: number): CachedGlyph {
-  const key = `${face.id}|${gid}|${scale}|${rot90 ? 1 : 0}|${fx}|${fy}`;
+function cachedGlyph(face: Face, gid: number, scale: number, rot: RotMat, fx: number, fy: number): CachedGlyph {
+  const key = `${face.id}|${gid}|${scale}|${rot.xx},${rot.xy},${rot.yx},${rot.yy}|${fx}|${fy}`;
   const hit = lookup(GLYPHS, key);
   if (hit.kind === 'some') { glyphHits++; return hit.value; }
   glyphMisses++;
-  const g = renderCanonical(face, gid, scale, rot90, fx, fy);
+  const g = renderCanonical(face, gid, scale, rot, fx, fy);
   if (GLYPHS.size >= GLYPH_LIMIT) GLYPHS.clear();
   GLYPHS.set(key, g);
   return g;
 }
 
-function renderCanonical(face: Face, gid: number, scale: number, rot90: boolean, fx: number, fy: number): CachedGlyph {
+function renderCanonical(face: Face, gid: number, scale: number, rot: RotMat, fx: number, fy: number): CachedGlyph {
   const base = 64 * FAR;
-  const contours = loadGlyph(face, gid, scale, rot90, base + fx, base + fy);
+  const contours = loadGlyph(face, gid, scale, rot, base + fx, base + fy);
   if (contours.length === 0) return { kind: 'empty' };
   const b = cboxOf(contours);
   if (b.x1 <= b.x0 || b.y1 <= b.y0) return { kind: 'empty' };

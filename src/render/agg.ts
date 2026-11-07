@@ -13,7 +13,7 @@ import { EMPTY, Rasterizer } from './agg/raster.ts';
 import type { Coverage, IBox } from './agg/raster.ts';
 import { dashPath, fillPath, flatten, strokePath, stroker } from './agg/stroke.ts';
 import type { Sub } from './agg/stroke.ts';
-import { drawGlyph } from './ft.ts';
+import { drawGlyph, rotMatDeg, ROT_ID, ROT_90 } from './ft.ts';
 import type { PngOptions, PngSyncOptions } from './png.ts';
 import { encodePNG, encodePNGSync, pngStream, RGBA } from './png.ts';
 
@@ -136,18 +136,26 @@ function stampMarkers(x: Ctx, outline: readonly Seg[], xs: Float64Array, ys: Flo
 
 /** Per-glyph placement from _draw_text_glyphs_and_boxes; y is FreeType-up from the canvas bottom. */
 function drawText(x: Ctx, n: Extract<Node, { kind: 'text' }>): void {
-  x.tracer.span('raster.text', { text: n.text, glyphs: n.glyphs.length, pt: n.sizePt, rot: n.rotation }, () => drawGlyphs(x, n));
+  x.tracer.span('raster.text', { text: n.text, glyphs: n.glyphs.length, pt: n.sizePt, rot: typeof n.rotation === 'string' ? n.rotation : n.rotation.deg }, () => drawGlyphs(x, n));
 }
 function drawGlyphs(x: Ctx, n: Extract<Node, { kind: 'text' }>): void {
   const face = faceById(n.face);
   const scale = ftScale(face, n.sizePt, x.dpi);
   const color = rgba8(n.color);
   const H = x.c.h;
+  const rot = n.rotation;
   for (const { gid, dx } of n.glyphs) {
-    switch (n.rotation) {
-      case 'horizontal': drawGlyph(x.c, face, gid, scale, false, pyRound(64 * (n.x + dx)), pyRound(64 * (H - n.y)), color); break;
-      case 'vertical': drawGlyph(x.c, face, gid, scale, true, pyRound(64 * n.x), pyRound(64 * (H - n.y + dx)), color); break;
-      default: assertNever(n.rotation);
+    if (rot === 'horizontal') {
+      drawGlyph(x.c, face, gid, scale, ROT_ID, pyRound(64 * (n.x + dx)), pyRound(64 * (H - n.y)), color);
+    } else if (rot === 'vertical') {
+      drawGlyph(x.c, face, gid, scale, ROT_90, pyRound(64 * n.x), pyRound(64 * (H - n.y + dx)), color);
+    } else {
+      // angled: matplotlib RendererAgg._draw_text_glyphs_and_boxes (y-down angle, FT y-up delta)
+      const rad = (rot.deg * Math.PI) / 180;
+      const c = Math.cos(rad), s = Math.sin(rad);
+      const ox = pyRound(64 * (n.x + dx * c));
+      const oy = pyRound(64 * (H - n.y + dx * s));
+      drawGlyph(x.c, face, gid, scale, rotMatDeg(rot.deg), ox, oy, color);
     }
   }
 }

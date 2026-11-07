@@ -1,4 +1,4 @@
-export { Axes, Figure, subplots } from './api.ts';
+export { Axes, Axis, Figure, subplots } from './api.ts';
 export type { AxesGrid2D, ErrorbarContainer, HistPatches, HistResult, HistResultMulti, HistType, Kwargs, XY, SubplotsAxes, SubplotsKwargs, SubplotsResult, TickLabelText, TransformRef } from './api.ts';
 export type { BinEstimator, Bins } from './core/histogram.ts';
 export type { GridSpec, SubplotParams, SubplotSpec } from './core/gridspec.ts';
@@ -18,8 +18,11 @@ export type { BakedFace, FaceId } from './core/fontcodec.ts';
 export type { FaceLoad } from './core/fonts.ts';
 export type { AttrValue, FinishedSpan, SpanHandle } from './trace.ts';
 export type * from './core/types.ts';
+export { none, some } from './core/types.ts';
 export { modern, modernDark, paperClassic, paperModern } from './presets.ts';
 
 export { availableColormaps, ColormapNotLoadedError, getColormap, logNorm, MissingColormapRgbaError, normalize, registerColormapRgba, registerColormaps, registeredColormaps, requireColormap, requireColormapRgba, twoSlopeNorm } from './core/colormap.ts';
 export type { CmapRgbaPack } from './core/colormap.ts';
 export type { CmapPack, Colormap, Norm } from './core/colormap.ts';
+export { AutoDateLocator, ConciseDateFormatter, DateFormatter } from './core/date-formatters.ts';
+export type { ConciseDateFormatterInit, DateFormatList, MajorFormatter } from './core/date-formatters.ts';

@@ -46,9 +46,16 @@ function tickPadding(dir: TickDirection, size: number): number {
 
 /** Text nodes for a placed label: one per run (mathtext has several). */
 export function labelNodes(b: TextBox, k: number, color: Rgb): readonly Node[] {
-  return b.runs.filter((r) => r.text !== '').map((r): Node => (b.rotation === 'horizontal'
-    ? { kind: 'text', text: r.text, x: b.penX + r.dx, y: b.penY + r.dy, sizePx: r.sizePt * k, sizePt: r.sizePt, glyphs: r.glyphs, face: r.face, color, rotation: 'horizontal' }
-    : { kind: 'text', text: r.text, x: b.penX + r.dy, y: b.penY - r.dx, sizePx: r.sizePt * k, sizePt: r.sizePt, glyphs: r.glyphs, face: r.face, color, rotation: 'vertical' }));
+  return b.runs.filter((r) => r.text !== '').map((r): Node => {
+    if (b.rotation === 'horizontal') {
+      return { kind: 'text', text: r.text, x: b.penX + r.dx, y: b.penY + r.dy, sizePx: r.sizePt * k, sizePt: r.sizePt, glyphs: r.glyphs, face: r.face, color, rotation: 'horizontal' };
+    }
+    if (b.rotation === 'vertical') {
+      return { kind: 'text', text: r.text, x: b.penX + r.dy, y: b.penY - r.dx, sizePx: r.sizePt * k, sizePt: r.sizePt, glyphs: r.glyphs, face: r.face, color, rotation: 'vertical' };
+    }
+    // angled: baseline origin at (penX, penY); glyph advances are applied inside the renderer via cos/sin
+    return { kind: 'text', text: r.text, x: b.penX, y: b.penY + r.dy, sizePx: r.sizePt * k, sizePt: r.sizePt, glyphs: r.glyphs, face: r.face, color, rotation: b.rotation };
+  });
 }
 
 /** Gridlines of a tick family are drawn when shown with a visible linestyle; each family snaps at its own width. */
@@ -94,7 +101,10 @@ export function drawAxis(
       const lface = st.kind === 'some' && st.value.weight.kind === 'some' ? resolveFace(theme.font.families, st.value.weight.value) : face;
       const lcolor = st.kind === 'some' && st.value.color.kind === 'some' ? st.value.color.value : tt.labelColor;
       // Text._get_multialignment: lines of a multi-line label align like the label (x: center, y: right/left)
-      const lay = measureLabel(t.label, sizePt, dpi, lface, axis === 'x' ? 'center' : sides.labels === 'far' ? 'left' : 'right');
+      const malign: 'left' | 'center' | 'right' = (st.kind === 'some' && st.value.ha.kind === 'some')
+        ? st.value.ha.value
+        : (axis === 'x' ? 'center' : sides.labels === 'far' ? 'left' : 'right');
+      const lay = measureLabel(t.label, sizePt, dpi, lface, malign);
       const g = t.minor ? grid.minor : grid.major;
       const gridOn = gridDrawn(g), gridSegs = t.minor ? minorGrid : majorGrid, glw = strokePx(g.lines.widthPt, k);
       if (axis === 'x') {
@@ -103,12 +113,28 @@ export function drawAxis(
         if (sides.near) segs.push(['M', x, te(bases.yBottom, e0)], ['L', x, te(bases.yBottom, e1)]);          // bottom: outward is +y
         if (sides.far) segs.push(['M', x, te(bases.yTop, -e0)], ['L', x, te(bases.yTop, -e1)]);           // top: outward is -y
         if (sides.labels === 'near') {
-          const b = placeLayout(lay, d, bases.yBottom + out, { kind: 'horizontal', ha: 'center', va: 'top' }); nearBoxes.push(b); labels.push(...labelNodes(b, k, lcolor));
-          nearUp.push(bases.yBottom === f.box.yBot ? upOf(windowExtent(lay, d, f.box.b + (-1 * padPts / 72) * dpi, 'center', 'top')) : flipped(f.H, b));
+          const hidden = st.kind === 'some' && st.value.visible.kind === 'some' && st.value.visible.value === false;
+          if (!hidden) {
+            const ha = st.kind === 'some' && st.value.ha.kind === 'some' ? st.value.ha.value : 'center';
+            const rot = st.kind === 'some' && st.value.rotation.kind === 'some' ? st.value.rotation.value : 0;
+            const place = rot === 0
+              ? { kind: 'horizontal' as const, ha, va: 'top' as const }
+              : { kind: 'angled' as const, deg: rot, ha, va: 'top' as const };
+            const b = placeLayout(lay, d, bases.yBottom + out, place); nearBoxes.push(b); labels.push(...labelNodes(b, k, lcolor));
+            nearUp.push(bases.yBottom === f.box.yBot ? upOf(windowExtent(lay, d, f.box.b + (-1 * padPts / 72) * dpi, ha, 'top')) : flipped(f.H, b));
+          }
         }
         if (sides.labels === 'far') {
-          const b = placeLayout(lay, d, bases.yTop - out, { kind: 'horizontal', ha: 'center', va: 'bottom' }); farBoxes.push(b); labels.push(...labelNodes(b, k, lcolor));
-          farUp.push(bases.yTop === f.box.yTop ? upOf(windowExtent(lay, d, f.box.t + (padPts / 72) * dpi, 'center', 'bottom')) : flipped(f.H, b));
+          const hidden = st.kind === 'some' && st.value.visible.kind === 'some' && st.value.visible.value === false;
+          if (!hidden) {
+            const ha = st.kind === 'some' && st.value.ha.kind === 'some' ? st.value.ha.value : 'center';
+            const rot = st.kind === 'some' && st.value.rotation.kind === 'some' ? st.value.rotation.value : 0;
+            const place = rot === 0
+              ? { kind: 'horizontal' as const, ha, va: 'bottom' as const }
+              : { kind: 'angled' as const, deg: rot, ha, va: 'bottom' as const };
+            const b = placeLayout(lay, d, bases.yTop - out, place); farBoxes.push(b); labels.push(...labelNodes(b, k, lcolor));
+            farUp.push(bases.yTop === f.box.yTop ? upOf(windowExtent(lay, d, f.box.t + (padPts / 72) * dpi, ha, 'bottom')) : flipped(f.H, b));
+          }
         }
       } else {
         const d = ty(f, t.loc), y = snap(d, width);

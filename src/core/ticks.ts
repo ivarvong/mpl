@@ -1,6 +1,6 @@
 // Axis._update_ticks: major and minor tick locations, labels and offset text.
 // 'auto' means "what matplotlib picks for this kind of axis and scale".
-import { autoDateFormat, autoDateTicks } from './dates.ts';
+import { autoDateFormat, autoDateTicks, conciseDateFormat, dateFormat } from './dates.ts';
 import { logFormat, logTicks } from './log.ts';
 import { forward } from './scale.ts';
 import { autoTicks, scalarFormat } from './ticker.ts';
@@ -81,8 +81,27 @@ function format(spec: AxisSpec, l: Locs, lim: readonly [number, number], theme: 
       const names = spec.names;
       return { labels: l.major.map((v) => plain(Number.isInteger(v) && v >= 0 && v < names.length ? names[v] : '')), offset: '', minor: [] };
     }
-    case 'datetime':                                                            // AutoDateFormatter: format chosen by the locator's unit
-      return { labels: autoDateFormat(l.major, autoDateTicks(lim).locator).map(plain), offset: '', minor: [] };
+    case 'datetime': {
+      const inv = lim[0] > lim[1];
+      const fmt = spec.formatter;
+      switch (fmt.kind) {
+        case 'auto':                                                            // AutoDateFormatter
+          return { labels: autoDateFormat(l.major, autoDateTicks(lim).locator).map(plain), offset: '', minor: [] };
+        case 'strftime':
+          return { labels: dateFormat(l.major, fmt.fmt).map(plain), offset: '', minor: [] };
+        case 'concise': {
+          const r = conciseDateFormat(l.major, {
+            formats: fmt.formats,
+            zeroFormats: fmt.zeroFormats,
+            offsetFormats: fmt.offsetFormats,
+            showOffset: fmt.showOffset,
+            inverted: inv,
+          });
+          return { labels: r.labels.map(plain), offset: r.offset, minor: [] };
+        }
+        default: return assertNever(fmt);
+      }
+    }
     default: return assertNever(spec);
   }
 }

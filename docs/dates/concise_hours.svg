@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
+<rect width="640" height="480" fill="#ffffff"/>
+<rect x="80" y="58" width="496" height="369" fill="#ffffff" stroke="none"/>
+<text x="80.3501" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">Jun-15</text>
+<text x="140.0771" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">06:00</text>
+<text x="197.6399" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">12:00</text>
+<text x="255.2028" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">18:00</text>
+<text x="310.6016" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">Jun-16</text>
+<text x="370.3285" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">06:00</text>
+<text x="427.8914" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">12:00</text>
+<text x="485.4542" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">18:00</text>
+<text x="540.853" y="447.4745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">Jun-17</text>
+<path d="M103.5 427.5 L103.5 432.5 M160.5 427.5 L160.5 432.5 M218.5 427.5 L218.5 432.5 M275.5 427.5 L275.5 432.5 M333.5 427.5 L333.5 432.5 M390.5 427.5 L390.5 432.5 M448.5 427.5 L448.5 432.5 M505.5 427.5 L505.5 432.5 M563.5 427.5 L563.5 432.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<text x="49.7934" y="398.3566" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">−8</text>
+<text x="49.7934" y="329.0782" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">−6</text>
+<text x="49.7934" y="259.7999" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">−4</text>
+<text x="49.7934" y="190.5215" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">−2</text>
+<text x="61.434" y="121.2432" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">0</text>
+<path d="M80.5 393.5 L75.5 393.5 M80.5 324.5 L75.5 324.5 M80.5 255.5 L75.5 255.5 M80.5 185.5 L75.5 185.5 M80.5 116.5 L75.5 116.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c0"><rect x="80" y="57.6" width="496" height="369.6"/></clipPath>
+<g clip-path="url(#c0)" data-artist="artist/0/line">
+<path d="M102.5455 115.967L112.1393 102.1113L121.7331 109.0392L131.3269 112.5031L140.9207 126.3588L150.5145 112.5031L160.1083 109.0392L169.7021 74.4L179.2959 95.1835L188.8897 122.8948L198.4836 112.5031L208.0774 136.7505L217.6712 126.3588L227.265 157.534L236.8588 192.1732L246.4526 202.5649L256.0464 223.3485L265.6402 240.668L275.234 247.5959L284.8279 226.8124L294.4217 237.2041L304.0155 254.5237L313.6093 257.9876L323.2031 282.2351L332.7969 275.3072L342.3907 278.7711L351.9845 264.9155L361.5783 247.5959L371.1721 257.9876L380.766 251.0598L390.3598 264.9155L399.9536 254.5237L409.5474 254.5237L419.1412 271.8433L428.735 268.3794L438.3288 237.2041L447.9226 271.8433L457.5164 299.5546L467.1103 309.9464L476.7041 341.1216L486.2979 361.9052L495.8917 341.1216L505.4855 348.0495L515.0793 375.7608L524.6731 410.4L534.2669 379.2247L543.8607 351.5134L553.4545 316.8742" fill="none" stroke="#1f77b4" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<path d="M80.5 427.5 L80.5 58.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M576.5 427.5 L576.5 58.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M80.5 427.5 L576.5 427.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M80.5 58.5 L576.5 58.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="490.4531" y="465.5301" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">2024-Jun-17</text>
+<text x="201.7266" y="49.2667" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">ConciseDateFormatter (hours)</text>
+</svg>

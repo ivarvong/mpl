@@ -170,6 +170,34 @@ export function placeLayout(m: LabelLayout, x: number, y: number, p: Placement):
       const top = verticalTop(p.va === 'baseline' || p.va === 'center_baseline' ? 'center' : p.va, y, m.width, m.width / 2);
       return { x0, y0: top, x1: x0 + H, y1: top + m.width, penX: x0 + m.ascent, penY: top + m.width, rotation: 'vertical', runs: m.runs };
     }
+    case 'angled': {
+      // Text._get_layout rotation_mode='default': rotate the unrotated AABB, then ha/va-align that box on (x, y).
+      const W = m.width, Ht = m.height;
+      const xmin0 = 0, xmax0 = W, ymin0 = -Ht, ymax0 = 0;
+      const rad = (p.deg * Math.PI) / 180, c = Math.cos(rad), s = Math.sin(rad);
+      const rotPt = (px: number, py: number): readonly [number, number] => [px * c - py * s, px * s + py * c];
+      const corners = [rotPt(xmin0, ymin0), rotPt(xmin0, ymax0), rotPt(xmax0, ymax0), rotPt(xmax0, ymin0)];
+      let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+      for (const [cx, cy] of corners) {
+        if (cx < xmin) xmin = cx; if (cx > xmax) xmax = cx;
+        if (cy < ymin) ymin = cy; if (cy > ymax) ymax = cy;
+      }
+      const ox = p.ha === 'left' ? xmin : p.ha === 'right' ? xmax : (xmin + xmax) / 2;
+      const oy = p.va === 'bottom' ? ymin
+        : p.va === 'top' ? ymax
+        : p.va === 'center' ? (ymin + ymax) / 2
+        : p.va === 'baseline' ? ymin + m.lastDescent
+        : (ymin + (ymax - ymin)) - m.ascent / 2; // center_baseline
+      // placeLayout anchors are y-down (SVG); matplotlib's offset math is y-up — flip oy.
+      // Baseline in the unrotated box is (0, -ascent) (ymax=0 at the top). Text.draw passes
+      // rotate(0, -ascent)-(ox, oy)+anchor into Agg; placeLayout anchors are y-down so flip by.
+      const [bx, by] = rotPt(0, -m.ascent);
+      const penX = x + bx - ox, penY = y - by + oy;
+      return {
+        x0: x + xmin - ox, y0: y - ymax + oy, x1: x + xmax - ox, y1: y - ymin + oy,
+        penX, penY, rotation: { kind: 'angled', deg: p.deg }, runs: m.runs,
+      };
+    }
     default: return assertNever(p);
   }
 }
@@ -192,7 +220,7 @@ export function windowExtent(m: LabelLayout, x: number, y: number, ha: HAlign, v
 /** Text._get_multialignment: the horizontal alignment (rotated axis labels are centred). */
 const malignOf = (p: Placement): HAlign => {
   switch (p.kind) {
-    case 'horizontal': case 'vertical': return p.ha;
+    case 'horizontal': case 'vertical': case 'angled': return p.ha;
     case 'ylabel': case 'ylabelRight': return 'center';
     default: return assertNever(p);
   }

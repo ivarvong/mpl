@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
+<rect width="640" height="480" fill="#ffffff"/>
+<rect x="80" y="58" width="496" height="326" fill="#ffffff" stroke="none"/>
+<text x="43.0652" y="458.3048" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-45 43.0652 458.3048)">2024-01-01</text>
+<text x="114.8007" y="458.3048" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-45 114.8007 458.3048)">2024-01-08</text>
+<text x="186.5362" y="458.3048" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-45 186.5362 458.3048)">2024-01-15</text>
+<text x="258.2718" y="458.3048" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-45 258.2718 458.3048)">2024-01-22</text>
+<text x="360.7511" y="458.3048" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-45 360.7511 458.3048)">2024-02-01</text>
+<text x="432.4866" y="458.3048" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-45 432.4866 458.3048)">2024-02-08</text>
+<text x="504.2222" y="458.3048" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-45 504.2222 458.3048)">2024-02-15</text>
+<path d="M103.5 384.5 L103.5 389.5 M174.5 384.5 L174.5 389.5 M246.5 384.5 L246.5 389.5 M318.5 384.5 L318.5 389.5 M420.5 384.5 L420.5 389.5 M492.5 384.5 L492.5 389.5 M564.5 384.5 L564.5 389.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<text x="49.7934" y="356.4563" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">−6</text>
+<text x="49.7934" y="311.4976" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">−5</text>
+<text x="49.7934" y="266.539" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">−4</text>
+<text x="49.7934" y="221.5803" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">−3</text>
+<text x="49.7934" y="176.6216" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">−2</text>
+<text x="49.7934" y="131.6629" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">−1</text>
+<text x="61.434" y="86.7042" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">0</text>
+<path d="M80.5 351.5 L75.5 351.5 M80.5 306.5 L75.5 306.5 M80.5 261.5 L75.5 261.5 M80.5 216.5 L75.5 216.5 M80.5 171.5 L75.5 171.5 M80.5 126.5 L75.5 126.5 M80.5 81.5 L75.5 81.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c0"><rect x="80" y="57.6" width="496" height="326.4"/></clipPath>
+<g clip-path="url(#c0)" data-artist="artist/0/line">
+<path d="M102.5455 81.4281L112.7934 72.4364L123.0413 90.4198L133.2893 90.4198L143.5372 121.8909L153.7851 157.8579L164.0331 166.8496L174.281 202.8165L184.5289 211.8083L194.7769 189.3289L205.0248 157.8579L215.2727 180.3372L225.5207 144.3702L235.7686 189.3289L246.0165 189.3289L256.2645 162.3537L266.5124 207.3124L276.7603 252.2711L287.0083 252.2711L297.2562 243.2793L307.5041 256.7669L317.7521 252.2711L328 252.2711L338.2479 238.7835L348.4959 234.2876L358.7438 238.7835L368.9917 270.2545L379.2397 274.7504L389.4876 288.238L399.7355 319.7091L409.9835 292.7339L420.2314 319.7091L430.4793 315.2132L440.7273 319.7091L450.9752 301.7256L461.2231 315.2132L471.4711 324.205L481.719 360.1719L491.9669 342.1884L502.2149 369.1636L512.4628 342.1884L522.7107 297.2298L532.9587 328.7008L543.2066 292.7339L553.4545 279.2463" fill="none" stroke="#1f77b4" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<path d="M80.5 384.5 L80.5 58.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M576.5 384.5 L576.5 58.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M80.5 384.5 L576.5 384.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M80.5 58.5 L576.5 58.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="204.0938" y="49.2667" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">DateFormatter + autofmt 45°</text>
+</svg>
