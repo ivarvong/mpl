@@ -25,9 +25,26 @@ export type Colormap = {
 };
 
 const hex2 = (v: number): string => v.toString(16).padStart(2, '0');
-const fromB64 = (b64: string): Uint8Array => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+function fromB64(b64: string): Uint8Array {
+  const s = atob(b64);
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
 
-const registry = new Map<string, Colormap>();
+const B64 = /^[A-Za-z0-9+/]*={0,2}$/;
+/** Decoded byte length of a pack's base64. Canonical padded base64 is measured without decoding; anything else is
+ *  decoded, so atob rejects malformed input at registration exactly as an eager decode would. */
+function packedLength(b64: string): number {
+  if (b64.length % 4 !== 0 || !B64.test(b64)) return fromB64(b64).length;
+  return (b64.length / 4) * 3 - (b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0);
+}
+
+// Registration is lazy: a pack is validated (by length) when registered, and decoded into its LUTs on the first
+// getColormap of that name. An app that registers every colormap pays only for the ones its charts use.
+type Entry = { readonly pack: CmapPack; readonly rgba: Option<CmapRgbaPack> };
+const packs = new Map<string, Entry>();
+const baked = new Map<string, Colormap>();
 
 function bake(pack: CmapPack): Colormap {
   const raw = fromB64(pack.b64);
@@ -53,15 +70,34 @@ function bake(pack: CmapPack): Colormap {
   throw new Error(`colormap ${pack.name}: packed length ${raw.length}, want ${2 * nComp} (trunc+round) or ${nComp * 4} (float32)`);
 }
 
-/** Register a baked pack as-is. `_r` variants are separate packs from matplotlib
- *  (LinearSegmentedColormap.reversed rebuilds segmentdata — a LUT flip is wrong). */
-function put(c: Colormap): void {
-  registry.set(c.name, c);
+/** Decode a registered entry on first use; cached until its name is registered again. */
+function resolve(name: string): Option<Colormap> {
+  const hit = lookup(baked, name);
+  if (hit.kind === 'some') return hit;
+  const e = lookup(packs, name);
+  if (e.kind === 'none') return none;
+  const c = bake(e.value.pack);
+  const r = e.value.rgba;
+  const out: Colormap = r.kind === 'none' ? c : {
+    name: c.name, N: c.N, trunc: c.trunc, round: c.round,
+    rgba: some(new Float32Array(fromB64(r.value.b64).buffer, 0, 4 * (r.value.N + 3))),
+  };
+  baked.set(name, out);
+  return some(out);
 }
 
-/** Register one or more colormap packs (each `src/colormaps/*.ts` export). Viridis is built in. */
-export function registerColormaps(...packs: readonly CmapPack[]): void {
-  for (const p of packs) put(bake(p));
+/** Register one or more colormap packs (each `src/colormaps/*.ts` export). Viridis is built in.
+ *  `_r` variants are separate packs from matplotlib (LinearSegmentedColormap.reversed rebuilds segmentdata — a LUT
+ *  flip is wrong). Registering a name again replaces it, float32 sidecar included. */
+export function registerColormaps(...ps: readonly CmapPack[]): void {
+  for (const p of ps) {
+    const nComp = 4 * (p.N + 3), n = packedLength(p.b64);
+    if (n !== 2 * nComp && n !== nComp * 4) {
+      throw new Error(`colormap ${p.name}: packed length ${n}, want ${2 * nComp} (trunc+round) or ${nComp * 4} (float32)`);
+    }
+    packs.set(p.name, { pack: p, rgba: none });
+    baked.delete(p.name);
+  }
 }
 
 
@@ -108,16 +144,14 @@ export type CmapRgbaPack = { readonly name: string; readonly N: number; readonly
  * Attach exact float32 `_lut` packs. Packs whose colormap is not registered are skipped
  * (so `registerColormapRgba(plasma_rgba, plasma_r_rgba)` after only `registerColormaps(plasma)` is fine).
  */
-export function registerColormapRgba(...packs: readonly CmapRgbaPack[]): void {
-  for (const p of packs) {
-    const hit = lookup(registry, p.name);
+export function registerColormapRgba(...ps: readonly CmapRgbaPack[]): void {
+  for (const p of ps) {
+    const hit = lookup(packs, p.name);
     if (hit.kind === 'none') continue;
-    const c = hit.value;
-    const nComp = 4 * (p.N + 3);
-    const raw = fromB64(p.b64);
-    if (raw.length !== nComp * 4) throw new Error(`registerColormapRgba ${p.name}: length ${raw.length}, want ${nComp * 4}`);
-    const rgba = new Float32Array(raw.buffer, raw.byteOffset, nComp);
-    registry.set(p.name, { name: c.name, N: c.N, trunc: c.trunc, round: c.round, rgba: some(rgba) });
+    const nComp = 4 * (p.N + 3), n = packedLength(p.b64);
+    if (n !== nComp * 4) throw new Error(`registerColormapRgba ${p.name}: length ${n}, want ${nComp * 4}`);
+    packs.set(p.name, { pack: hit.value.pack, rgba: some(p) });
+    baked.delete(p.name);
   }
 }
 
@@ -127,7 +161,7 @@ registerColormapRgba(viridis_rgba);  // viridis_r float32 via registerColormapRg
 
 /** matplotlib.pyplot.get_cmap. Unknown or unregistered names error with the import to add. */
 export function getColormap(name: string): Result<Colormap> {
-  const hit = lookup(registry, name);
+  const hit = resolve(name);
   if (hit.kind === 'some') return ok(hit.value);
   const base = name.endsWith('_r') ? name.slice(0, -2) : name;
   if (!CMAP_NAMES.some((n) => n === base)) {
@@ -141,7 +175,7 @@ export function getColormap(name: string): Result<Colormap> {
 export const availableColormaps = (): readonly string[] =>
   [...CMAP_NAMES, ...CMAP_NAMES.map((n) => `${n}_r`)];
 
-export const registeredColormaps = (): readonly string[] => [...registry.keys()].toSorted();
+export const registeredColormaps = (): readonly string[] => [...packs.keys()].toSorted();
 
 /** RGBA uint8 → Paint (hex + alpha in [0,1]). Fully transparent → none. */
 export function rgbaToPaint(r: number, g: number, b: number, a: number): Paint {
