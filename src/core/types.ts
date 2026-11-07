@@ -68,6 +68,8 @@ export type Node =
   | { readonly kind: 'markers'; readonly shape: readonly Seg[]; readonly xs: Float64Array; readonly ys: Float64Array; readonly ink: Ink }
   | { readonly kind: 'text'; readonly text: string; readonly x: number; readonly y: number; readonly sizePx: number; readonly sizePt: number;
       readonly glyphs: readonly Glyph[]; readonly face: string; readonly color: Rgb; readonly rotation: Rotation }
+  /** RGBA8 blit (imshow): top-left origin, straight alpha, size w×h. */
+  | { readonly kind: 'image'; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly rgba: Uint8Array }
   /** tag: provenance ('artist/<index>/<kind>' for an Axes artist's marks, '' otherwise) for interactive renderers */
   | { readonly kind: 'group'; readonly clip: Clip; readonly nodes: readonly Node[]; readonly tag: string };
 
@@ -182,6 +184,8 @@ export type ScatterArtist = {
   readonly collection: ScatterCollection;
   /** Collection.zorder: default 1; honoured when given. */
   readonly zorder: number;
+  /** ScalarMappable state when c is a numeric array; none for solid/list colours. */
+  readonly mappable: Option<{ readonly cmapName: string; readonly vmin: number; readonly vmax: number; readonly normKind: 'linear' | 'log' }>;
 };
 /** Axes aspect: 'auto' (default) or a fixed data aspect ratio ('equal' → 1), with adjustable='box'. */
 export type Aspect = { readonly kind: 'auto' } | { readonly kind: 'equal' } | { readonly kind: 'ratio'; readonly value: number };
@@ -221,8 +225,18 @@ export type SpanArtist = {
   readonly f0: number; readonly f1: number;
   readonly face: Paint; readonly edge: BarEdge; readonly label: Label; readonly clip: boolean;
 };
+/** imshow: ScalarMappable raster over an extent in data coordinates. */
+export type ImageArtist = {
+  readonly kind: 'image';
+  readonly values: Float64Array; readonly rows: number; readonly cols: number;
+  readonly cmapName: string; readonly vmin: number; readonly vmax: number; readonly normKind: 'linear' | 'log';
+  readonly extent: readonly [number, number, number, number];
+  readonly origin: 'upper' | 'lower';
+  readonly interpolation: 'nearest' | 'none' | 'antialiased' | 'auto' | 'hanning';
+  readonly alpha: number; readonly label: Label; readonly clip: boolean; readonly zorder: number;
+};
 export type Artist = LineArtist | BarArtist | FillArtist | TextArtist | ScatterArtist | AnnotationArtist | SpanArtist
-  | AxLineArtist | SegmentsArtist | PolygonArtist | ErrorbarArtist;
+  | AxLineArtist | SegmentsArtist | PolygonArtist | ErrorbarArtist | ImageArtist;
 
 /** What a legend entry draws. */
 export type Handle =
@@ -276,7 +290,7 @@ export type LegendSpec =
 export type LegendMarkers = { readonly scatterPoints: number; readonly scatterYOffsets: readonly number[]; readonly markerScale: number };
 
 /** A twinx Axes shares its host's x axis; its y axis, label and offset text live on the right. */
-export type AxesRole = { readonly kind: 'primary' } | { readonly kind: 'twinx'; readonly host: number };
+export type AxesRole = { readonly kind: 'primary' } | { readonly kind: 'twinx'; readonly host: number } | { readonly kind: 'colorbar' };
 
 /** Fractions of the figure: left, bottom, right, top. */
 export type Position = readonly [number, number, number, number];
@@ -284,8 +298,12 @@ export type AxesSpec = {
   readonly role: AxesRole; readonly position: Position; readonly artists: readonly Artist[];
   readonly title: string; readonly titleLoc: HAlign; readonly titleWeight: number; readonly xlabel: string; readonly ylabel: string;
   readonly x: AxisSpec; readonly y: AxisSpec; readonly grid: AxesGrid; readonly legend: LegendSpec;
-  /** set_aspect: applied at draw (adjustable='box', anchor='C'). */
+  /** set_aspect: applied at draw (adjustable='box'). */
   readonly aspect: Aspect;
+  /** set_box_aspect: physical height/width of the Axes box; none when unset. */
+  readonly boxAspect: Option<number>;
+  /** set_anchor: where the shrunk box sits in the original position (matplotlib default 'C' = [0.5,0.5]). */
+  readonly anchor: readonly [number, number];
   readonly spines: {
     readonly left: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };
     readonly right: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };

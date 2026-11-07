@@ -7,7 +7,7 @@ import { faceById, ftScale } from '../core/fonts.ts';
 import { pyRound } from '../core/log.ts';
 import { lookup } from '../core/std.ts';
 import type { Tracer } from '../trace.ts';
-import { blendCoverage, clearCanvas, newCanvas, quantize } from './agg/canvas.ts';
+import { blendCoverage, clearCanvas, invalidateBlocks, newCanvas, quantize } from './agg/canvas.ts';
 import type { Canvas, Rgba8 } from './agg/canvas.ts';
 import { EMPTY, Rasterizer } from './agg/raster.ts';
 import type { Coverage, IBox } from './agg/raster.ts';
@@ -135,6 +135,34 @@ function drawGlyphs(x: Ctx, n: Extract<Node, { kind: 'text' }>): void {
   }
 }
 
+
+/** Straight-alpha RGBA blit with the renderer clip box (inclusive right/bottom as Agg). */
+function blitImage(c: Canvas, x0: number, y0: number, w: number, h: number, rgba: Uint8Array, clip: IBox): void {
+  invalidateBlocks(c);
+  const x1 = Math.min(x0 + w, clip.x1), y1 = Math.min(y0 + h, clip.y1);
+  const xs = Math.max(x0, clip.x0), ys = Math.max(y0, clip.y0);
+  for (let y = ys; y < y1; y++) {
+    for (let x = xs; x < x1; x++) {
+      const si = ((y - y0) * w + (x - x0)) * 4;
+      const a = rgba[si + 3];
+      if (a === 0) continue;
+      const di = (y * c.w + x) * 4;
+      if (a === 255) { c.px[di] = rgba[si]; c.px[di+1] = rgba[si+1]; c.px[di+2] = rgba[si+2]; c.px[di+3] = 255; }
+      else {
+        // src-over straight alpha
+        const aa = a / 255, ia = 1 - aa;
+        const da = c.px[di+3] / 255;
+        const outA = aa + da * ia;
+        if (outA <= 0) continue;
+        c.px[di] = Math.round((rgba[si] * aa + c.px[di] * da * ia) / outA);
+        c.px[di+1] = Math.round((rgba[si+1] * aa + c.px[di+1] * da * ia) / outA);
+        c.px[di+2] = Math.round((rgba[si+2] * aa + c.px[di+2] * da * ia) / outA);
+        c.px[di+3] = Math.round(outA * 255);
+      }
+    }
+  }
+}
+
 function drawNode(x: Ctx, n: Node, clip: IBox): void {
   switch (n.kind) {
     case 'rect': drawPath(x, flatten(rectSegs(n.x, n.y, n.w, n.h), 0, 0), n.ink, clip); return;
@@ -150,6 +178,10 @@ function drawNode(x: Ctx, n: Node, clip: IBox): void {
     }
     case 'markers': drawMarkers(x, n.shape, n.xs, n.ys, n.ink, clip); return;
     case 'text': drawText(x, n); return;
+    case 'image': {
+      x.tracer.span('raster.image', { w: n.w, h: n.h }, () => blitImage(x.c, n.x, n.y, n.w, n.h, n.rgba, clip));
+      return;
+    }
     case 'group': { const inner = clipBox(n.clip, clip); for (const ch of n.nodes) drawNode(x, ch, inner); return; }
     default: assertNever(n);
   }

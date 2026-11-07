@@ -10,8 +10,10 @@ import { inkOf, pathNode, rectNode, snap, snapOffset } from './scene.ts';
 import { MARKERS } from './data/markers.ts';
 import { arrowExtents, yaArrowPath } from './arrow.ts';
 import { lookup } from './std.ts';
-import { forward, forwardAll } from './scale.ts';
-import type { Artist, AxLineArtist, MarkerName, ScatterCollection, BarArtist, PolygonArtist, SegmentsArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, AnnotationCoords, AnnotationCoordPair, Paint } from './types.ts';
+import { forward, forwardAll, inverse } from './scale.ts';
+import { applyNorm, autoscaleNorm, getColormap, logNorm, normalize } from './colormap.ts';
+import { resolveInterp } from './image-resample.ts';
+import type { Artist, AxLineArtist, MarkerName, ScatterCollection, BarArtist, PolygonArtist, SegmentsArtist, Clip, FillArtist, Handle, ImageArtist, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, AnnotationCoords, AnnotationCoordPair, Paint } from './types.ts';
 import { labelNodes } from './draw-axis.ts';
 import { measure, placeLayout, pxPerPt, strokePx, windowExtent } from './text.ts';
 import type { Face } from './fonts.ts';
@@ -34,6 +36,7 @@ export function handleOf(a: Artist): Option<Handle> {
     case 'bar': case 'fill': case 'polygon': case 'span': return some({ kind: 'patch', face: a.face, edge: a.edge });
     case 'scatter': return some({ kind: 'scatter', shape: a.shape, collection: a.collection, edgeWidthPt: a.edgeWidthPt });
     case 'errorbar': return some({ kind: 'errorbar', errorbar: a.handle });
+    case 'image': return none;
     case 'text': case 'annotation': return none;
     default: return assertNever(a);
   }
@@ -435,4 +438,54 @@ export function drawSpan(a: SpanArtist, f: Frame, k: number, clip: Clip): Drawn 
     const rect = rectNode(X0, Y0, X1 - X0, Y1 - Y0, ink.value);
     return { nodes: [{ kind: 'group', clip, nodes: [rect], tag: '' }], lines: [], boxes: [], points: [], handle: handleOf(a) };
   }
+}
+
+/** ax.imshow: rasterise a ScalarMappable to an image node. */
+export function drawImage(a: ImageArtist, f: Frame, clip: Clip): Drawn {
+  const handle = handleOf(a);
+  const cmapR = getColormap(a.cmapName);
+  if (!cmapR.ok) return { nodes: [], lines: [], boxes: [], points: [], handle };
+  const cmap = cmapR.value;
+  const norm0 = a.normKind === 'log' ? logNorm(a.vmin, a.vmax) : normalize(a.vmin, a.vmax);
+  const norm = autoscaleNorm(norm0, a.values);
+  const [L, R, B, T] = a.extent;
+  const xs = [tx(f, L), tx(f, R)], ys = [ty(f, B), ty(f, T)];
+  const dx0 = Math.min(xs[0], xs[1]), dx1 = Math.max(xs[0], xs[1]);
+  const dy0 = Math.min(ys[0], ys[1]), dy1 = Math.max(ys[0], ys[1]);
+  const ix0 = Math.floor(dx0 + 0.5), ix1 = Math.floor(dx1 + 0.5 + 1e-8);
+  const iy0 = Math.floor(dy0 + 0.5), iy1 = Math.floor(dy1 + 0.5 + 1e-8);
+  const outW = Math.max(0, ix1 - ix0), outH = Math.max(0, iy1 - iy0);
+  if (outW === 0 || outH === 0) return { nodes: [], lines: [], boxes: [], points: [], handle };
+  const mid = new Float64Array(a.values.length);
+  applyNorm(norm, a.values, mid);
+  const { trunc, N } = cmap;
+  const rgba = new Uint8Array(outW * outH * 4);
+  const xSpan = R - L, ySpan = T - B;
+  // auto → nearest when zoomed in (≥3×); hanning downsampling is not yet pixel-exact (AGG port pending)
+  void resolveInterp(a.interpolation, a.cols, a.rows, Math.abs(dx1 - dx0), Math.abs(dy1 - dy0));
+  for (let oy = 0; oy < outH; oy++) {
+    for (let ox = 0; ox < outW; ox++) {
+      const px = ix0 + ox + 0.5, py = iy0 + oy + 0.5;
+      const xData = inverse(f.xscale, (px - f.cx) / f.ax);
+      const yData = inverse(f.yscale, (f.H - py - f.cy) / f.ay);
+      const u = ((xData - L) / xSpan) * a.cols;
+      const v = a.origin === 'upper' ? ((T - yData) / ySpan) * a.rows : ((yData - B) / ySpan) * a.rows;
+      let ix = Math.floor(u - 1e-9), iy = Math.floor(v - 1e-9);
+      if (ix < 0) ix = 0; else if (ix >= a.cols) ix = a.cols - 1;
+      if (iy < 0) iy = 0; else if (iy >= a.rows) iy = a.rows - 1;
+      const val = mid[iy * a.cols + ix];
+      let li: number;
+      if (Number.isNaN(val)) li = N + 2;
+      else {
+        let xa = val * N;
+        if (xa === N) xa = N - 1;
+        if (xa < 0) li = N; else if (xa >= N) li = N + 1; else li = xa | 0;
+      }
+      const s = li * 4, o = (oy * outW + ox) * 4;
+      rgba[o] = trunc[s]; rgba[o + 1] = trunc[s + 1]; rgba[o + 2] = trunc[s + 2];
+      rgba[o + 3] = Math.round(trunc[s + 3] * a.alpha);
+    }
+  }
+  const node: Node = { kind: 'image', x: ix0, y: iy0, w: outW, h: outH, rgba };
+  return { nodes: [{ kind: 'group', clip, nodes: [node], tag: '' }], lines: [], boxes: [], points: [], handle };
 }

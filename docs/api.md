@@ -55,6 +55,16 @@ Create one with `subplots()` or `new Figure({ style, rc, figsize, dpi })`.
 
 add_subplot() — one Axes filling a 1x1 GridSpec, placed by the subplot parameters.
 
+### `Figure.addAxesFromSpec(cell, role?)`
+
+Add an Axes for a free SubplotSpec (colorbar cax).
+
+### `Figure.colorbar(mappable, kwargs?)`
+
+fig.colorbar(mappable, { ax, label, orientation, shrink, pad, fraction, aspect, location }) — steal space from ax via make_axes_gridspec (use_gridspec=True) and draw a continuous colorbar.
+
+Keyword arguments (unknown keys throw): `ax`, `location`, `orientation`, `fraction`, `pad`, `shrink`, `aspect`, `label`, `extend`
+
 ### `Figure.subplots(nrows, ncols, kwargs?)`
 
 Figure.subplots / GridSpec.subplots: an nrows x ncols grid of Axes, row-major. sharex/sharey join Axes to [0][0] ('all' or true), their row's first ('row') or their column's first ('col'); a shared grid ('col'/'all' for x, 'row'/'all' for y) keeps tick labels on the outer Axes only. Returns every Axes as rows; subplots() applies squeeze.
@@ -163,6 +173,18 @@ set_yscale('linear' | 'log')
 
 set_aspect('auto' | 'equal' | number) — data aspect ratio with adjustable='box' (matplotlib default for set_aspect). The Axes box is shrunk and centred to match; 'equal' is ratio 1.
 
+### `Axes.set_box_aspect(aspect)`
+
+set_box_aspect(aspect | null) — physical height/width of the Axes box (colorbar uses 20).
+
+### `Axes.set_anchor(anchor)`
+
+set_anchor(anchor) — 'C' or [x, y] in [0, 1]; where a shrunk box sits in the original position.
+
+### `Axes.set_subplotspec(ss)`
+
+Replace this Axes' SubplotSpec (colorbar make_axes_gridspec).
+
 ### `Axes.plot(...args)`
 
 plot(y) | plot(x, y) | plot(x, y, fmt), with an optional trailing kwargs object ({ drawstyle | ds, … }).
@@ -254,6 +276,12 @@ Keyword arguments (unknown keys throw): `transform`, `color | c`, `fontsize | si
 annotate(text, xy, { xytext, xycoords, textcoords, arrowprops, ha, va, color, fontsize, fontweight, clip_on }) — coords are 'data' or '<figure|axes> <fraction|points|pixels|fontsize>', and textcoords may also be 'offset <points|pixels|fontsize>' from xy; either may be an [x, y] pair of systems, one per axis. In 'data' coordinates a value may be a Date or a category name.
 
 Keyword arguments (unknown keys throw): `xytext`, `xycoords`, `textcoords`, `arrowprops`, `color | c`, `fontsize | size`, `fontweight | weight`, `ha | horizontalalignment`, `va | verticalalignment`, `clip_on | clipon | clip`
+
+### `Axes.imshow(Z, kwargs?)`
+
+imshow(Z, { cmap, norm, vmin, vmax, origin, extent, interpolation, aspect, alpha }) — display a 2-D array as an image. Default interpolation is 'auto' (nearest when zoomed in, hanning when downsampling). Sets aspect to 'equal' unless overridden.
+
+Keyword arguments (unknown keys throw): `cmap`, `vmin`, `vmax`, `norm`, `origin`, `interpolation`, `extent`, `alpha`, `aspect`, `label`, `clip_on | clipon | clip`, `zorder`
 
 ### `Axes.scatter(xRaw, yRaw, kwargs?)`
 

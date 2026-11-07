@@ -188,7 +188,7 @@ noise: 41 s at 9, 4 s at 6; a 3840×2880 chart: 1.7 s at 9).
 
 The API is matplotlib-shaped (`subplots`, `plot`, `step`, `bar`/`barh`, `hist`, `errorbar`, `fill_between`, `axhline`/`axvline`/`axline`,
 `hlines`/`vlines`, `text`, `legend`, `grid`, `set_xlim`, `set_yscale('log')`, `twinx`, `tight_layout`, styled tick labels, date axes,
-9+ bundled styles); unknown keyword arguments are errors, as in matplotlib. Subplot grids: `subplots(nrows, ncols, …)` with sharex/sharey, width/height ratios, `subplots_adjust` and grid `tight_layout`. Out of scope so far: boxplot/violinplot/pie/stem/stairs, spanning subplots (`subplot_mosaic`, gridspec slices), imshow/colorbar, general mathtext, constrained layout.
+9+ bundled styles); unknown keyword arguments are errors, as in matplotlib. Subplot grids: `subplots(nrows, ncols, …)` with sharex/sharey, width/height ratios, `subplots_adjust` and grid `tight_layout`. Out of scope so far: boxplot/violinplot/pie/stem/stairs, spanning subplots (`subplot_mosaic`, gridspec slices), general mathtext, constrained layout.
 
 ## Runs in
 
@@ -215,6 +215,23 @@ Bundle size (esbuild minified + gzip -9, checked against `size-budget.json` with
 Each further face adds 16–17 KiB gzipped (an Inter weight) or 43–55 KiB (a DejaVu face), measured as a
 standalone minified module. Glyph data is packed losslessly (delta-coded integers as base64 VLQ), 36% smaller
 gzipped than the JSON tables it replaced.
+
+
+## Colormaps and images
+
+`imshow`, value-coloured `scatter`, and `colorbar` are supported with matplotlib's colormaps
+(viridis, plasma, inferno, magma, cividis, twilight, turbo, coolwarm, RdBu, Greys, Blues, tab10, tab20, and `_r` reversed variants). A default import includes viridis; other faces load through `mpljs/colormaps/*` like the font split.
+
+```js
+import { subplots } from 'mpljs';
+const [fig, ax] = subplots();
+const im = ax.imshow([[0,1,2],[3,4,5],[6,7,8]], { cmap: 'viridis' });
+fig.colorbar(im, { label: 'value' });
+```
+
+![imshow + colorbar](docs/images/imshow_colorbar.png)
+
+`set_aspect('equal' | 'auto' | number)` shrinks the Axes box (adjustable='box'). Scatter accepts `zorder` and a numeric `c` with `cmap`/`norm`/`vmin`/`vmax`.
 
 ## Commands
 
@@ -406,7 +423,7 @@ Things that had to be verified against Agg rather than reasoned about:
 ## Out of scope so far
 
 Other plot types (`boxplot`, `violinplot`, `pie`, `stem`, `stairs`, `fill`/`fill_betweenx`), spanning subplots
-(`subplot_mosaic`, gridspec slices), imshow/colorbar, general mathtext (only the tick-label forms `10^{n}` /
+(`subplot_mosaic`, gridspec slices), general mathtext (only the tick-label forms `10^{n}` /
 `2×10^{n}`), constrained layout. Within the plotting calls: hist's `hatch` and per-dataset `linestyle`, `axline` with a
 `transform`, and errorbar on polar axes or with timedelta errors on date axes.
 Text uses DejaVu Sans/Serif (or Inter) with ASCII plus Latin-1, Latin Extended-A, Greek letters, general punctuation,

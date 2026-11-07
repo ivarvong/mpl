@@ -31,8 +31,16 @@ def decode(a):
         return np.array(a["$dates"], dtype="datetime64[us]")
     if isinstance(a, dict) and "$date" in a:
         return np.datetime64(a["$date"], "us")
+    if isinstance(a, dict) and "$float" in a:
+        return float(a["$float"])  # "nan", "inf", "-inf"
     if isinstance(a, list):
-        return [decode(v) for v in a]
+        out = [decode(v) for v in a]
+        if out and all(isinstance(r, list) for r in out):
+            try:
+                return np.asarray(out, dtype=float)
+            except (TypeError, ValueError):
+                return out
+        return out
     return a
 
 def axis_record(axis):
@@ -391,6 +399,35 @@ case("aspect_equal_grid",
      ("fig.tight_layout", []))
 
 
+# cmap-2: imshow + colorbar (nearest first)
+IM = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
+case("imshow_nearest_viridis", ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}))
+case("imshow_nearest_lower", ("imshow", [IM], {"cmap": "plasma", "interpolation": "nearest", "origin": "lower"}))
+case("imshow_nearest_extent", ("imshow", [IM], {"cmap": "coolwarm", "interpolation": "nearest", "extent": [0, 3, 0, 2], "origin": "lower"}))
+case("imshow_auto_small", ("imshow", [IM], {"cmap": "viridis"}))  # auto → nearest when zoomed in
+
+IM = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
+# already added above - ensure IM reused
+case("colorbar_imshow_viridis", ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}), ("fig.colorbar", []))
+case("colorbar_imshow_label", ("imshow", [IM], {"cmap": "plasma", "interpolation": "nearest"}), ("fig.colorbar", [], {"label": "intensity"}))
+case("colorbar_scatter", ("scatter", [lin(20, 0, 10), lin(20, 0, 5)], {"c": lin(20, 0, 1), "cmap": "coolwarm", "s": 40}), ("fig.colorbar", []))
+case("colorbar_imshow_tight", ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}), ("fig.colorbar", []), ("fig.tight_layout", []))
+case("colorbar_grid", ("$subplots", [1, 2]), ("sca", [0]), ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}), ("fig.colorbar", []), ("sca", [1]), ("imshow", [[[0, 1], [1, 0]]], {"cmap": "magma", "interpolation": "nearest"}), ("fig.colorbar", []))
+
+# more imshow cases
+case("imshow_nan", ("imshow", [[[0, 1, {"$float": "nan"}], [3, 4, 5], [6, 7, 8]]], {"cmap": "viridis", "interpolation": "nearest"}))
+case("imshow_vmin_vmax", ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest", "vmin": 2, "vmax": 6}))
+case("imshow_origin_extent_auto", ("imshow", [IM], {"cmap": "RdBu", "origin": "lower", "extent": [-1, 1, -1, 1]}))
+
+
+
+# Downsampling: auto → hanning when data has more pixels than display
+import numpy as _np
+_Zbig = _np.linspace(0, 1, 80 * 80).reshape(80, 80).tolist()
+case("imshow_downsample_auto", ("imshow", [_Zbig], {"cmap": "viridis"}))
+case("imshow_downsample_nearest", ("imshow", [_Zbig], {"cmap": "viridis", "interpolation": "nearest"}))
+
+
 def run_case(name, calls):
     style = None
     rc_layer = {}
@@ -426,7 +463,14 @@ def run_case(name, calls):
                 ax = axes[args[0]]; continue
             # Figure-level calls prefixed with 'fig.'
             if fn.startswith("fig."):
-                getattr(fig, fn[4:])(*args, **kwargs); continue
+                method = fn[4:]
+                if method == "colorbar":
+                    # last ScalarMappable on the current Axes (imshow / collection)
+                    mappable = ax.images[-1] if ax.images else (ax.collections[-1] if ax.collections else None)
+                    if mappable is None:
+                        raise RuntimeError("fig.colorbar: no mappable on current Axes")
+                    fig.colorbar(mappable, ax=ax, **kwargs); continue
+                getattr(fig, method)(*args, **kwargs); continue
             if fn == "$rc":
                 rc_layer.update(kwargs)
                 continue
