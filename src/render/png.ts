@@ -42,16 +42,27 @@ export function effortOf(level: number): Effort {
 }
 
 // ------------------------------------------------------------------ CRC-32, Adler-32
-const CRC = new Uint32Array(256);
+// Slicing-by-4: CRC4[k·256 + v] is the CRC register after byte v followed by k zero bytes. Int32 entries keep
+// the XORs in V8's int32 representation (the bits are the same as unsigned).
+const CRC4 = new Int32Array(4 * 256);
 for (let n = 0; n < 256; n++) {
   let c = n;
   for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  CRC[n] = c >>> 0;
+  CRC4[n] = c;
 }
+for (let n = 0; n < 256; n++) for (let k = 1; k < 4; k++) CRC4[k * 256 + n] = CRC4[(CRC4[(k - 1) * 256 + n] & 0xff)] ^ (CRC4[(k - 1) * 256 + n] >>> 8);
 function crc32(parts: readonly Uint8Array[]): number {
-  let c = 0xffffffff;
-  for (const p of parts) for (let i = 0; i < p.length; i++) c = CRC[(c ^ p[i]) & 0xff] ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
+  let c = -1;
+  for (const p of parts) {
+    const n = p.length, n4 = n - (n & 3);
+    let i = 0;
+    for (; i < n4; i += 4) {
+      c ^= p[i] | (p[i + 1] << 8) | (p[i + 2] << 16) | (p[i + 3] << 24);
+      c = CRC4[768 + (c & 0xff)] ^ CRC4[512 + ((c >>> 8) & 0xff)] ^ CRC4[256 + ((c >>> 16) & 0xff)] ^ CRC4[c >>> 24];
+    }
+    for (; i < n; i++) c = CRC4[(c ^ p[i]) & 0xff] ^ (c >>> 8);
+  }
+  return (c ^ -1) >>> 0;
 }
 /**
  * Chunks of 2048 keep b < 2^31 (b ≤ 65520 + 2048·(65520 + 255·2048) ≈ 1.2e9), so the sums stay
@@ -443,6 +454,12 @@ export function zlibSync(d: Uint8Array, rowDist = 0, left = 4, effort: Effort = 
 
 const PIX_RING = 1 << 14;   // ≥ 8192 px: the farthest pixel a 32 KiB byte window can reach
 const ADLER = 65521;
+/** v mod 65521 for an integer 0 ≤ v < 2^53, as v % ADLER. V8's `%` on a double (here past 2^31) is a call into
+ *  fmod; the quotient's floor is exact here up to one off (the division rounds), and the fix-ups correct that. */
+const modA = (v: number): number => {
+  const r = v - Math.floor(v / ADLER) * ADLER;
+  return r < 0 ? r + ADLER : r >= ADLER ? r - ADLER : r;
+};
 
 type Tokens = { readonly tok: Int32Array; readonly n: number; readonly adler: number };
 
@@ -529,7 +546,7 @@ function tokenizeCanvas(c: Canvas): Tokens {
       L.n = ln; L.k = 0; U.n = un; U.k = 0;
     }
     // ---- Adler-32: the filter byte, then runs of identical pixels ([s − 1, e) per left interval)
-    a %= ADLER; b = (b + a) % ADLER; pending = 0;
+    a = modA(a); b = modA(b + a); pending = 0;
     for (let k = 0, x = 0; x < W;) {
       const s0 = k < L.n ? L.e[k] - 1 : W;
       const end = x < s0 ? s0 : L.e[k + 1];
@@ -539,11 +556,11 @@ function tokenizeCanvas(c: Canvas): Tokens {
       if (len === 1) {
         // unreduced: after 1024 singles a < 1.1e6 and b < 4.6e9, far inside 2^53
         b += 4 * a + t; a += sum;
-        if (++pending === 1024) { a %= ADLER; b %= ADLER; pending = 0; }
+        if (++pending === 1024) { a = modA(a); b = modA(b); pending = 0; }
         x++;
       } else {
-        b = (b + 4 * a * len + len * t + 2 * sum * len * (len - 1)) % ADLER;
-        a = (a + len * sum) % ADLER;
+        b = modA(b + 4 * a * len + len * t + 2 * sum * len * (len - 1));
+        a = modA(a + len * sum);
         pending = 0; x = end; k += 2;
       }
     }
@@ -583,7 +600,7 @@ function tokenizeCanvas(c: Canvas): Tokens {
       }
     }
   }
-  a %= ADLER; b %= ADLER;
+  a = modA(a); b = modA(b);
   return { tok, n, adler: ((b << 16) | a) >>> 0 };
 }
 
