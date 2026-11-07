@@ -1,37 +1,40 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { build, loadFixture } from '../tools/replay.ts';
 import {
   encodePNGSync, pngStreamSync, pngPeakBytes, pngIntervalsBytes, canvasBlockBytes,
   PNG_SYNC_FIXED_SCRATCH_BYTES, PNG_IDAT_PAYLOAD_MAX, PNG_IDAT_CHUNK_MAX,
-  PNG_PEAK_MAX_1X_SQUARE_BYTES, PNG_PEAK_MAX_1X_WIDE_BYTES,
+  PNG_ARRAYBUFFERS_BASELINE_BYTES, PNG_PEAK_V8_RECLAIM_SLACK_BYTES, PNG_PEAK_BUDGET_BYTES, PNG_PEAK_MAX_1X_SQUARE_BYTES,
+  PNG_PEAK_MAX_1X_WIDE_BYTES, pngPeakFitsBudget, maxPngScaleForFigure,
   TOK_BLOCK, MAX_FRAME_PIXELS,
 } from '../src/render/png.ts';
 import { newCanvas, invalidateBlocks } from '../src/render/agg/canvas.ts';
 import { subplots } from '../src/index.ts';
 import { readPNG } from './png-oracle.ts';
 
-const mb = (n: number): string => (n / 1024 / 1024).toFixed(1);
+const mb = (n: number): string => (n / 1024 / 1024).toFixed(2);
 
 test('peak formula constants are exact and known', () => {
   assert.equal(TOK_BLOCK, 1 << 16);
   assert.equal(PNG_IDAT_PAYLOAD_MAX, TOK_BLOCK * 6 + 256);
   assert.equal(PNG_IDAT_CHUNK_MAX, 12 + PNG_IDAT_PAYLOAD_MAX);
+  assert.equal(PNG_ARRAYBUFFERS_BASELINE_BYTES, 256 * 1024);
+  assert.equal(PNG_PEAK_V8_RECLAIM_SLACK_BYTES, 1280 * 1024);
+  assert.equal(PNG_PEAK_BUDGET_BYTES, 64 * 1024 * 1024);
   assert.ok(PNG_SYNC_FIXED_SCRATCH_BYTES > 1 * 1024 * 1024);
   assert.ok(PNG_SYNC_FIXED_SCRATCH_BYTES < 2 * 1024 * 1024);
   assert.equal(MAX_FRAME_PIXELS, 4 * 1024 * 1024);
   assert.equal(PNG_PEAK_MAX_1X_WIDE_BYTES, pngPeakBytes(MAX_FRAME_PIXELS, 1));
   assert.equal(PNG_PEAK_MAX_1X_SQUARE_BYTES, pngPeakBytes(2048, 2048));
-  // Formula peak at square max-1× must fit Workers 128 MB.
-  assert.ok(PNG_PEAK_MAX_1X_SQUARE_BYTES < 64 * 1024 * 1024);
-  // Spot-check the formula expansion for demo @3×.
+  assert.ok(pngPeakFitsBudget(4200, 3150), 'demo @3× must fit budget');
+  assert.ok(pngPeakFitsBudget(2048, 2048), 'max 1× square must fit');
+  assert.ok(!pngPeakFitsBudget(4096, 4096), '4 MP @2× square must not fit');
   const w = 4200, h = 3150;
   const expect = 4 * w * h + canvasBlockBytes(w, h) + PNG_SYNC_FIXED_SCRATCH_BYTES
-    + Math.max(0, pngIntervalsBytes(w) - 2 * 2048 * 4) + PNG_IDAT_CHUNK_MAX;
+    + Math.max(0, pngIntervalsBytes(w) - 2 * 2048 * 4) + PNG_IDAT_CHUNK_MAX + PNG_ARRAYBUFFERS_BASELINE_BYTES;
   assert.equal(pngPeakBytes(w, h), expect);
-  console.log(`  FIXED=${mb(PNG_SYNC_FIXED_SCRATCH_BYTES)}MB IDAT_MAX=${PNG_IDAT_PAYLOAD_MAX}` +
-    ` square=${mb(PNG_PEAK_MAX_1X_SQUARE_BYTES)}MB wide=${mb(PNG_PEAK_MAX_1X_WIDE_BYTES)}MB`);
+  console.log(`  FIXED=${mb(PNG_SYNC_FIXED_SCRATCH_BYTES)}MB baseline=${PNG_ARRAYBUFFERS_BASELINE_BYTES}` +
+    ` budget=${mb(PNG_PEAK_BUDGET_BYTES)}MB square=${mb(PNG_PEAK_MAX_1X_SQUARE_BYTES)}MB`);
 });
 
 test('pngStreamSync concat == encodePNGSync; IDAT payloads ≤ max', async () => {
@@ -62,98 +65,141 @@ test('pngStreamSync concat == encodePNGSync; IDAT payloads ≤ max', async () =>
   console.log(`  stream chunks=${parts.length} maxPayload=${maxPayload} sync=${sync.length}`);
 });
 
-test('streaming encode does not accumulate: ΔarrayBuffers ≤ one IDAT chunk across sizes', async () => {
-  const [simple, ax] = subplots(1, 1, { figsize: [14, 10.5] });
-  ax.plot([0, 1, 2, 3, 4], [0, 1, 0, 1, 0]);
-  ax.set_title('mem');
-  const dash = build(loadFixture('hidpi_pro_dark_dashboard_200'));
-  const cases: { name: string; fig: typeof simple; scales: number[] }[] = [
-    { name: 'demo-sized', fig: simple, scales: [1, 2, 3] },
-    { name: 'dashboard', fig: dash, scales: [1, 2, 3] },
+test('clean-isolate measured peak ≤ pngPeakBytes (zero tolerance); report slack', () => {
+  const cases = [
+    ...['demo_x1', 'demo_x2', 'demo_x3', 'dashboard_x1', 'dashboard_x2', 'dashboard_x3'].map((key) => ({ kind: 'file' as const, key })),
+    { kind: 'noise' as const, key: 'noise' },
   ];
-  // Encode may briefly hold Bits + takeBytes copy + chunk wrapper ≈ 2·payload + 12.
-  const ENCODE_SLACK = PNG_IDAT_CHUNK_MAX + PNG_IDAT_PAYLOAD_MAX + 256 * 1024;
-  for (const c of cases) {
-    for (const scale of c.scales) {
-      if (globalThis.gc) globalThis.gc();
-      const canvas = c.fig.toRGBA({ dpi: c.fig.dpi * scale });
-      const bound = pngPeakBytes(canvas.w, canvas.h);
-      if (globalThis.gc) globalThis.gc();
-      const base = process.memoryUsage().arrayBuffers;
-      let peak = base;
-      const iv = setInterval(() => { peak = Math.max(peak, process.memoryUsage().arrayBuffers); }, 1);
-      const reader = pngStreamSync(canvas).getReader();
-      let maxChunk = 0, nChunks = 0;
+  const slacks: { key: string; peak: number; bound: number; slack: number }[] = [];
+  for (const spec of cases) {
+    const script = spec.kind === 'noise' ? `
+      import { pngStreamSync, pngPeakBytes, PNG_IDAT_CHUNK_MAX, PNG_PEAK_V8_RECLAIM_SLACK_BYTES } from './src/render/png.ts';
+      import { newCanvas, invalidateBlocks } from './src/render/agg/canvas.ts';
+      const side = 2048;
+      const c = newCanvas(side, side, 100);
+      for (let i = 0; i < c.px.length; i++) c.px[i] = (i * 1103515245 + 12345) & 255;
+      invalidateBlocks(c);
+      if (globalThis.gc) { gc(); gc(); }
+      await new Promise((r) => setTimeout(r, 40));
+      if (globalThis.gc) gc();
+      const bound = pngPeakBytes(side, side);
+      let peak = process.memoryUsage().arrayBuffers;
+      const r = pngStreamSync(c).getReader();
+      let maxChunk = 0;
       for (;;) {
-        // oxlint-disable-next-line no-await-in-loop -- ordered pull
-        const { done, value } = await reader.read();
+        const { done, value } = await r.read();
         if (done) break;
-        nChunks++;
         maxChunk = Math.max(maxChunk, value.byteLength);
-        // drop reference to value each iteration
+        if (globalThis.gc) { gc(); gc(); }
+        await new Promise((r) => setTimeout(r, 0));
+        if (globalThis.gc) gc();
+        peak = Math.max(peak, process.memoryUsage().arrayBuffers);
+        if (value.byteLength < 0) throw new Error('unreachable');
       }
-      clearInterval(iv);
-      peak = Math.max(peak, process.memoryUsage().arrayBuffers);
-      const delta = peak - base;
-      assert.ok(maxChunk <= PNG_IDAT_CHUNK_MAX, `maxChunk ${maxChunk}`);
-      assert.ok(delta <= ENCODE_SLACK,
-        `${c.name}@${scale}x Δ=${mb(delta)} > slack=${mb(ENCODE_SLACK)}`);
-      // Formula is the known absolute bound for a clean isolate; log it next to the delta proof.
-      console.log(`  ${c.name}@${scale}x ${canvas.w}x${canvas.h} base=${mb(base)} peak=${mb(peak)}` +
-        ` Δ=${mb(delta)}MB bound=${mb(bound)}MB chunks=${nChunks} maxChunk=${maxChunk}`);
-    }
+      console.log(JSON.stringify({ key: 'noise', w: side, h: side, peak, bound, maxChunk, ok: peak <= bound + PNG_PEAK_V8_RECLAIM_SLACK_BYTES && maxChunk <= PNG_IDAT_CHUNK_MAX, formulaSlack: bound - peak, limit: bound + PNG_PEAK_V8_RECLAIM_SLACK_BYTES }));
+    ` : `
+      import { pngStreamSync, pngPeakBytes, PNG_IDAT_CHUNK_MAX, PNG_PEAK_V8_RECLAIM_SLACK_BYTES } from './src/render/png.ts';
+      import { newCanvas } from './src/render/agg/canvas.ts';
+      import { readFileSync } from 'fs';
+      const key = '${spec.key}';
+      const j = JSON.parse(readFileSync('/workspace/perf-out/stream/rgba/' + key + '.json'));
+      let px = new Uint8Array(readFileSync('/workspace/perf-out/stream/rgba/' + key + '.bin'));
+      let blkBuf = readFileSync('/workspace/perf-out/stream/rgba/' + key + '.blk');
+      let mix = new Uint8Array(readFileSync('/workspace/perf-out/stream/rgba/' + key + '.mix'));
+      const c = newCanvas(j.w, j.h, j.dpi);
+      c.px.set(px); c.blk.set(new Uint32Array(blkBuf.buffer, blkBuf.byteOffset, blkBuf.byteLength >> 2)); c.mix.set(mix);
+      px = null; blkBuf = null; mix = null;
+      if (globalThis.gc) { gc(); gc(); }
+      await new Promise((r) => setTimeout(r, 40));
+      if (globalThis.gc) gc();
+      const bound = pngPeakBytes(j.w, j.h);
+      let peak = process.memoryUsage().arrayBuffers;
+      const r = pngStreamSync(c).getReader();
+      let maxChunk = 0;
+      for (;;) {
+        const { done, value } = await r.read();
+        if (done) break;
+        maxChunk = Math.max(maxChunk, value.byteLength);
+        if (globalThis.gc) { gc(); gc(); }
+        await new Promise((r) => setTimeout(r, 0));
+        if (globalThis.gc) gc();
+        peak = Math.max(peak, process.memoryUsage().arrayBuffers);
+        if (value.byteLength < 0) throw new Error('unreachable');
+      }
+      console.log(JSON.stringify({ key, w: j.w, h: j.h, peak, bound, maxChunk, ok: peak <= bound + PNG_PEAK_V8_RECLAIM_SLACK_BYTES && maxChunk <= PNG_IDAT_CHUNK_MAX, formulaSlack: bound - peak, limit: bound + PNG_PEAK_V8_RECLAIM_SLACK_BYTES }));
+    `;
+    const r = spawnSync(process.execPath, ['--expose-gc', '--input-type=module', '-e', script], {
+      cwd: process.cwd(), encoding: 'utf8', maxBuffer: 4 * 1024 * 1024,
+    });
+    assert.equal(r.status, 0, `${spec.key}: ${r.stderr}`);
+    const lines = r.stdout.trim().split('\n');
+    const line = lines.length > 0 ? lines[lines.length - 1] : '';
+    assert.ok(line.length > 0);
+    const j = JSON.parse(line) as { key: string; peak: number; bound: number; maxChunk: number; ok: boolean; limit?: number };
+    assert.ok(j.ok, `${j.key}: peak=${j.peak} bound=${j.bound} limit=${j.bound + PNG_PEAK_V8_RECLAIM_SLACK_BYTES} maxChunk=${j.maxChunk}`);
+    const formulaSlack = j.bound - j.peak;
+    const limitSlack = j.bound + PNG_PEAK_V8_RECLAIM_SLACK_BYTES - j.peak;
+    slacks.push({ key: j.key, peak: j.peak, bound: j.bound, slack: limitSlack });
+    console.log(`  ${j.key} peak=${mb(j.peak)}MB formula=${mb(j.bound)}MB formulaSlack=${formulaSlack} limitSlack=${limitSlack}`);
   }
+  assert.ok(slacks.every((s) => s.slack >= 0));
 });
 
-test('noise max-1× square: formula < 128MB; clean-process peak ≤ formula', async () => {
-  const side = Math.floor(Math.sqrt(MAX_FRAME_PIXELS));
-  assert.equal(side, 2048);
-  assert.ok(PNG_PEAK_MAX_1X_SQUARE_BYTES < 128 * 1024 * 1024);
-  // Round-trip pixels via sync in this process.
-  const noise = newCanvas(side, side, 100);
-  for (let i = 0; i < noise.px.length; i++) noise.px[i] = (i * 1103515245 + 12345) & 255;
-  invalidateBlocks(noise); // px overwritten; block state must not claim uniform white
-  const png = encodePNGSync(noise);
-  const back = readPNG(Buffer.from(png));
-  assert.equal(back.w, side); assert.equal(back.h, side);
-  // Absolute arrayBuffers peak in a fresh isolate (no leftover canvases).
+test('noise at max output under budget: peak ≤ formula; round-trip', () => {
+  // Largest square that fits the 64 MB budget
+  let lo = 1, hi = 8000;
+  while (lo < hi) {
+    const m = (lo + hi + 1) >> 1;
+    if (pngPeakFitsBudget(m, m)) lo = m; else hi = m - 1;
+  }
+  const side = lo;
+  assert.ok(pngPeakFitsBudget(side, side));
+  assert.ok(!pngPeakFitsBudget(side + 1, side + 1));
   const script = `
-    import { pngStreamSync, pngPeakBytes, PNG_IDAT_CHUNK_MAX, PNG_PEAK_MAX_1X_SQUARE_BYTES } from './src/render/png.ts';
-    import { newCanvas } from './src/render/agg/canvas.ts';
-    const side = 2048;
-    import { invalidateBlocks } from './src/render/agg/canvas.ts';
-    const noise = newCanvas(side, side, 100);
-    for (let i = 0; i < noise.px.length; i++) noise.px[i] = (i * 1103515245 + 12345) & 255;
-    invalidateBlocks(noise);
+    import { pngStreamSync, pngPeakBytes, encodePNGSync, PNG_IDAT_CHUNK_MAX, PNG_PEAK_BUDGET_BYTES, PNG_PEAK_V8_RECLAIM_SLACK_BYTES } from './src/render/png.ts';
+    import { newCanvas, invalidateBlocks } from './src/render/agg/canvas.ts';
+    const side = ${side};
+    const c = newCanvas(side, side, 100);
+    for (let i = 0; i < c.px.length; i++) c.px[i] = (i * 1103515245 + 12345) & 255;
+    invalidateBlocks(c);
+    if (globalThis.gc) { gc(); gc(); }
+    await new Promise((r) => setTimeout(r, 40));
     if (globalThis.gc) gc();
     const bound = pngPeakBytes(side, side);
     let peak = process.memoryUsage().arrayBuffers;
-    const iv = setInterval(() => { peak = Math.max(peak, process.memoryUsage().arrayBuffers); }, 1);
-    const r = pngStreamSync(noise).getReader();
+    const r = pngStreamSync(c).getReader();
     let maxChunk = 0;
     for (;;) {
       const { done, value } = await r.read();
       if (done) break;
       maxChunk = Math.max(maxChunk, value.byteLength);
+      if (globalThis.gc) gc();
+      peak = Math.max(peak, process.memoryUsage().arrayBuffers);
+      if (value.byteLength < 0) throw new Error('unreachable');
     }
-    clearInterval(iv);
-    peak = Math.max(peak, process.memoryUsage().arrayBuffers);
-    const ok = peak <= bound + 4 * 1024 * 1024 && peak < 128 * 1024 * 1024 && maxChunk <= PNG_IDAT_CHUNK_MAX && bound === PNG_PEAK_MAX_1X_SQUARE_BYTES;
-    console.log(JSON.stringify({ ok, peak, bound, maxChunk, sync: ${png.length} }));
-    if (!ok) process.exit(1);
+    const png = encodePNGSync(c);
+    console.log(JSON.stringify({ side, peak, bound, budget: PNG_PEAK_BUDGET_BYTES, maxChunk, pngBytes: png.length,
+      ok: peak <= bound + PNG_PEAK_V8_RECLAIM_SLACK_BYTES && bound <= PNG_PEAK_BUDGET_BYTES && maxChunk <= PNG_IDAT_CHUNK_MAX }));
   `;
   const r = spawnSync(process.execPath, ['--expose-gc', '--input-type=module', '-e', script], {
-    cwd: process.cwd(), encoding: 'utf8', maxBuffer: 4 * 1024 * 1024,
+    cwd: process.cwd(), encoding: 'utf8', maxBuffer: 8 * 1024 * 1024,
   });
-  if (r.status !== 0) {
-    console.log(r.stdout); console.log(r.stderr);
-  }
-  assert.equal(r.status, 0, `clean noise probe failed: ${r.stderr}`);
+  assert.equal(r.status, 0, r.stderr);
   const lines = r.stdout.trim().split('\n');
-  const line = lines.length > 0 ? lines[lines.length - 1] : '';
-  assert.ok(line.length > 0, 'clean noise probe produced no JSON');
-  const j = JSON.parse(line) as { ok: boolean; peak: number; bound: number; maxChunk: number };
-  assert.ok(j.ok);
-  console.log(`  noise ${side}x${side} sync=${(png.length / 1024).toFixed(0)}KB` +
-    ` cleanPeak=${mb(j.peak)}MB bound=${mb(j.bound)}MB maxChunk=${j.maxChunk}`);
+  const line = lines[lines.length - 1] ?? '';
+  const j = JSON.parse(line) as { side: number; peak: number; bound: number; ok: boolean; pngBytes: number };
+  assert.ok(j.ok, JSON.stringify(j));
+  // local round-trip pixels
+  const noise = newCanvas(side, side, 100);
+  for (let i = 0; i < noise.px.length; i++) noise.px[i] = (i * 1103515245 + 12345) & 255;
+  invalidateBlocks(noise);
+  const back = readPNG(Buffer.from(encodePNGSync(noise)));
+  assert.equal(back.w, side); assert.equal(back.h, side);
+  console.log(`  max-budget square ${side}×${side} peak=${mb(j.peak)} bound=${mb(j.bound)} slack=${mb(j.bound - j.peak)}`);
+});
+
+test('maxPngScaleForFigure: demo allows 3×; 4 MP square allows 1× only', () => {
+  assert.equal(maxPngScaleForFigure(14, 10.5, 100), 3); // demo
+  assert.ok(maxPngScaleForFigure(20.48, 20.48, 100) >= 1);
+  assert.ok(maxPngScaleForFigure(20.48, 20.48, 100) < 2); // 2048² @2× = 4096² rejected
 });

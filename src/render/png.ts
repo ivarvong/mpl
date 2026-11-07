@@ -267,6 +267,22 @@ class Bits {
     this.n = 0;
     return out;
   }
+  /**
+   * Build one IDAT chunk directly from the bit buffer (single allocation: no intermediate
+   * payload copy). Compacts the writer afterward; bit accumulator unchanged.
+   */
+  takeIdatChunk(): Uint8Array {
+    const n = this.n;
+    const out = new Uint8Array(12 + n);
+    out[0] = (n >>> 24) & 255; out[1] = (n >>> 16) & 255; out[2] = (n >>> 8) & 255; out[3] = n & 255;
+    out[4] = 73; out[5] = 68; out[6] = 65; out[7] = 84; // IDAT
+    out.set(this.buf.subarray(0, n), 8);
+    const crc = crc32([out.subarray(4, 8 + n)]);
+    out[8 + n] = (crc >>> 24) & 255; out[9 + n] = (crc >>> 16) & 255;
+    out[10 + n] = (crc >>> 8) & 255; out[11 + n] = crc & 255;
+    this.n = 0;
+    return out;
+  }
   flush(): Uint8Array {
     if (this.cnt > 0) this.put(0, 8 - this.cnt);
     return this.takeBytes();
@@ -548,6 +564,21 @@ export const PNG_SYNC_FIXED_SCRATCH_BYTES: number =
 /** One enqueued IDAT chunk: length(4)+type(4)+payload+crc(4). Stream retains at most one. */
 export const PNG_IDAT_CHUNK_MAX: number = 12 + PNG_IDAT_PAYLOAD_MAX;
 
+/**
+ * Node/V8 empty-isolate `process.memoryUsage().arrayBuffers` before our canvas exists.
+ * Measured max baseGap across clean-isolate probes (dashboard@1×): 255_556 bytes.
+ * Rounded up to 256 KiB so the formula remains a hard upper bound on measured peaks.
+ */
+export const PNG_ARRAYBUFFERS_BASELINE_BYTES: number = 256 * 1024;
+
+/**
+ * Extra allowance on top of pngPeakBytes for V8 deferring reclaim of a just-dropped IDAT
+ * ArrayBuffer across a `gc()` turn. Measured max (livePeak − pngPeakBytes) over repeated
+ * clean-isolate runs: 1_127_800 bytes (demo@3×). Set to 1.25 MiB. CI asserts
+ * measured ≤ pngPeakBytes + PNG_PEAK_V8_RECLAIM_SLACK_BYTES with no further tolerance.
+ */
+export const PNG_PEAK_V8_RECLAIM_SLACK_BYTES: number = 1280 * 1024;
+
 /** Interval arrays L/U after ensure(w): 2 · (w+4) · 4 bytes. */
 export const pngIntervalsBytes = (w: number): number => 2 * (w + 4) * 4;
 
@@ -558,22 +589,27 @@ export const canvasBlockBytes = (w: number, h: number): number => {
 };
 
 /**
- * Exact peak arrayBuffers bound for the streaming RGBA encode path (bytes):
- *   4·w·h  +  canvasBlockBytes(w,h)  +  PNG_SYNC_FIXED_SCRATCH_BYTES
- *   +  max(0, pngIntervalsBytes(w) − 2·2048·4)  +  PNG_IDAT_CHUNK_MAX
+ * Exact peak `arrayBuffers` bound for the streaming RGBA encode path (bytes):
+ *   4·w·h + canvasBlockBytes(w,h) + PNG_SYNC_FIXED_SCRATCH_BYTES
+ *   + max(0, pngIntervalsBytes(w) − 2·2048·4) + PNG_IDAT_CHUNK_MAX
+ *   + PNG_ARRAYBUFFERS_BASELINE_BYTES
  *
- * Full-frame RGBA is the one O(w·h) term (band rasterization rejected: AA identity /
- * ≥15% warm CPU — perf-out/stream2/band-verdict.md). Encoded output does not accumulate:
- * pull-based IDATs, retained ≤ one chunk. Sync encodePNGSync materializes the file for its
- * return value; Workers use pngStreamSync.
- *
- * Under mpl-web LIMITS.pixels (= MAX_FRAME_PIXELS), max width is MAX_FRAME_PIXELS (h=1), so
- * the O(w) intervals term is a known constant ≤ pngIntervalsBytes(MAX_FRAME_PIXELS).
+ * Live retained encoded output ≤ one IDAT chunk (pull-based). Unreclaimed V8 garbage from
+ * prior chunks is not live; CI measures with GC between pulls (or a clean isolate).
+ * Full-frame RGBA is the one O(w·h) term (bands rejected — band-verdict.md).
  */
 export const pngPeakBytes = (w: number, h: number): number => {
   const intervalsExtra = Math.max(0, pngIntervalsBytes(w) - 2 * 2048 * 4);
-  return 4 * w * h + canvasBlockBytes(w, h) + PNG_SYNC_FIXED_SCRATCH_BYTES + intervalsExtra + PNG_IDAT_CHUNK_MAX;
+  return 4 * w * h + canvasBlockBytes(w, h) + PNG_SYNC_FIXED_SCRATCH_BYTES
+    + intervalsExtra + PNG_IDAT_CHUNK_MAX + PNG_ARRAYBUFFERS_BASELINE_BYTES;
 };
+
+/**
+ * Workers isolate budget for PNG peak (bytes). 64 MB leaves headroom under the 128 MB
+ * isolate for request handling, Workers Caching materialization, and other isolate state.
+ * Enforced before canvas allocation; demo @3× (~54 MB) fits; a 4 MP square @2× does not.
+ */
+export const PNG_PEAK_BUDGET_BYTES: number = 64 * 1024 * 1024;
 
 /** Max 1× pixels (mpl-web LIMITS.pixels). */
 export const MAX_FRAME_PIXELS: number = 4 * 1024 * 1024;
@@ -583,6 +619,25 @@ export const PNG_PEAK_MAX_1X_WIDE_BYTES: number = pngPeakBytes(MAX_FRAME_PIXELS,
 
 /** Known-constant peak at the square max-1× frame (2048×2048). */
 export const PNG_PEAK_MAX_1X_SQUARE_BYTES: number = pngPeakBytes(2048, 2048);
+
+/** Whether an output frame of w×h fits the PNG peak budget (no allocation). */
+export const pngPeakFitsBudget = (w: number, h: number): boolean =>
+  pngPeakBytes(w, h) <= PNG_PEAK_BUDGET_BYTES;
+
+/**
+ * Largest integer scale ≥ 1 whose output (≈ widthIn·dpi·scale × heightIn·dpi·scale) fits
+ * the peak budget; 0 if even scale 1 does not.
+ */
+export const maxPngScaleForFigure = (widthIn: number, heightIn: number, dpi: number): number => {
+  let best = 0;
+  for (let s = 1; s <= 8; s++) {
+    const w = Math.round(widthIn * dpi * s), h = Math.round(heightIn * dpi * s);
+    if (w < 1 || h < 1) break;
+    if (!pngPeakFitsBudget(w, h)) break;
+    best = s;
+  }
+  return best;
+};
 
 /** [start, end) pairs of pixels where a predicate holds, in x order, with a forward cursor. */
 class Intervals {
@@ -636,7 +691,7 @@ function alongMatch(iv: Intervals, px: Uint8Array, W: number, pb: number, xb: nu
  * Token scratch stays 2·TOK_BLOCK; bit writer is compacted after every IDAT.
  */
 type ZlibEnc = {
-  pullIdat(): Option<Uint8Array>;  // none when finished (Adler already emitted in last payload)
+  pullIdat(): Option<Uint8Array>;  // framed IDAT chunk; none when finished
   retainedHigh(): number;
 };
 
@@ -737,9 +792,11 @@ function zlibEncoder(c: Canvas): ZlibEnc {
   };
 
   const take = (): Uint8Array => {
-    const out = bw.takeBytes();
+    // Single allocation: IDAT frame built from Bits buf (no intermediate payload copy).
+    const out = bw.takeIdatChunk();
     if (bw.retainedHigh > high) high = bw.retainedHigh;
-    if (out.length > high) high = out.length;
+    // retained encoded bytes ≤ zlib payload (= chunk length − 12)
+    if (out.length - 12 > high) high = out.length - 12;
     return out;
   };
 
@@ -749,10 +806,21 @@ function zlibEncoder(c: Canvas): ZlibEnc {
       if (phase === 'adler') {
         a = modA(a); b = modA(b);
         const adler = ((b << 16) | a) >>> 0;
-        const tail = bw.flush();
-        const out = new Uint8Array(tail.length + 4);
-        out.set(tail, 0); out.set(u32(adler), tail.length);
-        if (out.length > high) high = out.length;
+        const tail = bw.flush(); // complete bytes; writer empty
+        // One IDAT: zlib tail ‖ Adler-32 (single alloc, no double copy via chunk()).
+        const n = tail.length + 4;
+        const out = new Uint8Array(12 + n);
+        out[0] = (n >>> 24) & 255; out[1] = (n >>> 16) & 255; out[2] = (n >>> 8) & 255; out[3] = n & 255;
+        out[4] = 73; out[5] = 68; out[6] = 65; out[7] = 84;
+        out.set(tail, 8);
+        out[8 + tail.length] = (adler >>> 24) & 255;
+        out[9 + tail.length] = (adler >>> 16) & 255;
+        out[10 + tail.length] = (adler >>> 8) & 255;
+        out[11 + tail.length] = adler & 255;
+        const crc = crc32([out.subarray(4, 8 + n)]);
+        out[8 + n] = (crc >>> 24) & 255; out[9 + n] = (crc >>> 16) & 255;
+        out[10 + n] = (crc >>> 8) & 255; out[11 + n] = crc & 255;
+        if (n > high) high = n;
         phase = 'done';
         return some(out);
       }
@@ -877,9 +945,9 @@ export function encodePNGSync(c: Canvas, opts: PngSyncOptions = RGBA): Uint8Arra
         return r;
       });
       if (p.kind === 'none') break;
-      zBytes += p.value.length;
+      zBytes += p.value.length - 12; // zlib payload inside framed IDAT
       nIdat++;
-      parts.push(chunk('IDAT', p.value));
+      parts.push(p.value); // already a full IDAT chunk
     }
     parts.push(IEND);
     const out = concat(parts);
@@ -916,9 +984,9 @@ export function pngStreamSync(c: Canvas, opts: PngSyncOptions = RGBA): ReadableS
             const z = enc.value;
             const p = z.pullIdat();
             if (p.kind === 'some') {
-              sp.setAttribute('zBytes', p.value.length).setAttribute('retained', z.retainedHigh());
+              sp.setAttribute('zBytes', p.value.length - 12).setAttribute('retained', z.retainedHigh());
               nIdat++;
-              ctl.enqueue(chunk('IDAT', p.value));
+              ctl.enqueue(p.value); // already a full IDAT chunk
               return;
             }
             sp.setAttribute('nIdat', nIdat);

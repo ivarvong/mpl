@@ -8,7 +8,7 @@ export { layoutFigure } from './core/layout.ts';
 export { svgChunks, svgIO, svgStream, toSVG } from './render/svg.ts';
 export { renderRGBA, toPNG, toPNGStream, toPNGSync } from './render/agg.ts';
 export type { Canvas } from './render/agg.ts';
-export { encodePNG, encodePNGSync, pngStream, pngStreamSync, TOK_BLOCK, PNG_SYNC_FIXED_SCRATCH_BYTES } from './render/png.ts';
+export { encodePNG, encodePNGSync, pngStream, pngStreamSync, TOK_BLOCK, PNG_SYNC_FIXED_SCRATCH_BYTES, PNG_IDAT_PAYLOAD_MAX, PNG_IDAT_CHUNK_MAX, PNG_ARRAYBUFFERS_BASELINE_BYTES, PNG_PEAK_V8_RECLAIM_SLACK_BYTES, PNG_PEAK_BUDGET_BYTES, PNG_PEAK_MAX_1X_SQUARE_BYTES, pngPeakBytes, pngPeakFitsBudget, maxPngScaleForFigure, MAX_FRAME_PIXELS } from './render/png.ts';
 export type { PngOptions, PngSyncOptions } from './render/png.ts';
 export { iolistToStream, iolistToString } from './render/iolist.ts';
 export { renderTree, Tracer, tracer } from './trace.ts';
