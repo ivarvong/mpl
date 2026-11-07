@@ -66,6 +66,7 @@
     "tables": "python3 scripts/gen_tables.py",
     "oracle": "node test/png-oracle.ts",
     "bench": "node bench/bench.ts",
+    "bench:tiers": "node bench/tiers.ts",
     "test:browser": "node test/browser.test.ts",
     "test:workers": "node test/workers.test.ts",
     "test:size": "node test/size.test.ts",
