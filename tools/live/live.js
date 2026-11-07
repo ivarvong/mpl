@@ -1,4 +1,4 @@
-// mpljs live: the library itself, running in the browser, drawing exact vector frames.
+// mpl live: the library itself, running in the browser, drawing exact vector frames.
 // Every frame re-runs matplotlib's layout (locators, formatters, legend placement) for the current
 // view and writes SVG with glyph outlines; hover lives on an overlay and never re-renders the chart.
 // Interaction is a pure view model (view.js): input moves a target interval, frames ease toward it.
@@ -145,7 +145,7 @@ const hoverChanged = () => { hoverDirty = true; kick(); };
 // Every frame is one trace, from the input event that caused it to the end of the browser's own
 // rendering work for it:
 //   input.wait      event.timeStamp → this frame's callback (queueing + waiting for vsync)
-//   figure.build … gl.draw, hover.draw    the page's and mpljs's JS work
+//   figure.build … gl.draw, hover.draw    the page's and mpl's JS work
 //   browser.render  end of our JS → the first task after the frame: an upper bound on main-thread
 //                   style, layout, paint and commit. Checked against Chromium's timeline
 //                   (bench/bench_live.ts): it contains 92 % of that work, which is about half its

@@ -1,8 +1,8 @@
 {
-  "name": "mpljs-workers-test",
+  "name": "mpl-workers-test",
   "private": true,
   "type": "module",
-  "description": "A tiny Worker that renders mpljs fixtures in workerd (cf build / cf dev); driven by ../workers.test.ts",
+  "description": "A tiny Worker that renders mpl fixtures in workerd (cf build / cf dev); driven by ../workers.test.ts",
   "devDependencies": {
     "@cloudflare/vite-plugin": "2.0.0-beta.v.8",
     "cf": "1.0.0-beta.26",

@@ -79,7 +79,7 @@ export function dashboard(style: string, cmap: string, vmin: number, heat: strin
 
 
   fig.suptitle(`checkout service · last 24 h · ${style}`);
-  // explicit spacing: mpljs's tight_layout does not yet handle a colorbar inside a subplot grid (it warns and skips)
+  // explicit spacing: mpl's tight_layout does not yet handle a colorbar inside a subplot grid (it warns and skips)
   fig.subplots_adjust({ left: 0.045, right: 0.975, bottom: 0.07, top: 0.89, wspace: 0.3, hspace: 0.42 });
   return fig;
 }

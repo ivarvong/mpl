@@ -24,7 +24,7 @@ const throwsKw = (f: () => unknown, key: string): void =>
   assert.deepEqual(seen, ['Glyph 20013 (中) missing from font(s) DejaVu Sans.']);
   ax.text(1, 1, '☃');                              // in DejaVu Sans, outside the baked blocks
   fig.toSVG();
-  assert.ok(at(1).startsWith('Glyph 9731 (☃) is in DejaVu Sans but not bundled with mpljs'), at(1));
+  assert.ok(at(1).startsWith('Glyph 9731 (☃) is in DejaVu Sans but not bundled with mpl'), at(1));
   setGlyphWarningSink((m) => { console.warn(m); });
 }
 

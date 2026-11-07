@@ -1,5 +1,5 @@
 // dist/browser (the published ES modules, unbundled) in real headless Chromium via Playwright: each runtime
-// case renders toSVG() and toPNGSync() in the page, and both must equal mpljs-on-Node byte for byte and
+// case renders toSVG() and toPNGSync() in the page, and both must equal mpl-on-Node byte for byte and
 // match matplotlib's Agg PNG pixel for pixel. `npm run test:browser` (needs `npx playwright install chromium-headless-shell`).
 import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
@@ -18,7 +18,7 @@ const TYPES: Record<string, string> = { '.js': 'text/javascript', '.html': 'text
 
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
-  if (url.pathname === '/') { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><title>mpljs</title>'); return; }
+  if (url.pathname === '/') { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<!doctype html><title>mpl</title>'); return; }
   if (url.pathname === '/replay-core.js') { res.writeHead(200, { 'content-type': 'text/javascript' }); res.end(replayJs); return; }
   const p = normalize(join(DIST, url.pathname.replace(/^\/lib\//, '/')));
   if (!url.pathname.startsWith('/lib/') || !p.startsWith(DIST)) { res.writeHead(404); res.end(); return; }
@@ -52,7 +52,7 @@ try {
     const fetched = performance.getEntriesByType('resource').map((r) => new URL(r.name).pathname).filter((p) => p.startsWith('/lib/fonts/'));
     return { ok, err, fetched };
   });
-  const lazyOk = lazy.ok && lazy.err === 'FontNotLoadedError DejaVu Sans:700 mpljs/fonts/dejavu-sans-bold' && JSON.stringify(lazy.fetched) === '["/lib/fonts/dejavu-sans.js"]';
+  const lazyOk = lazy.ok && lazy.err === 'FontNotLoadedError DejaVu Sans:700 mpl/fonts/dejavu-sans-bold' && JSON.stringify(lazy.fetched) === '["/lib/fonts/dejavu-sans.js"]';
   if (!lazyOk) fails++;
   console.log(`${lazyOk ? 'PASS' : 'FAIL'} chromium default import: fetched ${lazy.fetched.join(', ')}; bold without its face → ${lazy.err}`);
   type Out = { name: string; svg: string; png64: string; pal64: string; ms: number };

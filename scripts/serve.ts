@@ -18,4 +18,4 @@ createServer(async (req, res) => {
   } catch {
     res.writeHead(404).end('not found');
   }
-}).listen(PORT, () => console.log(`mpljs live demo: http://localhost:${PORT}/`));
+}).listen(PORT, () => console.log(`mpl live demo: http://localhost:${PORT}/`));

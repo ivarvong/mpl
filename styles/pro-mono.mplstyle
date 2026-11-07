@@ -1,5 +1,5 @@
 # pro-mono: crisp black on white, hairline grid, grayscale with one blue accent
-# Bundled with mpljs. Use it in matplotlib too: plt.style.use("path/to/pro-mono.mplstyle")
+# Bundled with mpl. Use it in matplotlib too: plt.style.use("path/to/pro-mono.mplstyle")
 
 figure.facecolor: ffffff
 axes.facecolor: ffffff

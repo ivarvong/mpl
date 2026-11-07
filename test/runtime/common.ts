@@ -1,5 +1,5 @@
 // Shared by the runtime tests (browser, Workers): the cases every runtime renders, and the check that a
-// runtime's output is exactly mpljs-on-Node's and pixel-exact against matplotlib's Agg PNG.
+// runtime's output is exactly mpl-on-Node's and pixel-exact against matplotlib's Agg PNG.
 import { readFileSync } from 'node:fs';
 import { build, loadFixture } from '../../tools/replay.ts';
 import { compare, readPNG } from '../png-oracle.ts';

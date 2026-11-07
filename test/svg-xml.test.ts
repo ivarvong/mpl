@@ -1,4 +1,4 @@
-// Every SVG mpljs writes must be well-formed XML with its namespace prefixes bound: an unbound xlink: prefix
+// Every SVG mpl writes must be well-formed XML with its namespace prefixes bound: an unbound xlink: prefix
 // makes browsers' <img> and GitHub refuse the whole file. Checks a fresh imshow render and every shipped image.
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';

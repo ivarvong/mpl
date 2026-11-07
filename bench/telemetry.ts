@@ -1,5 +1,5 @@
 // Telemetry for the new features: (1) a warm trace of the showcase render as a Honeycomb-style
-// waterfall + tree; (2) warm p50 layout+render time per fixture family, charted by mpljs itself.
+// waterfall + tree; (2) warm p50 layout+render time per fixture family, charted by mpl itself.
 import { writeFileSync } from 'node:fs';
 import { renderTree, subplots, tracer, type Scene } from '../src/index.ts';
 import { build, fixtureNames, loadFixture } from '../tools/replay.ts';
@@ -50,7 +50,7 @@ ax.barh(names, L, { color: 'C0', label: 'layout' });
 ax.barh(names, R, { left: L, color: 'C1', label: 'rasterize (Agg port)' });
 ax.barh(names, E, { left: L.map((v, i) => v + R[i]), color: 'C2', label: 'PNG encode (sync deflate)' });
 ax.set_xlabel('median of per-fixture p50, ms');
-ax.set_title(`mpljs → PNG, warm, by fixture family (${fixtureNames().length} fixtures)`);
+ax.set_title(`mpl → PNG, warm, by fixture family (${fixtureNames().length} fixtures)`);
 ax.legend({ loc: 'lower right' });
 png(fig.toScene(), `${OUT}/timings.png`);
 for (const r of rows) console.log(`${r.fam.padEnd(10)} ${String(r.n).padStart(3)} fixtures  layout ${r.s[0].toFixed(2)}  raster ${r.s[1].toFixed(2)}  encode ${r.s[2].toFixed(2)} ms  png ${(r.s[3] / 1024).toFixed(1)} KiB`);

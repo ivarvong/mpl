@@ -1,5 +1,5 @@
 # pro-slate: soft light: off-white, muted indigo and violet accents, generous space
-# Bundled with mpljs. Use it in matplotlib too: plt.style.use("path/to/pro-slate.mplstyle")
+# Bundled with mpl. Use it in matplotlib too: plt.style.use("path/to/pro-slate.mplstyle")
 
 figure.facecolor: fbfbfd
 axes.facecolor: fbfbfd

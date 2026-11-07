@@ -1,7 +1,7 @@
 # Fixtures and the FreeType caveat
 
 `fixtures/ref/` holds the oracle: JSON (limits, ticks, labels, legend boxes), SVG and PNG written by matplotlib 3.11.2. `npm test`
-compares mpljs against it and needs no Python.
+compares mpl against it and needs no Python.
 
 ## How to reproduce the oracle PNGs exactly
 
@@ -34,9 +34,9 @@ are not affected by FreeType/hinting.
 ## Writing a case in `fixtures/generate_additions.py`
 
 A case is a list of `(method, args, kwargs)` calls that matplotlib runs on `fig, ax = plt.subplots()` and that
-`tools/replay.ts` replays on mpljs, call for call. Besides `Axes` methods, the spec understands:
+`tools/replay.ts` replays on mpl, call for call. Besides `Axes` methods, the spec understands:
 
-| call | matplotlib | mpljs |
+| call | matplotlib | mpl |
 | --- | --- | --- |
 | `("fig.<name>", args, kw)` | `fig.<name>(*args, **kw)` (e.g. `fig.tight_layout`) | `fig.<name>(...args, kw)` |
 | `("twinx", [])`, `("sca", [i])` | `ax = ax.twinx()`, pick axes `i` | same |

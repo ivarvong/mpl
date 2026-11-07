@@ -25,11 +25,11 @@ const Z = (() => {
   assert.equal(cmap.value.rgba.kind, 'none');
   assert.throws(() => requireColormapRgba(cmap.value), (e: unknown) => {
     assert.ok(e instanceof MissingColormapRgbaError);
-    assert.match(e.message, /mpljs\/colormaps\/plasma\.rgba/);
-    assert.match(e.message, /import \{ plasma_rgba \} from 'mpljs\/colormaps\/plasma\.rgba'/);
+    assert.match(e.message, /mpl\/colormaps\/plasma\.rgba/);
+    assert.match(e.message, /import \{ plasma_rgba \} from 'mpl\/colormaps\/plasma\.rgba'/);
     assert.match(e.message, /registerColormapRgba\(plasma_rgba\)/);
     assert.equal(e.binding, 'plasma_rgba');
-    assert.equal(e.module, 'mpljs/colormaps/plasma.rgba');
+    assert.equal(e.module, 'mpl/colormaps/plasma.rgba');
     return true;
   });
 }

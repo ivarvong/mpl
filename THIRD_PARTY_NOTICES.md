@@ -1,6 +1,6 @@
 # Third-party notices
 
-mpljs is licensed under the ISC license (see `LICENSE`). It incorporates or is derived from the
+mpl is licensed under the ISC license (see `LICENSE`). It incorporates or is derived from the
 third-party works below. The license texts that follow are reproduced verbatim from the upstream
 sources named in each section.
 
@@ -231,7 +231,7 @@ $Id: LICENSE 2133 2007-11-28 02:46:28Z lechimp $
 ## matplotlib
 
 Source: https://github.com/matplotlib/matplotlib (tag v3.11.2, file `LICENSE/LICENSE`).
-mpljs ports many matplotlib algorithms (named in the table above) and reproduces matplotlib's
+mpl ports many matplotlib algorithms (named in the table above) and reproduces matplotlib's
 bundled style sheets and generated tables. Summary of the changes made, as the license asks: matplotlib's
 algorithms are re-implemented in strict, pure TypeScript without its Python/C++ runtime, restructured as pure
 functions over typed data, and verified against matplotlib's own output.
@@ -349,7 +349,7 @@ Agreement.```
   identical in v4.0; confirm the baked version before publishing.
 - The matplotlib `LICENSE` text above was fetched from the v3.11.2 tag on GitHub; the installed wheels
   available locally were 3.10.x. Matplotlib's repository also carries a `LICENSE/` directory of
-  licenses for other bundled assets (for example STIX fonts and colormap data); mpljs bundles none of
+  licenses for other bundled assets (for example STIX fonts and colormap data); mpl bundles none of
   those assets (only DejaVu fonts, `.mplstyle` files, marker geometry and named colors), but the style
   sheets derived from third-party palettes (Solarized, seaborn, ggplot, FiveThirtyEight, ColorBrewer-like
   Tableau colors) were not individually license-audited beyond the attribution comments they contain.

@@ -18,7 +18,7 @@ for (const f of files) {
   const layer = bundledStyle(name);
   if (!layer.ok) fail(`${name}: ${layer.error}`);
   else {
-    for (const key of layer.value.keys()) if (!DEFAULTS.has(key) && key !== 'axes.prop_cycle') fail(`${name}: ${key} is not a key mpljs reads`);
+    for (const key of layer.value.keys()) if (!DEFAULTS.has(key) && key !== 'axes.prop_cycle') fail(`${name}: ${key} is not a key mpl reads`);
     const th = parseTheme(mergeLayers([DEFAULTS, layer.value]));
     if (!th.ok) fail(`${name}: ${th.error}`);
   }

@@ -1,6 +1,6 @@
 # Contributing
 
-mpljs reproduces matplotlib's output, and matplotlib 3.11.2 is the oracle. A change is correct when the fixtures say so.
+mpl reproduces matplotlib's output, and matplotlib 3.11.2 is the oracle. A change is correct when the fixtures say so.
 
 ## Setup
 

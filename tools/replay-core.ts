@@ -1,14 +1,14 @@
-// Replay a fixture spec against any mpljs build: the Node source, dist/browser in Chromium, or a Worker
+// Replay a fixture spec against any mpl build: the Node source, dist/browser in Chromium, or a Worker
 // bundle. No Node imports, so browsers and workerd load it as is; tools/replay.ts binds it to src/.
 import type { Axes, Figure, subplots as SubplotsFn } from '../src/index.ts';
 
 /** A fixture file as matplotlib's generator wrote it (JSON, so deliberately loose). */
 // oxlint-disable-next-line typescript/no-explicit-any -- oracle JSON, read key by key
 export type Fixture = any;
-/** The subplots() of whichever mpljs build is under test. */
+/** The subplots() of whichever mpl build is under test. */
 export type Subplots = typeof SubplotsFn;
 type Dyn = Record<string, (...args: unknown[]) => unknown>;
-/** JSON args to mpljs args, at any depth: {"$dates": [...]} becomes Date[], {"$date": s} one Date (UTC, as numpy's naive datetime64). */
+/** JSON args to mpl args, at any depth: {"$dates": [...]} becomes Date[], {"$date": s} one Date (UTC, as numpy's naive datetime64). */
 export const decode = (a: unknown): unknown => {
   if (Array.isArray(a)) return a.map(decode);
   if (a && typeof a === 'object' && '$dates' in a) return (a.$dates as string[]).map((s) => new Date(s + 'Z'));

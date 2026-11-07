@@ -1,7 +1,7 @@
 """Generate matplotlib reference fixtures.
 
 Each case is a *spec*: a list of (method, args, kwargs) calls on an Axes,
-replayed identically here (matplotlib) and in test/compare.ts (mpljs).
+replayed identically here (matplotlib) and in test/compare.ts (mpl).
 For each case we record autoscaled limits, tick locations/labels, offset
 text, legend window extent, plus the reference SVG and PNG (640x480 @ 100 dpi).
 """

@@ -3,7 +3,7 @@
 //   1. `cf build`  — bundles the Worker (Build Output Spec, .cloudflare/output)
 //   2. `cf dev`    — serves it in workerd; GET /render
 //   3. the cf build output itself is served in workerd (vite preview, cf's delegate) and rendered again
-// Both outputs must equal mpljs-on-Node byte for byte and match Agg pixel for pixel. `npm run test:workers`.
+// Both outputs must equal mpl-on-Node byte for byte and match Agg pixel for pixel. `npm run test:workers`.
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
@@ -30,7 +30,7 @@ const freePort = (): Promise<number> => new Promise((r) => {
 async function serveAndRender(label: string, args: string[]): Promise<{ runtime: string; outs: RuntimeOutput[] }> {
   const port = await freePort();
   const child: ChildProcess = spawn('npx', args.map((a) => a.replace('$PORT', String(port))), {
-    cwd: W, env: { ...process.env, MPLJS_WORKERS_PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+    cwd: W, env: { ...process.env, MPL_WORKERS_PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
   });
   let log = '';
   child.stdout?.on('data', (d) => { log += d; });

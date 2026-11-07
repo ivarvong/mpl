@@ -1,4 +1,4 @@
-// Compare mpljs output against matplotlib fixtures.
+// Compare mpl output against matplotlib fixtures.
 //  1. exact: xlim/ylim, tick locations, tick label strings, offset text, legend box
 //  2. pixels: our own Agg/FreeType rasterization vs matplotlib's Agg PNG, byte for byte.
 //     No residual allowed: every case must be pixel-exact (log scales use correctly rounded log10/exp, src/core/libm.ts).

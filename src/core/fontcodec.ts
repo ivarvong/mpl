@@ -13,7 +13,7 @@
 //   kern      per pair, in baked order: Δleft, right, value
 import type { FaceData, SubTable } from './fonts.ts';
 
-/** The faces mpljs ships. Families and weights are matplotlib's names for them. */
+/** The faces mpl ships. Families and weights are matplotlib's names for them. */
 export const FACE_CATALOG = [
   { id: 'DejaVu Sans:400', family: 'DejaVu Sans', weight: 400, module: 'dejavu-sans', binding: 'dejavuSans' },
   { id: 'DejaVu Sans:700', family: 'DejaVu Sans', weight: 700, module: 'dejavu-sans-bold', binding: 'dejavuSansBold' },
@@ -28,7 +28,7 @@ export type CatalogEntry = (typeof FACE_CATALOG)[number];
 /** "Family:weight" of a shipped face. */
 export type FaceId = CatalogEntry['id'];
 
-/** One face as its module (mpljs/fonts/<name>) exports it: metadata plus encoded tables. */
+/** One face as its module (mpl/fonts/<name>) exports it: metadata plus encoded tables. */
 export type BakedFace = {
   readonly id: FaceId;
   readonly upm: number;

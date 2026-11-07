@@ -1,4 +1,4 @@
-// A waterfall of the last frame's trace, read straight from the mpljs tracer (the same spans the
+// A waterfall of the last frame's trace, read straight from the mpl tracer (the same spans the
 // OTLP export carries). Runs of 3+ same-named siblings fold into one row (×n, summed time) so a
 // frame stays readable; click a row for its attributes. Redraws at most 4×/s while frames stream,
 // and once more when the page goes idle, so the panel never costs the chart a frame.
@@ -22,7 +22,7 @@ export class TracePanel {
     el.innerHTML = `<div class="tp-head"><div class="tp-sum" aria-live="off"></div><div class="tp-actions">
       <span class="tp-tabs" role="tablist"><button type="button" role="tab" data-v="frame" aria-selected="true">Last frame</button><button type="button" role="tab" data-v="startup" aria-selected="false">Startup</button></span>
       <button type="button" class="tp-freeze" aria-pressed="false">Freeze</button><button type="button" class="tp-otlp">Download OTLP</button></div></div>
-      <div class="tp-legend"><span class="k app"></span>page <span class="k layout"></span>mpljs layout <span class="k render"></span>mpljs SVG <span class="k gl"></span>WebGL <span class="k browser"></span>browser render <span class="k wait"></span>input wait <span class="k load"></span>loading</div>
+      <div class="tp-legend"><span class="k app"></span>page <span class="k layout"></span>mpl layout <span class="k render"></span>mpl SVG <span class="k gl"></span>WebGL <span class="k browser"></span>browser render <span class="k wait"></span>input wait <span class="k load"></span>loading</div>
       <div class="tp-rows" role="tree"></div>`;
     this.sum = el.querySelector('.tp-sum'); this.rows = el.querySelector('.tp-rows');
     const fz = el.querySelector('.tp-freeze');
@@ -30,7 +30,7 @@ export class TracePanel {
     el.querySelector('.tp-otlp').addEventListener('click', () => {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([JSON.stringify(this.tracer.toOTLP(), null, 2)], { type: 'application/json' }));
-      a.download = `mpljs-frame-${this.spans.length ? this.spans[0].traceId.slice(0, 8) : 'trace'}.otlp.json`; a.click();
+      a.download = `mpl-frame-${this.spans.length ? this.spans[0].traceId.slice(0, 8) : 'trace'}.otlp.json`; a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     });
     for (const b of el.querySelectorAll('.tp-tabs button')) b.addEventListener('click', () => {

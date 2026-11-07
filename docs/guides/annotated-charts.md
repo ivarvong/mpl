@@ -13,7 +13,7 @@ After annotation:
 Code:
 
 ```ts
-import { subplots } from 'mpljs';
+import { subplots } from 'mpl';
 const [fig, ax] = subplots({ rc: { 'svg.fonttype': 'path' } });
 const x = Array.from({ length: 100 }, (_, i) => i / 10);
 ax.plot(x, x.map(Math.sin), 'o-', { label: 'sin(x)' });
