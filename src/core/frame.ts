@@ -40,4 +40,7 @@ export function frame(box: AxesBox, W: number, H: number, xlim: readonly [number
 }
 /** Data → top-left device px. */
 export const tx = (f: Frame, x: number): number => forward(f.xscale, x) * f.ax + f.cx;
-export const ty = (f: Frame, y: number): number => f.H - (forward(f.yscale, y) * f.ay + f.cy);
+/** Data → top-left device px. Matches Agg's concatenated affine (scale(1,-1)·translate(0,H) after
+ *  transData): y_out = −ay·v + (H − cy). Reassociating as H − (ay·v + cy) is 1 ulp off at some *.5 and
+ *  disagrees with PathSnapper's floor(v+0.5). */
+export const ty = (f: Frame, y: number): number => forward(f.yscale, y) * -f.ay + (f.H - f.cy);

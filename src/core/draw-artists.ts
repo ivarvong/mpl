@@ -273,7 +273,7 @@ export function drawFill(a: FillArtist, f: Frame, k: number, clip: Clip): Drawn 
 export function drawText(a: TextArtist, f: Frame, dpi: number, face: Face): Drawn {
   const k = pxPerPt(dpi);
   const x = a.coords === 'data' ? tx(f, a.x) : a.x * f.box.w + f.box.x0;
-  const y = a.coords === 'data' ? ty(f, a.y) : f.H - (a.y * f.box.h + f.box.b);
+  const y = a.coords === 'data' ? ty(f, a.y) : a.y * -f.box.h + (f.H - f.box.b);
   const layout = measure(a.text, a.sizePt, dpi, face, a.ha);
   const nodes = a.text === '' ? [] : labelNodes(placeLayout(layout, x, y, { kind: 'horizontal', ha: a.ha, va: a.va }), k, a.color);
   // Legend._auto_legend_data: every Text child's window extent is a loc='best' obstacle (an empty one is a point)
@@ -431,7 +431,7 @@ export function drawSpan(a: SpanArtist, f: Frame, k: number, clip: Clip): Drawn 
   const off = stroke.kind === 'some' ? snapOffset(stroke.value.width) : 0;
   if (a.orientation === 'vertical') {
     const x0 = tx(f, a.a0), x1 = tx(f, a.a1);
-    const y0 = f.H - (a.f0 * f.box.h + f.box.b), y1 = f.H - (a.f1 * f.box.h + f.box.b);
+    const y0 = a.f0 * -f.box.h + (f.H - f.box.b), y1 = a.f1 * -f.box.h + (f.H - f.box.b);
     const X0 = Math.floor(Math.min(x0, x1) + 0.5) + off, X1 = Math.floor(Math.max(x0, x1) + 0.5) + off;
     const Y0 = Math.floor(Math.min(y0, y1) + 0.5) + off, Y1 = Math.floor(Math.max(y0, y1) + 0.5) + off;
     const rect = rectNode(X0, Y0, X1 - X0, Y1 - Y0, ink.value);

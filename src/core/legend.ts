@@ -151,7 +151,7 @@ export function layoutLegend(inp: LegendInput, tracer: Tracer): LegendOutput {
       const bx = ox + hbx + cx + ix, by = oy + hby + cy + iy;
       const [hx, hy] = item.offsets[0], [txo, tyo] = item.offsets[1];
       nodes.push(...handleNodes(item.entry.handle, bx + hx, by + hy, { wPt: hWidthPt, hPt: hHeightPt, ydPt: descentPt, fsPt }, inp.markers, theme, k, tl, inp.W, H));
-      nodes.push({ kind: 'text', text: item.entry.label, x: bx + txo, y: tl(by + tyo), sizePx: fs, sizePt: fsPt, glyphs: measure(item.entry.label, fsPt, dpi, face).runs[0].glyphs, face: face.id, color: L.labelColor, rotation: 'horizontal' });
+      nodes.push({ kind: 'text', text: item.entry.label, x: bx + txo, y: tl(by + tyo), dy: 0, sizePx: fs, sizePt: fsPt, glyphs: measure(item.entry.label, fsPt, dpi, face).runs[0].glyphs, face: face.id, color: L.labelColor, rotation: 'horizontal' });
     });
   });
   return { box, code, nodes };

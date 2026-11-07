@@ -67,7 +67,7 @@ export type Node =
   | { readonly kind: 'path'; readonly segs: readonly Seg[]; readonly ink: Ink; readonly antialiased: boolean }
   | { readonly kind: 'polyline'; readonly xs: Float64Array; readonly ys: Float64Array; readonly stroke: Stroke }
   | { readonly kind: 'markers'; readonly shape: readonly Seg[]; readonly xs: Float64Array; readonly ys: Float64Array; readonly ink: Ink }
-  | { readonly kind: 'text'; readonly text: string; readonly x: number; readonly y: number; readonly sizePx: number; readonly sizePt: number;
+  | { readonly kind: 'text'; readonly text: string; readonly x: number; readonly y: number; readonly dy: number; readonly sizePx: number; readonly sizePt: number;
       readonly glyphs: readonly Glyph[]; readonly face: string; readonly color: Rgb; readonly rotation: Rotation }
   /** RGBA8 blit (imshow): top-left origin, straight alpha, size w×h. */
   | { readonly kind: 'image'; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly rgba: Uint8Array }

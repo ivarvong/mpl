@@ -109,9 +109,15 @@ base("hidpi_inter",
      ("text", [0.5, 0.82, "16:50 · 1x2 · (A) · A-B → C"], {"transform": {"$transform": "axes"}, "ha": "center", "fontsize": 14}),
      rc={"font.family": "Inter"})
 
-# figsize 6.4×5 avoids a half-pixel colorbar boundary that trips y-down vs y-up snap at dpi=300
+# 6.4×5 (kept) + stock 6.4×4.8 — both must stay pixel-exact after Agg snap/transform association fixes
 base("hidpi_imshow_colorbar",
      ("$subplots", [1, 1], {"figsize": [6.4, 5.0]}),
+     ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"label": "intensity"}),
+     ("set_title", ["imshow + colorbar"]))
+
+base("hidpi_imshow_colorbar_stock",
+     ("$subplots", [1, 1], {"figsize": [6.4, 4.8]}),
      ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}),
      ("fig.colorbar", [], {"label": "intensity"}),
      ("set_title", ["imshow + colorbar"]))
@@ -122,7 +128,7 @@ base("hidpi_concise",
 
 # one pro theme dashboard (largest / most stressed)
 D = DASH
-# figsize 13×7.2 avoids a log-tick superscript AA mismatch at dpi=200 on the stock 13×7 layout
+# 13×7.2 (kept) + stock 13×7 — both must stay pixel-exact after Agg snap/transform association fixes
 dash_calls = [("$subplots", [2, 3], {"figsize": [13, 7.2]}),
      ("fill_between", [D["hours"], D["p50"], D["p99"]], {"color": "C0", "alpha": 0.12, "linewidth": 0}),
      ("fill_between", [D["hours"], D["p50"], D["p95"]], {"color": "C0", "alpha": 0.22, "linewidth": 0}),
@@ -154,7 +160,34 @@ dash_calls += [("sca", [5]), ("scatter", [D["size"], D["dur"]], {"c": D["cache"]
              ("fig.subplots_adjust", [], {"left": 0.045, "right": 0.975, "bottom": 0.07, "top": 0.89, "wspace": 0.3, "hspace": 0.42})]
 base("hidpi_pro_dark_dashboard", *dash_calls, style="pro-dark")
 
+dash_stock = [("$subplots", [2, 3], {"figsize": [13, 7]}), *dash_calls[1:]]
+base("hidpi_pro_dark_dashboard_stock", *dash_stock, style="pro-dark")
+
+# Targeted *.5 snap sweep: line + imshow + log axes at figsizes/dpis that land half-pixel device coords
+# (Agg PathSnapper floor(v+0.5); y-up vs y-down association). Names encode figsize and dpi.
+SNAP_DPIS = (150, 200, 240, 250, 300)
+SNAP_FIGSIZES = ((6.4, 4.8), (6.4, 5.0), (8.0, 6.0), (7.0, 5.0))
+def snap_calls(fw, fh):
+    return [
+        ("$subplots", [1, 3], {"figsize": [fw, fh]}),
+        ("plot", [x, sx], {"label": "sin"}),
+        ("set_title", ["line"]), ("set_xlabel", ["x"]), ("set_ylabel", ["y"]),
+        ("sca", [1]),
+        ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}),
+        ("fig.colorbar", [], {"label": "z"}),
+        ("set_title", ["imshow"]),
+        ("sca", [2]),
+        ("plot", [x, [max(v, 1e-3) for v in cx]], {}),
+        ("set_yscale", ["log"]),
+        ("set_title", ["log y"]), ("set_xlabel", ["x"]),
+    ]
+for (fw, fh) in SNAP_FIGSIZES:
+    tag = f"{fw:g}x{fh:g}".replace(".", "p")
+    base(f"hidpi_snap_{tag}", *snap_calls(fw, fh))
+
 DPIS = (200, 300)
+# Per-base dpi overrides for the snap sweep (exercise half-pixel at more than 200/300)
+SNAP_BASE_DPIS = {f"hidpi_snap_{fw:g}x{fh:g}".replace(".", "p"): SNAP_DPIS for (fw, fh) in SNAP_FIGSIZES}
 
 def run_case(base_name, style, rc, calls, dpi):
     name = f"{base_name}_{dpi}"
@@ -218,7 +251,8 @@ def main():
     force = os.getenv("FORCE", "") != ""
     only = set(sys.argv[1:])
     for base_name, style, rc, calls in BASES:
-        for dpi in DPIS:
+        dpis = SNAP_BASE_DPIS.get(base_name, DPIS)
+        for dpi in dpis:
             name = f"{base_name}_{dpi}"
             if only and name not in only and base_name not in only:
                 continue
