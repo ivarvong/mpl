@@ -19,6 +19,8 @@ export type Colormap = {
   readonly trunc: Uint8Array;
   /** Agg/SVG (round): RGBA uint8, length 4·(N+3) */
   readonly round: Uint8Array;
+  /** matplotlib float LUT (rgba-stage): RGBA float32, length 4·(N+3) */
+  readonly rgba: Float32Array;
 };
 
 const hex2 = (v: number): string => v.toString(16).padStart(2, '0');
@@ -29,8 +31,19 @@ const registry = new Map<string, Colormap>();
 function bake(pack: CmapPack): Colormap {
   const raw = fromB64(pack.b64);
   const half = 4 * (pack.N + 3);
-  if (raw.length !== 2 * half) throw new Error(`colormap ${pack.name}: packed length ${raw.length}, want ${2 * half}`);
-  return { name: pack.name, N: pack.N, trunc: raw.subarray(0, half), round: raw.subarray(half) };
+  const want = 2 * half + half * 4; // trunc + round + float32
+  // Accept legacy trunc+round packs (no float32) by synthesizing rgba from round/255
+  if (raw.length === 2 * half) {
+    const trunc = raw.subarray(0, half), round = raw.subarray(half);
+    const rgba = new Float32Array(half);
+    for (let i = 0; i < half; i++) rgba[i] = round[i] / 255;
+    return { name: pack.name, N: pack.N, trunc, round, rgba };
+  }
+  if (raw.length !== want) throw new Error(`colormap ${pack.name}: packed length ${raw.length}, want ${want}`);
+  const trunc = raw.subarray(0, half);
+  const round = raw.subarray(half, 2 * half);
+  const rgba = new Float32Array(raw.buffer, raw.byteOffset + 2 * half, half);
+  return { name: pack.name, N: pack.N, trunc, round, rgba };
 }
 
 /** Register a baked pack as-is. `_r` variants are separate packs from matplotlib

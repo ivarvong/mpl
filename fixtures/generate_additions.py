@@ -33,6 +33,8 @@ def decode(a):
         return np.datetime64(a["$date"], "us")
     if isinstance(a, dict) and "$float" in a:
         return float(a["$float"])  # "nan", "inf", "-inf"
+    if isinstance(a, dict) and "$uint8rgb" in a:
+        return np.asarray(a["$uint8rgb"], dtype=np.uint8)
     if isinstance(a, list):
         out = [decode(v) for v in a]
         if out and all(isinstance(r, list) for r in out):
@@ -423,9 +425,36 @@ case("imshow_origin_extent_auto", ("imshow", [IM], {"cmap": "RdBu", "origin": "l
 
 # Downsampling: auto → hanning when data has more pixels than display
 import numpy as _np
-_Zbig = _np.linspace(0, 1, 80 * 80).reshape(80, 80).tolist()
+_Zbig = np.linspace(0, 1, 80 * 80).reshape(80, 80).tolist()
 case("imshow_downsample_auto", ("imshow", [_Zbig], {"cmap": "viridis"}))
 case("imshow_downsample_nearest", ("imshow", [_Zbig], {"cmap": "viridis", "interpolation": "nearest"}))
+# True downsample: 200×200 into a small axes → auto/hanning, rgba-stage
+_Zdown = np.linspace(0, 1, 200 * 200).reshape(200, 200).tolist()
+case("imshow_true_downsample_hanning",
+     ("$rc", [], {"figure.figsize": [1.2, 1.2]}),
+     ("imshow", [_Zdown], {"cmap": "viridis", "interpolation": "hanning"}))
+case("imshow_true_downsample_auto",
+     ("$rc", [], {"figure.figsize": [1.2, 1.2]}),
+     ("imshow", [_Zdown], {"cmap": "viridis"}))
+case("imshow_upsample_hanning",
+     ("$rc", [], {"figure.figsize": [2.0, 2.0]}),
+     ("imshow", [[[0, 1], [2, 3]]], {"cmap": "viridis", "interpolation": "hanning"}))
+# RGB / RGBA
+_rgb = [[[1, 0, 0], [0, 1, 0]], [[0, 0, 1], [1, 1, 0]]]
+_rgba = [[[1, 0, 0, 1], [0, 1, 0, 0.5]], [[0, 0, 1, 1], [1, 1, 0, 0.25]]]
+case("imshow_rgb_float", ("imshow", [_rgb], {"interpolation": "nearest"}))
+case("imshow_rgba_float", ("imshow", [_rgba], {"interpolation": "nearest"}))
+# uint8 RGB: encode as {"$uint8rgb": rows} so decode builds a uint8 array
+_rgb8 = {"$uint8rgb": [[[255, 0, 0], [0, 255, 0]], [[0, 0, 255], [255, 255, 0]]]}
+case("imshow_rgb_uint8", ("imshow", [_rgb8], {"interpolation": "nearest"}))
+# Colorbar extend + horizontal
+# extend triangles not yet pixel-exact — UnsupportedColorbarExtendError until ported
+# case("colorbar_extend_both",
+#      ("imshow", [IM], {"cmap": "viridis", "vmin": 2, "vmax": 6, "interpolation": "nearest"}),
+#      ("fig.colorbar", [], {"extend": "both"}))
+case("colorbar_horizontal",
+     ("imshow", [IM], {"cmap": "plasma", "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"orientation": "horizontal", "label": "h"}))
 
 
 def run_case(name, calls):

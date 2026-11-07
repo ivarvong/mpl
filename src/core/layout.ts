@@ -54,7 +54,11 @@ function roleImplies(role: AxesRole, hasTwin: boolean, theme: Theme, hidden: Axe
       case 'twinx':
         return { x: { kind: 'hidden' }, y: { kind: 'shown', sides: { near: false, far: true, labels: 'far' } }, patch: false, yOnRight: true };
       case 'colorbar':
-        // vertical colorbar: ticks+labels on the right; no x axis; patch on (solids need clip box)
+        // vertical: ticks on the right; horizontal: ticks on the bottom; patch on for solids
+        if (role.orientation === 'horizontal') {
+          return { x: { kind: 'shown', sides: { near: true, far: false, labels: 'near' } },
+                   y: { kind: 'hidden' }, patch: true, yOnRight: false };
+        }
         return { x: { kind: 'hidden' }, y: { kind: 'shown', sides: { near: false, far: true, labels: 'far' } }, patch: true, yOnRight: true };
       default: return assertNever(role);
     }

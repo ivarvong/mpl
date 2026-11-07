@@ -63,7 +63,7 @@ Add an Axes for a free SubplotSpec (colorbar cax).
 
 fig.colorbar(mappable, { ax, label, orientation, shrink, pad, fraction, aspect, location }) — steal space from ax via make_axes_gridspec (use_gridspec=True) and draw a continuous colorbar.
 
-Keyword arguments (unknown keys throw): `ax`, `location`, `orientation`, `fraction`, `pad`, `shrink`, `aspect`, `label`, `extend`
+Keyword arguments (unknown keys throw): `ax`, `orientation`, `location`, `fraction`, `pad`, `shrink`, `aspect`, `label`, `extend`
 
 ### `Figure.subplots(nrows, ncols, kwargs?)`
 

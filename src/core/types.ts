@@ -228,11 +228,13 @@ export type SpanArtist = {
 /** imshow: ScalarMappable raster over an extent in data coordinates. */
 export type ImageArtist = {
   readonly kind: 'image';
+  /** Scalar grid, or RGB(A) packed as Float64Array length rows*cols*channels with values in 0..1. */
   readonly values: Float64Array; readonly rows: number; readonly cols: number;
+  readonly channels: 1 | 3 | 4;
   readonly cmapName: string; readonly vmin: number; readonly vmax: number; readonly normKind: 'linear' | 'log';
   readonly extent: readonly [number, number, number, number];
   readonly origin: 'upper' | 'lower';
-  readonly interpolation: 'nearest' | 'none' | 'antialiased' | 'auto' | 'hanning';
+  readonly interpolation: 'nearest' | 'none' | 'antialiased' | 'auto' | 'hanning' | 'bilinear';
   readonly alpha: number; readonly label: Label; readonly clip: boolean; readonly zorder: number;
 };
 export type Artist = LineArtist | BarArtist | FillArtist | TextArtist | ScatterArtist | AnnotationArtist | SpanArtist
@@ -290,7 +292,7 @@ export type LegendSpec =
 export type LegendMarkers = { readonly scatterPoints: number; readonly scatterYOffsets: readonly number[]; readonly markerScale: number };
 
 /** A twinx Axes shares its host's x axis; its y axis, label and offset text live on the right. */
-export type AxesRole = { readonly kind: 'primary' } | { readonly kind: 'twinx'; readonly host: number } | { readonly kind: 'colorbar' };
+export type AxesRole = { readonly kind: 'primary' } | { readonly kind: 'twinx'; readonly host: number } | { readonly kind: 'colorbar'; readonly orientation: 'vertical' | 'horizontal' };
 
 /** Fractions of the figure: left, bottom, right, top. */
 export type Position = readonly [number, number, number, number];

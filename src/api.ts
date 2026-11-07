@@ -111,31 +111,66 @@ function parseSeries(v: unknown, what: string): Result<Series> {
 }
 
 
-function parseImageRow(row: unknown, r: number, expect: number): Float64Array {
-  if (row instanceof Float64Array) {
-    if (expect >= 0 && row.length !== expect) throw new TypeError(`imshow: ragged rows (row 0 has ${expect}, row ${r} has ${row.length})`);
-    return row;
+function parseImageGrid(Z: unknown): {
+  readonly values: Float64Array; readonly rows: number; readonly cols: number; readonly channels: 1 | 3 | 4;
+} {
+  // Accept {"$uint8rgb": rows} from fixtures / replay
+  if (isPlainObject(Z) && Object.prototype.hasOwnProperty.call(Z, '$uint8rgb')) {
+    const rowsArr = Z['$uint8rgb'];
+    if (!Array.isArray(rowsArr) || rowsArr.length === 0) throw new TypeError('imshow: $uint8rgb must be a non-empty array');
+    return parseImageGrid(rowsArr.map((row: unknown) => {
+      if (!Array.isArray(row)) throw new TypeError('imshow: bad $uint8rgb row');
+      return row.map((pix: unknown) => {
+        if (!Array.isArray(pix)) throw new TypeError('imshow: bad $uint8rgb pixel');
+        return pix.map((c: unknown) => (typeof c === 'number' ? c / 255 : c));
+      });
+    }));
   }
-  if (!Array.isArray(row)) throw new TypeError('imshow: Z must be a 2-D array');
-  if (expect >= 0 && row.length !== expect) throw new TypeError(`imshow: ragged rows (row 0 has ${expect}, row ${r} has ${row.length})`);
-  const out = new Float64Array(row.length);
-  for (let c = 0; c < row.length; c++) {
-    const v = row[c];
-    if (typeof v !== 'number') throw new TypeError(`imshow: Z[${r}][${c}] must be a number`);
-    out[c] = v;
-  }
-  return out;
-}
-
-function parseImageGrid(Z: unknown): { readonly values: Float64Array; readonly rows: number; readonly cols: number } {
   if (!Array.isArray(Z) || Z.length === 0) throw new TypeError('imshow: Z must be a non-empty 2-D array');
   const rows = Z.length;
-  const row0 = parseImageRow(Z[0], 0, -1);
+  const row0 = Z[0];
+  if (!Array.isArray(row0) || row0.length === 0) throw new TypeError('imshow: Z must be a 2-D array');
+  const cell0 = row0[0];
+  const isRgb = Array.isArray(cell0);
+  if (!isRgb) {
+    // scalar grid
+    const cols = row0.length;
+    const values = new Float64Array(rows * cols);
+    for (let r = 0; r < rows; r++) {
+      const row = Z[r];
+      if (!Array.isArray(row) || row.length !== cols) throw new TypeError(`imshow: ragged rows`);
+      for (let c = 0; c < cols; c++) {
+        const v = row[c];
+        if (typeof v !== 'number') throw new TypeError(`imshow: Z[${r}][${c}] must be a number`);
+        values[r * cols + c] = v;
+      }
+    }
+    return { values, rows, cols, channels: 1 };
+  }
+  const ch = cell0.length;
+  if (ch !== 3 && ch !== 4) throw new TypeError('imshow: RGB(A) pixels must have 3 or 4 channels');
   const cols = row0.length;
-  const values = new Float64Array(rows * cols);
-  values.set(row0, 0);
-  for (let r = 1; r < rows; r++) values.set(parseImageRow(Z[r], r, cols), r * cols);
-  return { values, rows, cols };
+  const values = new Float64Array(rows * cols * ch);
+  let maxAbs = 0;
+  for (let r = 0; r < rows; r++) {
+    const row = Z[r];
+    if (!Array.isArray(row) || row.length !== cols) throw new TypeError('imshow: ragged RGB rows');
+    for (let c = 0; c < cols; c++) {
+      const pix = row[c];
+      if (!Array.isArray(pix) || pix.length !== ch) throw new TypeError(`imshow: Z[${r}][${c}] bad RGB pixel`);
+      for (let k = 0; k < ch; k++) {
+        const v = pix[k];
+        if (typeof v !== 'number') throw new TypeError(`imshow: Z[${r}][${c}][${k}] must be a number`);
+        values[(r * cols + c) * ch + k] = v;
+        if (Math.abs(v) > maxAbs) maxAbs = Math.abs(v);
+      }
+    }
+  }
+  // uint8 0..255 → float 0..1 (matplotlib)
+  if (maxAbs > 1) {
+    for (let i = 0; i < values.length; i++) values[i] = values[i] / 255;
+  }
+  return { values, rows, cols, channels: ch as 3 | 4 };
 }
 
 /** Broadcast a scalar or array kwarg to n values. */
@@ -1100,7 +1135,7 @@ export class Axes {
    */
   imshow(Z: unknown, kwargs: Kwargs = {}): ImageArtist {
     const kw = new KwReader(kwargs, 'imshow');
-    const { values, rows, cols } = parseImageGrid(Z);
+    const { values, rows, cols, channels } = parseImageGrid(Z);
     const cmap = kw.read(['cmap'], parseColormap, () => unwrap(parseColormap('viridis')));
     const vminO = kw.read(['vmin'], (v): Result<Option<number>> => (typeof v === 'number' && Number.isFinite(v) ? ok(some(v)) : err('vmin must be a number')), (): Option<number> => none);
     const vmaxO = kw.read(['vmax'], (v): Result<Option<number>> => (typeof v === 'number' && Number.isFinite(v) ? ok(some(v)) : err('vmax must be a number')), (): Option<number> => none);
@@ -1118,8 +1153,8 @@ export class Axes {
     }
     const origin = kw.read(['origin'], (v): Result<'upper' | 'lower'> => (v === 'upper' || v === 'lower' ? ok(v) : err("origin must be 'upper' or 'lower'")), () => 'upper' as const);
     const interp = kw.read(['interpolation'], (v): Result<ImageArtist['interpolation']> => {
-      if (v === 'nearest' || v === 'none' || v === 'antialiased' || v === 'auto' || v === 'hanning') return ok(v);
-      return err("interpolation must be 'nearest'|'none'|'antialiased'|'auto'|'hanning'");
+      if (v === 'nearest' || v === 'none' || v === 'antialiased' || v === 'auto' || v === 'hanning' || v === 'bilinear') return ok(v);
+      return err("interpolation must be 'nearest'|'none'|'antialiased'|'auto'|'hanning'|'bilinear'");
     }, () => 'auto' as const);
     const extent = kw.read(['extent'], (v): Result<readonly [number, number, number, number]> => {
       if (!Array.isArray(v) || v.length !== 4 || !v.every((x) => typeof x === 'number')) return err('extent must be [left, right, bottom, top]');
@@ -1136,7 +1171,7 @@ export class Axes {
     if (aspect === 'equal' || aspect === 'auto' || (typeof aspect === 'number' && aspect > 0)) this.set_aspect(aspect);
     else this.set_aspect('equal');
     const im: ImageArtist = {
-      kind: 'image', values, rows, cols, cmapName: cmap.name, vmin: lo, vmax: hi,
+      kind: 'image', values, rows, cols, channels, cmapName: cmap.name, vmin: lo, vmax: hi,
       normKind: normParsed.kind === 'log' ? 'log' : 'linear',
       extent, origin, interpolation: interp, alpha, label: lbl, clip, zorder,
     };
@@ -1612,7 +1647,7 @@ function makeAxesGridspec(parent: Axes, opts: {
   }
   parent.set_subplotspec(ssMain);
   parent.set_anchor(panchor);
-  const cax = parent.fig.addAxesFromSpec(ssCb, { kind: 'colorbar' });
+  const cax = parent.fig.addAxesFromSpec(ssCb, { kind: 'colorbar', orientation: (location === 'left' || location === 'right') ? 'vertical' : 'horizontal' });
   cax.set_anchor(anchor);
   cax.set_box_aspect(aspect);
   cax.set_aspect('auto');
@@ -1738,18 +1773,27 @@ export class Figure {
       if (this.axes.length === 0) throw new Error('colorbar: no Axes to steal space from');
       return this.axes[0];
     });
-    const location = kw.read(['location'], (v): Result<'right' | 'left' | 'top' | 'bottom'> =>
-      (v === 'right' || v === 'left' || v === 'top' || v === 'bottom' ? ok(v) : err("location must be 'right'|'left'|'top'|'bottom'")),
-      () => 'right' as const);
     const orientationKw = kw.read(['orientation'], (v): Result<Option<'vertical' | 'horizontal'>> =>
       (v === 'vertical' || v === 'horizontal' ? ok(some(v)) : err("orientation must be 'vertical'|'horizontal'")),
       (): Option<'vertical' | 'horizontal'> => none);
+    const locationDefault: 'right' | 'left' | 'top' | 'bottom' =
+      orientationKw.kind === 'some' && orientationKw.value === 'horizontal' ? 'bottom'
+      : orientationKw.kind === 'some' && orientationKw.value === 'vertical' ? 'right'
+      : 'right';
+    const location = kw.read(['location'], (v): Result<'right' | 'left' | 'top' | 'bottom'> =>
+      (v === 'right' || v === 'left' || v === 'top' || v === 'bottom' ? ok(v) : err("location must be 'right'|'left'|'top'|'bottom'")),
+      () => locationDefault);
     const fraction = kw.read(['fraction'], num('fraction'), () => 0.15);
     const pad = kw.read(['pad'], num('pad'), () => (location === 'left' ? 0.1 : location === 'bottom' ? 0.15 : 0.05));
     const shrink = kw.read(['shrink'], num('shrink'), () => 1.0);
     const aspectN = kw.read(['aspect'], num('aspect'), () => 20);
     const cblabel = kw.read(['label'], (v): Result<string> => ok(str(v)), () => '');
-    kw.read(['extend'], (v): Result<string> => ok(str(v)), () => 'neither');
+    const extend = kw.read(['extend'], (v): Result<'neither' | 'both' | 'min' | 'max'> =>
+      (v === 'neither' || v === 'both' || v === 'min' || v === 'max' ? ok(v)
+        : err("extend must be 'neither'|'both'|'min'|'max'")), () => 'neither' as const);
+    if (extend !== 'neither') {
+      throw new Error(`UnsupportedColorbarExtendError: extend=${JSON.stringify(extend)} is not yet pixel-exact; only 'neither' is supported`);
+    }
     kw.done();
     const locDefaults = {
       right: { anchor: [0.0, 0.5] as const, panchor: [1.0, 0.5] as const },

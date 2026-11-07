@@ -31,7 +31,9 @@ def pack(name: str) -> tuple[str, int, str]:
     lut[c.N + 2] = c(np.array([np.nan]))[0]
     trunc = np.clip(lut * 255, 0, 255).astype(np.uint8)
     rnd = np.clip(np.floor(lut * 255 + 0.5), 0, 255).astype(np.uint8)
-    raw = trunc.tobytes() + rnd.tobytes()
+    # float32 LUT for rgba-stage resampling (matplotlib to_rgba float path)
+    fl = lut.astype(np.float32)
+    raw = trunc.tobytes() + rnd.tobytes() + fl.tobytes()
     return name, int(c.N), base64.b64encode(raw).decode("ascii")
 
 def e2e(name, norm, xs):

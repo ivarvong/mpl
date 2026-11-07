@@ -2,5 +2,5 @@
 // Base and _r are both baked from matplotlib (LinearSegmentedColormap.reversed
 // rebuilds segmentdata; a LUT flip is NOT equivalent).
 import type { CmapPack } from '../core/colormap.ts';
-export const tab10: CmapPack = { name: "tab10", N: 10, b64: "H3e0//9/Dv8soCz/1ico/5Rnvf+MVkv/43fC/39/f/+8vSL/F77P/x93tP8Xvs//AAAAAB93tP//fw7/LKAs/9YnKP+UZ73/jFZL/+N3wv9/f3//vL0i/xe+z/8fd7T/F77P/wAAAAA=" };
-export const tab10_r: CmapPack = { name: "tab10_r", N: 10, b64: "F77P/7y9Iv9/f3//43fC/4xWS/+UZ73/1ico/yygLP//fw7/H3e0/xe+z/8fd7T/AAAAABe+z/+8vSL/f39//+N3wv+MVkv/lGe9/9YnKP8soCz//38O/x93tP8Xvs//H3e0/wAAAAA=" };
+export const tab10: CmapPack = { name: "tab10", N: 10, b64: "H3e0//9/Dv8soCz/1ico/5Rnvf+MVkv/43fC/39/f/+8vSL/F77P/x93tP8Xvs//AAAAAB93tP//fw7/LKAs/9YnKP+UZ73/jFZL/+N3wv9/f3//vL0i/xe+z/8fd7T/F77P/wAAAAD5+Pg97+7uPrW0ND8AAIA/AACAP//+/j7h4GA9AACAP7GwMD6hoCA/sbAwPgAAgD/X1lY/nZwcPqGgID4AAIA/lZQUP8/Ozj6+vT0/AACAP42MDD+trKw+l5aWPgAAgD/k42M/7+7uPsPCQj8AAIA///7+Pv/+/j7//v4+AACAP728PD++vT0/iYgIPgAAgD+5uLg9v74+P9DPTz8AAIA/+fj4Pe/u7j61tDQ/AACAP7m4uD2/vj4/0M9PPwAAgD8AAAAAAAAAAAAAAAAAAAAA" };
+export const tab10_r: CmapPack = { name: "tab10_r", N: 10, b64: "F77P/7y9Iv9/f3//43fC/4xWS/+UZ73/1ico/yygLP//fw7/H3e0/xe+z/8fd7T/AAAAABe+z/+8vSL/f39//+N3wv+MVkv/lGe9/9YnKP8soCz//38O/x93tP8Xvs//H3e0/wAAAAC5uLg9v74+P9DPTz8AAIA/vbw8P769PT+JiAg+AACAP//+/j7//v4+//7+PgAAgD/k42M/7+7uPsPCQj8AAIA/jYwMP62srD6XlpY+AACAP5WUFD/Pzs4+vr09PwAAgD/X1lY/nZwcPqGgID4AAIA/sbAwPqGgID+xsDA+AACAPwAAgD///v4+4eBgPQAAgD/5+Pg97+7uPrW0ND8AAIA/ubi4Pb++Pj/Qz08/AACAP/n4+D3v7u4+tbQ0PwAAgD8AAAAAAAAAAAAAAAAAAAAA" };
