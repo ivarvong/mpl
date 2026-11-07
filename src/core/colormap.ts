@@ -20,8 +20,8 @@ export type Colormap = {
   readonly trunc: Uint8Array;
   /** Agg/SVG (round): RGBA uint8, length 4·(N+3) */
   readonly round: Uint8Array;
-  /** matplotlib float LUT (rgba-stage): RGBA float32, length 4·(N+3) */
-  readonly rgba: Float32Array;
+  /** Exact matplotlib float32 `_lut` for rgba-stage AGG resample; none until registerColormapRgba. */
+  readonly rgba: Option<Float32Array>;
 };
 
 const hex2 = (v: number): string => v.toString(16).padStart(2, '0');
@@ -32,14 +32,12 @@ const registry = new Map<string, Colormap>();
 function bake(pack: CmapPack): Colormap {
   const raw = fromB64(pack.b64);
   const nComp = 4 * (pack.N + 3);
-  // trunc + round (shipped packs): synthesize rgba from round/255; exact float32 attached via registerColormapRgba
+  // trunc + round: nearest / data-stage / mapBytes. Exact float32 comes from registerColormapRgba.
   if (raw.length === 2 * nComp) {
     const trunc = raw.subarray(0, nComp), round = raw.subarray(nComp);
-    const rgba = new Float32Array(nComp);
-    for (let i = 0; i < nComp; i++) rgba[i] = round[i] / 255;
-    return { name: pack.name, N: pack.N, trunc, round, rgba };
+    return { name: pack.name, N: pack.N, trunc, round, rgba: none };
   }
-  // float32-only pack: derive trunc/round (may disagree with matplotlib on a few entries due to f32)
+  // float32-only pack: derive trunc/round and keep exact rgba
   if (raw.length === nComp * 4) {
     const rgba = new Float32Array(raw.buffer, raw.byteOffset, nComp);
     const trunc = new Uint8Array(nComp);
@@ -50,7 +48,7 @@ function bake(pack: CmapPack): Colormap {
       const r = Math.floor(v + 0.5);
       round[i] = r < 0 ? 0 : r > 255 ? 255 : r;
     }
-    return { name: pack.name, N: pack.N, trunc, round, rgba };
+    return { name: pack.name, N: pack.N, trunc, round, rgba: some(rgba) };
   }
   throw new Error(`colormap ${pack.name}: packed length ${raw.length}, want ${2 * nComp} (trunc+round) or ${nComp * 4} (float32)`);
 }
@@ -66,20 +64,60 @@ export function registerColormaps(...packs: readonly CmapPack[]): void {
   for (const p of packs) put(bake(p));
 }
 
+
+/** File stem + export name for a colormap (RdBu → rdBu / rdBu_r). */
+function cmapImport(name: string): { readonly file: string; readonly binding: string } {
+  const base = name.endsWith('_r') ? name.slice(0, -2) : name;
+  const file = base === 'RdBu' ? 'rdBu' : base.toLowerCase();
+  const binding = name === 'RdBu' ? 'rdBu' : name === 'RdBu_r' ? 'rdBu_r'
+    : name.toLowerCase() === name ? name : file + (name.endsWith('_r') ? '_r' : '');
+  return { file, binding };
+}
+
+/**
+ * rgba-stage imshow needs the exact matplotlib float32 `_lut`. Without registerColormapRgba the
+ * library must not silently use round/255 (that diverges from Agg by thousands of pixels).
+ */
+export class MissingColormapRgbaError extends Error {
+  readonly cmap: string;
+  readonly module: string;
+  readonly binding: string;
+  constructor(name: string) {
+    const { file, binding } = cmapImport(name);
+    const rgbaBinding = `${binding}_rgba`;
+    const mod = `mpljs/colormaps/${file}.rgba`;
+    super(`mpljs: colormap '${name}' has no float32 LUT for rgba-stage resampling. Register it before rendering:\n` +
+      `  import { registerColormapRgba } from 'mpljs';\n` +
+      `  import { ${rgbaBinding} } from '${mod}';\n` +
+      `  registerColormapRgba(${rgbaBinding});`);
+    this.name = 'MissingColormapRgbaError';
+    this.cmap = name; this.module = mod; this.binding = rgbaBinding;
+  }
+}
+
+/** Float32 `_lut` for rgba-stage; throws MissingColormapRgbaError if not registered. */
+export function requireColormapRgba(cmap: Colormap): Float32Array {
+  if (cmap.rgba.kind === 'some') return cmap.rgba.value;
+  throw new MissingColormapRgbaError(cmap.name);
+}
+
 /** Float32 LUT sidecar (matplotlib `_lut`) for rgba-stage AGG resampling. */
 export type CmapRgbaPack = { readonly name: string; readonly N: number; readonly b64: string };
 
-/** Replace a registered colormap's rgba float LUT with the exact matplotlib float32 `_lut`. */
+/**
+ * Attach exact float32 `_lut` packs. Packs whose colormap is not registered are skipped
+ * (so `registerColormapRgba(plasma_rgba, plasma_r_rgba)` after only `registerColormaps(plasma)` is fine).
+ */
 export function registerColormapRgba(...packs: readonly CmapRgbaPack[]): void {
   for (const p of packs) {
     const hit = lookup(registry, p.name);
-    if (hit.kind === 'none') throw new Error(`registerColormapRgba: ${p.name} is not registered`);
+    if (hit.kind === 'none') continue;
     const c = hit.value;
     const nComp = 4 * (p.N + 3);
     const raw = fromB64(p.b64);
     if (raw.length !== nComp * 4) throw new Error(`registerColormapRgba ${p.name}: length ${raw.length}, want ${nComp * 4}`);
     const rgba = new Float32Array(raw.buffer, raw.byteOffset, nComp);
-    registry.set(p.name, { name: c.name, N: c.N, trunc: c.trunc, round: c.round, rgba });
+    registry.set(p.name, { name: c.name, N: c.N, trunc: c.trunc, round: c.round, rgba: some(rgba) });
   }
 }
 
@@ -95,10 +133,9 @@ export function getColormap(name: string): Result<Colormap> {
   if (!CMAP_NAMES.some((n) => n === base)) {
     return err(`Unknown colormap name '${name}'. Available: ${CMAP_NAMES.join(', ')} (and _r)`);
   }
-  const file = base === 'RdBu' ? 'rdBu' : base.toLowerCase();
-  const exp = name === 'RdBu' ? 'rdBu' : name === 'RdBu_r' ? 'rdBu_r' : name.toLowerCase() === name ? name : file + (name.endsWith('_r') ? '_r' : '');
+  const { file, binding } = cmapImport(name);
   return err(`Colormap '${name}' is not registered. Import it and registerColormaps(…): `
-    + `import { ${exp} } from 'mpljs/colormaps/${file}'`);
+    + `import { ${binding} } from 'mpljs/colormaps/${file}'`);
 }
 
 export const availableColormaps = (): readonly string[] =>

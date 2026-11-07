@@ -231,6 +231,19 @@ fig.colorbar(im, { label: 'value' });
 
 ![imshow + colorbar](docs/images/imshow_colorbar.png)
 
+When `imshow` downsamples with hanning/bilinear (matplotlib's rgba-stage), it needs the colormap's exact float32 LUT. Viridis ships that LUT built in; for other colormaps register the `.rgba` sidecar alongside the base pack, or rendering throws `MissingColormapRgbaError` instead of silently approximating:
+
+```ts
+import { registerColormapRgba, registerColormaps, subplots } from 'mpljs';
+import { plasma } from 'mpljs/colormaps/plasma';
+import { plasma_rgba } from 'mpljs/colormaps/plasma.rgba';
+
+registerColormaps(plasma);
+registerColormapRgba(plasma_rgba);  // also accept plasma_r_rgba; skipped if plasma_r is not registered
+```
+
+Nearest interpolation and data-stage resampling use only the trunc/round LUTs and do not need the `.rgba` module.
+
 `set_aspect('equal' | 'auto' | number)` shrinks the Axes box (adjustable='box'). Scatter accepts `zorder` and a numeric `c` with `cmap`/`norm`/`vmin`/`vmax`.
 
 ## Commands

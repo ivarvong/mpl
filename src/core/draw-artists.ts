@@ -11,7 +11,7 @@ import { MARKERS } from './data/markers.ts';
 import { arrowExtents, yaArrowPath } from './arrow.ts';
 import { lookup } from './std.ts';
 import { forward, forwardAll, inverse } from './scale.ts';
-import { applyNorm, autoscaleNorm, getColormap, logNorm, mapBytes, normalize } from './colormap.ts';
+import { applyNorm, autoscaleNorm, getColormap, logNorm, mapBytes, normalize, requireColormapRgba } from './colormap.ts';
 import {
   type Aff, interpolationStage, resampleAffineFloat, resampleAffineRgba,
   resolveInterp, UnsupportedInterpolationError,
@@ -543,7 +543,7 @@ export function drawImage(a: ImageArtist, f: Frame, clip: Clip): Drawn {
       // rgba stage: colormap first, then AGG-resample premultiplied float32 RGBA
       // matplotlib rgba-stage: to_rgba (float LUT), then resample, then bytes=True (trunc)
       const srcRgba = new Float32Array(a.cols * a.rows * 4);
-      const fl = cmap.rgba;
+      const fl = requireColormapRgba(cmap);
       for (let i = 0; i < mid.length; i++) {
         const x = mid[i];
         let li: number;
