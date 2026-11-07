@@ -1,4 +1,4 @@
-// Side-by-side: matplotlib Agg | mpljs | difference (white = identical, red = |Δ|·32).
+// Side-by-side: matplotlib Agg | mpl | difference (white = identical, red = |Δ|·32).
 //   node tools/png_showcase.ts <outdir> <fixture...>
 import { readFileSync, writeFileSync } from 'node:fs';
 import { build, loadFixture } from './replay.ts';
@@ -21,7 +21,7 @@ for (const name of names) {
     px[o] = 255; px[o + 1] = v; px[o + 2] = v; px[o + 3] = 255;
   }
   writeFileSync(`${out}/${name}.sxs.png`, encodePNGSync(canvasOf(S, H, 0, px)));
-  writeFileSync(`${out}/${name}.mpljs.png`, encodePNGSync(ours));
+  writeFileSync(`${out}/${name}.mpl.png`, encodePNGSync(ours));
   const r = compare(ref, ours);
   console.log(`${name}: ${r.diff === 0 ? 'byte-identical' : `${r.diff} px differ, max |Δ| ${r.maxd}`}`);
 }

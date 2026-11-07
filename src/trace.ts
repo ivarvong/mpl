@@ -58,7 +58,7 @@ class LiveSpan implements SpanHandle {
 
 export class Tracer {
   enabled = false;
-  serviceName = 'mpljs';
+  serviceName = 'mpl';
   private finished: FinishedSpan[] = [];
   private stack: LiveSpan[] = [];
   private traceId = hex(16);
@@ -106,7 +106,7 @@ export class Tracer {
   /** OTLP/JSON ExportTraceServiceRequest. */
   toOTLP(): object {
     return { resourceSpans: [{ resource: { attributes: [otlpAttr('service.name', this.serviceName)] },
-      scopeSpans: [{ scope: { name: 'mpljs' }, spans: this.finished.map(otlpSpan) }] }] };
+      scopeSpans: [{ scope: { name: 'mpl' }, spans: this.finished.map(otlpSpan) }] }] };
   }
   /** Append one OTLP Span JSON per line (Node only); returns the count and clears. */
   async flush(path: string): Promise<number> {

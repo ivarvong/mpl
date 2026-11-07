@@ -121,9 +121,9 @@ export class MissingColormapRgbaError extends Error {
   constructor(name: string) {
     const { file, binding } = cmapImport(name);
     const rgbaBinding = `${binding}_rgba`;
-    const mod = `mpljs/colormaps/${file}.rgba`;
-    super(`mpljs: colormap '${name}' has no float32 LUT for rgba-stage resampling. Register it before rendering:\n` +
-      `  import { registerColormapRgba } from 'mpljs';\n` +
+    const mod = `mpl/colormaps/${file}.rgba`;
+    super(`mpl: colormap '${name}' has no float32 LUT for rgba-stage resampling. Register it before rendering:\n` +
+      `  import { registerColormapRgba } from 'mpl';\n` +
       `  import { ${rgbaBinding} } from '${mod}';\n` +
       `  registerColormapRgba(${rgbaBinding});`);
     this.name = 'MissingColormapRgbaError';
@@ -169,7 +169,7 @@ export function getColormap(name: string): Result<Colormap> {
   }
   const { file, binding } = cmapImport(name);
   return err(`Colormap '${name}' is not registered. Import it and registerColormaps(…): `
-    + `import { ${binding} } from 'mpljs/colormaps/${file}'`);
+    + `import { ${binding} } from 'mpl/colormaps/${file}'`);
 }
 
 export const availableColormaps = (): readonly string[] =>

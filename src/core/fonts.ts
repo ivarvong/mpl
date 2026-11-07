@@ -114,7 +114,7 @@ function load(d: FaceData): Face {
 }
 
 // ------------------------------------------------------------------ the face registry
-// Each shipped face is its own module (mpljs/fonts/<name>), so a bundle carries only the faces an
+// Each shipped face is its own module (mpl/fonts/<name>), so a bundle carries only the faces an
 // application imports. DejaVu Sans, matplotlib's default face, is always registered; the others are
 // passed to registerFonts(). A face decodes on first use. Font selection always runs over the whole
 // catalog, as matplotlib's does over its installed fonts, so registering faces never changes which
@@ -126,15 +126,15 @@ export class FontNotLoadedError extends Error {
   readonly face: FaceId;
   readonly family: string;
   readonly weight: number;
-  /** the module that exports it, e.g. "mpljs/fonts/dejavu-sans-bold" */
+  /** the module that exports it, e.g. "mpl/fonts/dejavu-sans-bold" */
   readonly module: string;
   /** its export name in that module, e.g. "dejavuSansBold" */
   readonly binding: string;
   constructor(e: CatalogEntry) {
-    super(`mpljs: font ${e.family} weight ${e.weight} is not loaded. Register it before rendering:\n` +
-      `  import { registerFonts } from 'mpljs';\n  import { ${e.binding} } from 'mpljs/fonts/${e.module}';\n  registerFonts(${e.binding});`);
+    super(`mpl: font ${e.family} weight ${e.weight} is not loaded. Register it before rendering:\n` +
+      `  import { registerFonts } from 'mpl';\n  import { ${e.binding} } from 'mpl/fonts/${e.module}';\n  registerFonts(${e.binding});`);
     this.name = 'FontNotLoadedError';
-    this.face = e.id; this.family = e.family; this.weight = e.weight; this.module = `mpljs/fonts/${e.module}`; this.binding = e.binding;
+    this.face = e.id; this.family = e.family; this.weight = e.weight; this.module = `mpl/fonts/${e.module}`; this.binding = e.binding;
   }
 }
 
@@ -196,7 +196,7 @@ export function resolveFace(families: readonly string[], weight: number): Face {
 /** The face a laid-out text node names (its Face.id). */
 export function faceById(id: string): Face {
   for (const e of FACE_CATALOG) if (e.id === id) return getFace(e);
-  throw new Error(`mpljs: unknown font face ${JSON.stringify(id)}`);
+  throw new Error(`mpl: unknown font face ${JSON.stringify(id)}`);
 }
 
 // ------------------------------------------------------------------ FreeType fixed point
@@ -350,7 +350,7 @@ const inFontFile = (face: Face, cp: number): boolean => {
   return false;
 };
 /** Why a character has no baked glyph: the font lacks it (matplotlib warns and draws .notdef), or
- *  matplotlib would draw a real glyph that mpljs does not bundle (we draw .notdef, so say so). */
+ *  matplotlib would draw a real glyph that mpl does not bundle (we draw .notdef, so say so). */
 export type MissingGlyph =
   | { readonly kind: 'not-in-font'; readonly cp: number; readonly family: string }
   | { readonly kind: 'not-bundled'; readonly cp: number; readonly family: string };
@@ -359,7 +359,7 @@ export const missingGlyphMessage = (m: MissingGlyph): string => {
   switch (m.kind) {
     // ft2font.cpp ft_glyph_warn: "Glyph %lu (%s) missing from font(s) %s." (Python adds \N{NAME})
     case 'not-in-font': return `Glyph ${m.cp} (${ch}) missing from font(s) ${m.family}.`;
-    case 'not-bundled': return `Glyph ${m.cp} (${ch}) is in ${m.family} but not bundled with mpljs; drawing .notdef. See scripts/gen_fonts.py.`;
+    case 'not-bundled': return `Glyph ${m.cp} (${ch}) is in ${m.family} but not bundled with mpl; drawing .notdef. See scripts/gen_fonts.py.`;
     default: return assertNever(m);
   }
 };

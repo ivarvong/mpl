@@ -1,5 +1,5 @@
-"""Bake font faces into typed tables for mpljs: build/fonts/<slug>.json, which scripts/encode_fonts.ts
-then packs losslessly into the per-face modules src/fonts/<slug>.ts (mpljs/fonts/<slug>)
+"""Bake font faces into typed tables for mpl: build/fonts/<slug>.json, which scripts/encode_fonts.ts
+then packs losslessly into the per-face modules src/fonts/<slug>.ts (mpl/fonts/<slug>)
 
 Each face carries what matplotlib 3.11's text path needs, keyed by glyph id:
   cmap      char -> gid for the supported character set
@@ -286,7 +286,7 @@ def bake(slug, family, weight, path):
     else:
         typo = [t["hhea"].ascent, -t["hhea"].descent, t["hhea"].lineGap]
     # every code point the font maps, as [first, last] runs: tells "not in this font" (matplotlib's
-    # missing-glyph warning) apart from "in the font but not baked into mpljs"
+    # missing-glyph warning) apart from "in the font but not baked into mpl"
     cover = []
     for cp in sorted(cmap):
         if cover and cover[-1][1] == cp - 1:

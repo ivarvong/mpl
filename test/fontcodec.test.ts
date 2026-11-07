@@ -50,8 +50,8 @@ const err = (f: () => unknown): FontNotLoadedError => {
   assert.fail('expected FontNotLoadedError');
 };
 const bold = err(() => draw({}, 'bold', { fontweight: 'bold' }));
-assert.equal(bold.face, 'DejaVu Sans:700'); assert.equal(bold.module, 'mpljs/fonts/dejavu-sans-bold'); assert.equal(bold.binding, 'dejavuSansBold');
-assert.match(bold.message, /import \{ dejavuSansBold \} from 'mpljs\/fonts\/dejavu-sans-bold';/);
+assert.equal(bold.face, 'DejaVu Sans:700'); assert.equal(bold.module, 'mpl/fonts/dejavu-sans-bold'); assert.equal(bold.binding, 'dejavuSansBold');
+assert.match(bold.message, /import \{ dejavuSansBold \} from 'mpl\/fonts\/dejavu-sans-bold';/);
 assert.equal(err(() => draw({ 'font.family': 'serif' }, 'serif', {})).face, 'DejaVu Serif:400', 'generic serif resolves to DejaVu Serif, never back to sans');
 // selection runs over every shipped face: with only Inter Regular registered, weight 500 still selects
 // Inter Medium (as matplotlib would) and fails, rather than drawing the nearest registered weight
@@ -62,6 +62,6 @@ registerFonts(interMedium, dejavuSansBold, interMedium);
 assert.ok(draw({ 'font.family': 'Inter' }, 'medium', { fontweight: 500 }).includes('<svg'));
 assert.ok(draw({}, 'bold', { fontweight: 'bold' }).includes('<svg'));
 assert.deepEqual(registeredFonts(), ['DejaVu Sans:400', 'DejaVu Sans:700', 'Inter:400', 'Inter:500'], 'registered once each, catalog order');
-// families mpljs does not ship fall through the list exactly as before (matplotlib's fallback)
+// families mpl does not ship fall through the list exactly as before (matplotlib's fallback)
 assert.ok(draw({ 'font.family': ['Comic Sans MS', 'sans-serif'] }, 'fallback', {}).includes('<svg'));
 console.log(`font modules: ${FACE_CATALOG.length} faces decode to the baked data exactly; unregistered faces fail with FontNotLoadedError`);

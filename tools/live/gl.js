@@ -1,4 +1,4 @@
-// WebGL2 mark layer for mpljs scenes: dense line series drawn on the GPU with the exact data → device
+// WebGL2 mark layer for mpl scenes: dense line series drawn on the GPU with the exact data → device
 // transform layout used. Data uploads once (float32, offset from the first sample so precision
 // holds at any zoom); a frame only updates the transform. Strokes are capsules: each segment is a
 // quad whose fragment shader antialiases by distance to the segment, so the union is exactly a

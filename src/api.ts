@@ -628,7 +628,7 @@ export class Axes {
     if (through.kind === 'point' && through.x2 === p1[0] && through.y2 === p1[1]) throw new RangeError('Cannot draw a line through two identical points');
     // AxLineArtist is a stroke only: say so rather than drop marker, drawstyle or zorder kwargs
     const unsupported = ['marker', 'markersize', 'ms', 'markeredgewidth', 'mew', 'markerfacecolor', 'mfc', 'markeredgecolor', 'mec', 'drawstyle', 'ds', 'zorder'].filter((k) => prop(kw.kw, k).kind === 'some');
-    if (unsupported.length > 0) throw new TypeError(`axline() does not support '${unsupported[0]}' in mpljs`);
+    if (unsupported.length > 0) throw new TypeError(`axline() does not support '${unsupported[0]}' in mpl`);
     const p = this.lineProps(kw, NO_FMT, () => ({ kind: 'solid', color: this.theme.lines.color }));
     kw.done();
     const a: AxLineArtist = { kind: 'axline', x1: p1[0], y1: p1[1], through, stroke: p.stroke, label: p.label, clip: p.clip };
@@ -2155,7 +2155,7 @@ export class Figure {
   }
 }
 
-/** A major tick label (Tick.label1): its text, and the Text setters mpljs supports. */
+/** A major tick label (Tick.label1): its text, and the Text setters mpl supports. */
 export type TickLabelText = {
   readonly get_text: () => string;
   readonly set_fontweight: (w: unknown) => void;

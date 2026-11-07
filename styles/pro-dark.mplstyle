@@ -1,5 +1,5 @@
 # pro-dark: dark dashboard: deep navy, faint grid, muted ticks, vivid restrained accents
-# Bundled with mpljs. Use it in matplotlib too: plt.style.use("path/to/pro-dark.mplstyle")
+# Bundled with mpl. Use it in matplotlib too: plt.style.use("path/to/pro-dark.mplstyle")
 
 figure.facecolor: 0b1020
 axes.facecolor: 0b1020

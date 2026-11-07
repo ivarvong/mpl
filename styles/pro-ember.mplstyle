@@ -1,5 +1,5 @@
 # pro-ember: warm dark: charcoal background with an orange accent
-# Bundled with mpljs. Use it in matplotlib too: plt.style.use("path/to/pro-ember.mplstyle")
+# Bundled with mpl. Use it in matplotlib too: plt.style.use("path/to/pro-ember.mplstyle")
 
 figure.facecolor: 141210
 axes.facecolor: 141210

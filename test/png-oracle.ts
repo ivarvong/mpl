@@ -1,4 +1,4 @@
-// PNG oracle: rasterize every fixture with mpljs' own Agg/FreeType port and compare
+// PNG oracle: rasterize every fixture with mpl's own Agg/FreeType port and compare
 // byte-for-byte with matplotlib's Agg PNG. Reports exact-pixel % and RMS (0..255).
 //   node test/png-oracle.ts [name] [--strict]
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';

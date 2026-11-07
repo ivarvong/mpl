@@ -19,7 +19,7 @@ export const svg = fig.toSVG(), png = fig.toPNGSync();`;
 export const ENTRIES: Readonly<Record<string, Scenario>> = {
   core: { what: 'the typical import without any glyph data (DejaVu Sans left external): code, tables, style sheets', entry: TYPICAL, external: ['*/fonts/dejavu-sans.js'] },
   'core+dejavu-sans': { what: 'the typical import as shipped: subplots → plot → toSVG + toPNGSync, with the default face', entry: TYPICAL, external: [] },
-  everything: { what: 'every export of mpljs plus every face (mpljs/fonts/all)', entry: "export * from './index.js';\nexport * from './fonts/all.js';", external: [] },
+  everything: { what: 'every export of mpl plus every face (mpl/fonts/all)', entry: "export * from './index.js';\nexport * from './fonts/all.js';", external: [] },
 };
 
 export type Size = { readonly min: number; readonly gzip: number };

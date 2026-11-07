@@ -66,7 +66,7 @@ assert.deepEqual(FACE_LOADS.map((l) => l.id), FACE_CATALOG.map((e) => e.id), 'ev
 assert.ok(FACE_LOADS.every((l) => l.endMs >= l.startMs && l.glyphs > 0), 'face loads timed');
 assert.deepEqual(tracer.spans().filter((s) => s.name === 'font.decode').map((s) => s.attrs['face']), FACE_CATALOG.slice(1).map((e) => e.id), 'one font.decode span per decode');
 
-const out = join(tmpdir(), 'mpljs-trace-test.jsonl');
+const out = join(tmpdir(), 'mpl-trace-test.jsonl');
 const n = await tracer.flush(out);
 const lines = readFileSync(out, 'utf8').trim().split('\n');
 assert.equal(lines.length, n); assert.equal(tracer.spans().length, 0);

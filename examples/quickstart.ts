@@ -1,5 +1,5 @@
 // Lines: `npm run example`  ->  examples/out/quickstart.{svg,png}
-// In your own project the import is `from 'mpljs'`; inside this repo it is the TypeScript source.
+// In your own project the import is `from 'mpl'`; inside this repo it is the TypeScript source.
 import { subplots } from '../src/index.ts';
 import { save } from './_save.ts';
 

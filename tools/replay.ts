@@ -1,4 +1,4 @@
-// Replay a fixture spec (the same calls matplotlib ran) against mpljs from src/.
+// Replay a fixture spec (the same calls matplotlib ran) against mpl from src/.
 import { readFileSync } from 'node:fs';
 import { registerColormapRgba, registerColormaps, registerFonts, subplots } from '../src/index.ts';
 import { allFonts } from '../src/fonts/all.ts';

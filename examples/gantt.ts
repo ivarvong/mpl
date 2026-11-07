@@ -3,7 +3,7 @@
 // The same calls are an oracle case (fixtures/ref/example_gantt_trace), pixel-checked against
 // matplotlib. Writes examples/out/gantt.{svg,png}; docs/images/gantt.svg is this SVG.
 import { registerFonts, subplots } from '../src/index.ts';
-// the root label is bold: DejaVu Sans Bold is its own module (in an app, 'mpljs/fonts/dejavu-sans-bold')
+// the root label is bold: DejaVu Sans Bold is its own module (in an app, 'mpl/fonts/dejavu-sans-bold')
 import { dejavuSansBold } from '../src/fonts/dejavu-sans-bold.ts';
 import { save } from './_save.ts';
 

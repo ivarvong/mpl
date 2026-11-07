@@ -469,7 +469,7 @@ case("colorbar_horizontal",
 # ---- bundled pro themes (styles/*.mplstyle): matplotlib renders the same sheet from its file ----
 STYLES = {}
 STYLE_DIR = os.path.join(ROOT, "..", "styles")
-# the pro sheets use Inter: matplotlib must load the same static v4.0 OTFs mpljs baked (scripts/gen_fonts.py)
+# the pro sheets use Inter: matplotlib must load the same static v4.0 OTFs mpl baked (scripts/gen_fonts.py)
 INTER_DIR = os.environ.get("INTER_DIR", "/usr/share/fonts/opentype/inter")
 def use_static_inter():
     from matplotlib import font_manager as fm

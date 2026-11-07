@@ -1,5 +1,5 @@
 {
-  "name": "mpljs",
+  "name": "mpl",
   "version": "0.1.0",
   "description": "Pure-JavaScript, zero-dependency reproduction of matplotlib's output (SVG and PNG), verified against matplotlib itself",
   "keywords": [

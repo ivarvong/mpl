@@ -1,7 +1,7 @@
-// Honeycomb-style trace waterfall -> SVG + PNG, both rendered by mpljs itself.
+// Honeycomb-style trace waterfall -> SVG + PNG, both rendered by mpl itself.
 //   node bench/trace_png.ts out.png            # traces a demo render
 //   node bench/trace_png.ts out.png spans.jsonl # renders a flushed JSONL trace
-// Builds the picture directly on the Scene ADT, with mpljs' own AutoLocator for the time axis.
+// Builds the picture directly on the Scene ADT, with mpl's own AutoLocator for the time axis.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { registerFonts, subplots, tracer, Tracer } from '../src/index.ts';
 import { allFonts } from '../src/fonts/all.ts';
@@ -78,7 +78,7 @@ export function traceScene(spansIn: readonly (FinishedSpan | OtlpSpan)[], title 
   nodes.push(text({ text: title, x: 24, y: 30, size: 17, color: '#1f2328', weight: 600 }));
   nodes.push(txt(`${spans.length} spans · ${total.toFixed(3)} ms · trace ${spans[0].traceId}`, 24, 48, 10.5, '#6e7781'));
 
-  // time axis + grid (mpljs AutoLocator on the time range)
+  // time axis + grid (mpl AutoLocator on the time range)
   const ticks = autoTicks(0, total, Math.floor(plotW / 80)).filter(t => t >= 0 && t <= total);
   const gridSegs: Seg[] = [];
   for (const t of ticks) {
@@ -141,7 +141,7 @@ if (outPng && import.meta.url === `file://${process.argv[1]}`) {
     const build = () => { const [fig, ax] = subplots({ style: 'seaborn-v0_8-darkgrid' }); for (let i = 0; i < 6; i++) ax.plot(x, x.map(v => Math.sin(v + i / 2) + i * 0.4), i % 2 ? 'o-' : '--', { label: `series ${i}` }); ax.bar([0, 2, 4, 6, 8], [1, 2, 1.5, 2.5, 1], { label: 'bars' }); ax.legend(); ax.set_title('traced render'); ax.set_xlabel('x'); ax.set_ylabel('y'); return fig; };
     for (let i = 0; i < 10; i++) build().toPNGSync();
     tracer.enable(); build().toPNGSync(); spans = tracer.spans(); tracer.disable();
-    title = 'mpljs → PNG — layout, Agg-port raster, encode: 6 lines × 200 pts, markers, bars, legend (warm)';
+    title = 'mpl → PNG — layout, Agg-port raster, encode: 6 lines × 200 pts, markers, bars, legend (warm)';
   }
   const scene = traceScene(spans, title);
   writeFileSync(outPng.replace(/\.png$/, '.svg'), toSVG(scene, new Tracer()));
