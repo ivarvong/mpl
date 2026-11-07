@@ -412,4 +412,7 @@ export type FrameMeta = {
 /** A device-space box, px, y down. */
 export type PxBox = { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
 /** Axes.get_tightbbox(for_layout_only=True), px y down: what tight_layout fits into the figure. */
-export type AxesMeta = { readonly x: AxisMeta; readonly y: AxisMeta; readonly legend: Option<LegendMeta>; readonly frame: FrameMeta; readonly tight: PxBox };
+/** A tight bbox in px y down, plus its bottom and top edges in display (y-up) coordinates as matplotlib computes
+ *  them (H − y1 can be an ulp off, which moves tight_layout's subplot params). */
+export type TightBox = PxBox & { readonly b: number; readonly t: number };
+export type AxesMeta = { readonly x: AxisMeta; readonly y: AxisMeta; readonly legend: Option<LegendMeta>; readonly frame: FrameMeta; readonly tight: TightBox };

@@ -25,7 +25,7 @@ import { parseFontSize, parseLegendLoc, parseTheme, scatterPointsOf } from './co
 import type {
   Artist, Aspect, AxesMeta, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
   AxLineArtist, AxLineThrough, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist,
-  LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, PxBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, ImageArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
+  LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, TightBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, ImageArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
 } from './core/types.ts';
 import { assertNever, err, none, ok, some, unwrap } from './core/types.ts';
 import { iolistToString } from './render/iolist.ts';
@@ -2026,7 +2026,7 @@ export class Figure {
     return this;
   }
   /** Each Axes' tight bbox at the current subplot params: the layout tight_layout measures (one trace). */
-  private measureTight(): readonly PxBox[] {
+  private measureTight(): readonly TightBox[] {
     const root = tracer.startTrace('figure.tight', { axes: this.axes.length, dpi: this.dpi });
     try { return tightBoxes(this.spec(), tracer); } catch (e) { root.recordException(e); throw e; } finally { root.end(); }
   }
@@ -2035,7 +2035,7 @@ export class Figure {
    * each cell's tight bbox overhang is added into the gutter rows/columns it borders, the outer gutters
    * become margins (plus the suptitle and supx/supylabel), the inner ones wspace/hspace.
    */
-  private autoAdjust(tightPx: readonly PxBox[], pads: { readonly pad: number; readonly h: Option<number>; readonly w: Option<number> }, rect: Option<readonly [number, number, number, number]>):
+  private autoAdjust(tightPx: readonly TightBox[], pads: { readonly pad: number; readonly h: Option<number>; readonly w: Option<number> }, rect: Option<readonly [number, number, number, number]>):
       Option<{ readonly left: number; readonly bottom: number; readonly right: number; readonly top: number; readonly wspace: Option<number>; readonly hspace: Option<number> }> {
     const W = this.widthIn * this.dpi, H = this.heightIn * this.dpi;
     // ss_to_subplots: one entry per distinct SubplotSpec, in first-seen order
@@ -2057,8 +2057,10 @@ export class Figure {
     const hspaces = Array.from({ length: maxRows }, () => zeros(maxCols + 1));
     for (const { cell, members } of cells) {
       const [l0, b0, r0, t0] = cellPosition(cell, this.subplotpars);
-      const t = unionBox(members.map((i) => tightPx[i]));
-      const tight = { xmin: t.x0 / W, xmax: t.x1 / W, ymin: 1 - t.y1 / H, ymax: 1 - t.y0 / H };
+      const ms = members.map((i) => tightPx[i]);
+      const t = { ...unionBox(ms), b: Math.min(...ms.map((m) => m.b)), t: Math.max(...ms.map((m) => m.t)) };
+      // transFigure.inverted().transform_bbox: display y-up edges times the inverse matrix's 1/H
+      const tight = { xmin: t.x0 / W, xmax: t.x1 / W, ymin: t.b * (1 / H), ymax: t.t * (1 / H) };
       const dr = maxRows / cell.grid.nrows, dc = maxCols / cell.grid.ncols;
       const rs = [cell.rows[0] * dr, cell.rows[1] * dr], cs = [cell.cols[0] * dc, cell.cols[1] * dc];
       for (let r = rs[0]; r < rs[1]; r++) { hspaces[r][cs[0]] += l0 - tight.xmin; hspaces[r][cs[1]] += tight.xmax - r0; }
