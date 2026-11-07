@@ -187,6 +187,15 @@ export function leafCount(n: Node): number {
   }
 }
 
+function hasImage(n: Node): boolean {
+  switch (n.kind) {
+    case 'image': return true;
+    case 'group': return n.nodes.some(hasImage);
+    case 'rect': case 'path': case 'text': case 'polyline': case 'markers': return false;
+    default: return assertNever(n);
+  }
+}
+
 function background(p: Paint, W: number, H: number): string {
   switch (p.kind) {
     case 'none': return '';
@@ -207,7 +216,10 @@ export function svgIO(scene: Scene, tracer: Tracer, text: SvgText = 'text', pref
     return io;
   }));
   const W = scene.width, H = scene.height;
-  return [`<svg xmlns="http://www.w3.org/2000/svg" width="${f(W)}" height="${f(H)}" viewBox="0 0 ${f(W)} ${f(H)}">` + NL,
+  // <image> uses xlink:href (matplotlib's form, readable by SVG 1.1 tools), so the prefix must be bound or
+  // standalone viewers (browsers' <img>, GitHub) reject the whole file as malformed XML.
+  const xlink = scene.nodes.some(hasImage) ? ' xmlns:xlink="http://www.w3.org/1999/xlink"' : '';
+  return [`<svg xmlns="http://www.w3.org/2000/svg"${xlink} width="${f(W)}" height="${f(H)}" viewBox="0 0 ${f(W)} ${f(H)}">` + NL,
           background(scene.background, W, H), body, '</svg>' + NL];
 }
 
