@@ -12,7 +12,7 @@ import { BLOCK, BLOCK_SHIFT } from './agg/canvas.ts';
 import type { Indexed } from './palette.ts';
 import { quantize } from './palette.ts';
 import type { Option } from '../core/types.ts';
-import { none } from '../core/types.ts';
+import { none, some } from '../core/types.ts';
 
 /** colors: the palette budget (1..256), or none for full RGBA. */
 export type PngOptions = { readonly colors: Option<number> };
@@ -256,11 +256,12 @@ const CL_OUT_A = new Uint8Array(286), CL_OUT_B = new Uint8Array(286), CL_OUT_CF 
 let CL_FLIP = 0;
 /** Length-limited Huffman code lengths: plain Huffman, frequencies flattened until it fits.
  *  Alternates A/B so writeBlock can keep ll and dl; pass `into` for a third concurrent result (cf). */
-function codeLengths(freq: Uint32Array, limit: number, into?: Uint8Array): Uint8Array {
+function codeLengths(freq: Uint32Array, limit: number, into: Option<Uint8Array>): Uint8Array {
   const n = freq.length;
-  const out = into !== undefined ? into.subarray(0, n)
-    : n <= 286 ? ((CL_FLIP ^= 1) ? CL_OUT_A : CL_OUT_B).subarray(0, n)
-    : new Uint8Array(n);
+  let out: Uint8Array;
+  if (into.kind === 'some') out = into.value.subarray(0, n);
+  else if (n <= 286) { CL_FLIP ^= 1; out = (CL_FLIP !== 0 ? CL_OUT_A : CL_OUT_B).subarray(0, n); }
+  else out = new Uint8Array(n);
   const f = n <= CL_F.length ? CL_F.subarray(0, n) : new Float64Array(n);
   for (let i = 0; i < n; i++) f[i] = freq[i];
   const weight = CL_W, parent = CL_P, heap = CL_H, used = CL_USED;
@@ -292,6 +293,8 @@ function codeLengths(freq: Uint32Array, limit: number, into?: Uint8Array): Uint8
     };
     for (let k = 0; k < nu; k++) { const i = used[k]; weight[i] = f[i]; parent[i] = -1; push(i); }
     let next = n;
+    // pop() decrements hs (closed over); oxlint cannot see that
+    // oxlint-disable-next-line no-unmodified-loop-condition
     while (hs > 1) { const a = pop(), b = pop(); weight[next] = weight[a] + weight[b]; parent[next] = -1; parent[a] = next; parent[b] = next; push(next); next++; }
     let max = 0;
     for (let k = 0; k < nu; k++) {
@@ -399,7 +402,7 @@ function writeBlock(bw: Bits, tok: Int32Array, a: number, b: number, last: boole
   lf[256] = 1;
   let anyD = false; for (let i = 0; i < 30; i++) if (df[i] !== 0) { anyD = true; break; }
   if (!anyD) df[0] = 1;
-  const ll = codeLengths(lf, 15), dl = codeLengths(df, 15);
+  const ll = codeLengths(lf, 15, none), dl = codeLengths(df, 15, none);
   let hlit = 286; while (hlit > 257 && ll[hlit - 1] === 0) hlit--;
   let hdist = 30; while (hdist > 1 && dl[hdist - 1] === 0) hdist--;
   const seq = WB_SEQ, seqN = hlit + hdist;
@@ -414,7 +417,7 @@ function writeBlock(bw: Bits, tok: Int32Array, a: number, b: number, last: boole
   }
   const cf = WB_CF; cf.fill(0);
   for (let i = 0; i < cn; i++) cf[cl[i]]++;
-  const cll = codeLengths(cf, 7, CL_OUT_CF), clc = canonical(cll);
+  const cll = codeLengths(cf, 7, some(CL_OUT_CF)), clc = canonical(cll);
   let hclen = 19; while (hclen > 4 && cll[CL_ORDER[hclen - 1]] === 0) hclen--;
   bw.put(last ? 1 : 0, 1); bw.put(2, 2);
   bw.put(hlit - 257, 5); bw.put(hdist - 1, 5); bw.put(hclen - 4, 4);
@@ -512,7 +515,8 @@ class Intervals {
 const HBITS = 15, CHAIN = 4, RM = PIX_RING - 1;
 /** Pooled across encodes so a cold isolate pays once. head slots are tagged with TOK_EPOCH so a
  *  fresh encode does not fill 128 KiB with −1; unread slots from a prior encode are ignored. */
-let TOK_HEAD = new Int32Array(1 << HBITS), TOK_PREV = new Int32Array(PIX_RING), TOK_BUF = new Int32Array(1 << 18);
+const TOK_HEAD = new Int32Array(1 << HBITS), TOK_PREV = new Int32Array(PIX_RING);
+let TOK_BUF = new Int32Array(1 << 18);
 const TOK_AGE = new Int32Array(1 << HBITS);
 let TOK_EPOCH = 1;
 const TOK_L = new Intervals(2048), TOK_U = new Intervals(2048);
@@ -692,7 +696,7 @@ export function encodePNGSync(c: Canvas, opts: PngSyncOptions = RGBA): Uint8Arra
   // one allocation for the whole file: avoids concat copying the zlib body a second time
   const out = new Uint8Array(head.length + 12 + z.length + IEND.length);
   out.set(head, 0);
-  let o = head.length;
+  const o = head.length;
   out[o] = (z.length >>> 24) & 255; out[o + 1] = (z.length >>> 16) & 255; out[o + 2] = (z.length >>> 8) & 255; out[o + 3] = z.length & 255;
   out[o + 4] = 73; out[o + 5] = 68; out[o + 6] = 65; out[o + 7] = 84; // IDAT
   out.set(z, o + 8);
