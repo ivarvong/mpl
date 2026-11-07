@@ -1,11 +1,13 @@
 // MissingColormapRgbaError for rgba-stage without float32 sidecar; nearest stays fine without it.
 import assert from 'node:assert/strict';
 import {
-  MissingColormapRgbaError, getColormap, registerColormapRgba, registerColormaps, registeredColormaps, requireColormapRgba,
+  ColormapNotLoadedError, MissingColormapRgbaError, getColormap, registerColormapRgba, registerColormaps, registeredColormaps, requireColormap, requireColormapRgba,
 } from '../src/core/colormap.ts';
 import { plasma } from '../src/colormaps/plasma.ts';
 import { plasma_rgba, plasma_r_rgba } from '../src/colormaps/plasma.rgba.ts';
 import { subplots } from '../src/index.ts';
+import { registerDefaultFonts } from './helpers/register-defaults.ts';
+registerDefaultFonts();
 
 registerColormaps(plasma);
 
@@ -74,6 +76,18 @@ assert.ok(!registeredColormaps().includes('bad'));
   assert.deepEqual(after.value.round, before.value.round);
   const again = getColormap('plasma');
   assert.ok(again.ok && again.value === after.value, 'decoded once, then cached');
+}
+
+
+// unregistered shipped name throws ColormapNotLoadedError (typed; never falls back)
+{
+  try { requireColormap('inferno'); assert.fail('expected ColormapNotLoadedError'); }
+  catch (e) {
+    assert.ok(e instanceof ColormapNotLoadedError);
+    assert.equal((e as ColormapNotLoadedError).cmap, 'inferno');
+    assert.equal((e as ColormapNotLoadedError).binding, 'inferno');
+    assert.match((e as ColormapNotLoadedError).message, /mpl\/colormaps\/inferno/);
+  }
 }
 
 console.log('colormap-rgba: MissingColormapRgbaError + nearest-without-sidecar + hanning-with-sidecar ok');

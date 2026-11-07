@@ -12,13 +12,33 @@ export const BUDGET_FILE = join(ROOT, 'size-budget.json');
 
 /** What an application imports, and which modules it leaves out. */
 export type Scenario = { readonly what: string; readonly entry: string; readonly external: readonly string[] };
-const TYPICAL = `import { subplots } from './index.js';
+const MAIN = `import { subplots } from './index.js';
+const [fig, ax] = subplots();
+ax.plot([1, 2, 3], [1, 4, 9]);
+export const svg = fig.toSVG(), png = fig.toPNGSync();`;
+const LEAN = `import { subplots } from './core.js';
+const [fig, ax] = subplots();
+ax.plot([1, 2, 3], [1, 4, 9]);
+export const svg = fig.toSVG(), png = fig.toPNGSync();`;
+const LEAN_INTER_2CMAP = `import { registerColormapRgba, registerColormaps, registerFonts, subplots } from './core.js';
+import { interRegular } from './fonts/inter-regular.js';
+import { interMedium } from './fonts/inter-medium.js';
+import { interSemibold } from './fonts/inter-semibold.js';
+import { interBold } from './fonts/inter-bold.js';
+import { magma } from './colormaps/magma.js';
+import { magma_rgba } from './colormaps/magma.rgba.js';
+import { viridis } from './colormaps/viridis.js';
+import { viridis_rgba } from './colormaps/viridis.rgba.js';
+registerFonts(interRegular, interMedium, interSemibold, interBold);
+registerColormaps(magma, viridis);
+registerColormapRgba(magma_rgba, viridis_rgba);
 const [fig, ax] = subplots();
 ax.plot([1, 2, 3], [1, 4, 9]);
 export const svg = fig.toSVG(), png = fig.toPNGSync();`;
 export const ENTRIES: Readonly<Record<string, Scenario>> = {
-  core: { what: 'the typical import without any glyph data (DejaVu Sans left external): code, tables, style sheets', entry: TYPICAL, external: ['*/fonts/dejavu-sans.js'] },
-  'core+dejavu-sans': { what: 'the typical import as shipped: subplots → plot → toSVG + toPNGSync, with the default face', entry: TYPICAL, external: [] },
+  main: { what: 'default entry: subplots → plot → toSVG + toPNGSync (DejaVu Sans + viridis built in)', entry: MAIN, external: [] },
+  lean: { what: 'mpl/core with no faces or colormaps registered (code + tables only)', entry: LEAN, external: [] },
+  'lean+inter+2cmaps': { what: 'mpl/core + Inter×4 + magma + viridis (+ rgba)', entry: LEAN_INTER_2CMAP, external: [] },
   everything: { what: 'every export of mpl plus every face (mpl/fonts/all)', entry: "export * from './index.js';\nexport * from './fonts/all.js';", external: [] },
 };
 
@@ -30,6 +50,8 @@ export type Measured = { readonly name: string; readonly size: Size; readonly pa
 function groupOf(path: string): string {
   const m = /\/fonts\/([a-z-]+)\.[jt]s$/.exec(path);
   if (m !== null) return m[1] === 'all' ? 'code: api, layout, axes, text, ...' : `font ${m[1]} (glyph outlines + metrics)`;
+  const c = /\/colormaps\/([a-zA-Z0-9_.-]+)\.[jt]s$/.exec(path);
+  if (c !== null) return c[1].startsWith('all') ? 'code: api, layout, axes, text, ...' : `colormap ${c[1]}`;
   if (path.includes('core/data/')) return 'other data (stylelib, colors, markers)';
   if (path.endsWith('core/fontcodec.js')) return 'font decoder';
   if (path.includes('/render/')) return 'renderers (agg, svg, png)';

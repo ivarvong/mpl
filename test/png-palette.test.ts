@@ -9,6 +9,8 @@ import type { Canvas } from '../src/render/agg/canvas.ts';
 import { encodePNG, encodePNGSync, pngStream, zlibSync, effortOf } from '../src/render/png.ts';
 import { quantize } from '../src/render/palette.ts';
 import { readPNG } from './png-oracle.ts';
+import { registerDefaultFonts } from './helpers/register-defaults.ts';
+registerDefaultFonts();
 
 let seed = 4242;
 const rnd = (): number => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };

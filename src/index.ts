@@ -1,25 +1,13 @@
-export { Axes, Figure, subplots } from './api.ts';
-export type { AxesGrid2D, ErrorbarContainer, HistPatches, HistResult, HistResultMulti, HistType, Kwargs, XY, SubplotsAxes, SubplotsKwargs, SubplotsResult, TickLabelText, TransformRef } from './api.ts';
-export type { BinEstimator, Bins } from './core/histogram.ts';
-export type { GridSpec, SubplotParams, SubplotSpec } from './core/gridspec.ts';
-export { availableStyles, composeStyles, parseStyle } from './core/style.ts';
-export { parseTheme } from './core/theme.ts';
-export { layoutFigure } from './core/layout.ts';
-export { svgChunks, svgIO, svgStream, toSVG } from './render/svg.ts';
-export { renderRGBA, toPNG, toPNGStream, toPNGSync } from './render/agg.ts';
-export type { Canvas } from './render/agg.ts';
-export { encodePNG, encodePNGSync, pngStream } from './render/png.ts';
-export type { PngOptions, PngSyncOptions } from './render/png.ts';
-export { iolistToStream, iolistToString } from './render/iolist.ts';
-export { renderTree, Tracer, tracer } from './trace.ts';
-export { FACE_LOADS, FontNotLoadedError, registerFonts, registeredFonts } from './core/fonts.ts';
-export { FACE_CATALOG } from './core/fontcodec.ts';
-export type { BakedFace, FaceId } from './core/fontcodec.ts';
-export type { FaceLoad } from './core/fonts.ts';
-export type { AttrValue, FinishedSpan, SpanHandle } from './trace.ts';
-export type * from './core/types.ts';
-export { modern, modernDark, paperClassic, paperModern } from './presets.ts';
+// Default entry: same API as mpl/core, plus matplotlib's default face and colormap registered
+// so `import { subplots } from 'mpl'` renders with no register calls. For Workers / lean bundles
+// that pay only for the assets they use, import from 'mpl/core' instead and register explicitly.
+export * from './core.ts';
 
-export { availableColormaps, getColormap, logNorm, MissingColormapRgbaError, normalize, registerColormapRgba, registerColormaps, registeredColormaps, requireColormapRgba, twoSlopeNorm } from './core/colormap.ts';
-export type { CmapRgbaPack } from './core/colormap.ts';
-export type { CmapPack, Colormap, Norm } from './core/colormap.ts';
+import { registerColormapRgba, registerColormaps, registerFonts } from './core.ts';
+import { dejavuSans } from './fonts/dejavu-sans.ts';
+import { viridis, viridis_r } from './colormaps/viridis.ts';
+import { viridis_rgba } from './colormaps/viridis.rgba.ts';
+
+registerFonts(dejavuSans);
+registerColormaps(viridis, viridis_r);
+registerColormapRgba(viridis_rgba);

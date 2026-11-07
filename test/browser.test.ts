@@ -40,8 +40,8 @@ try {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(origin + '/');
   const ua = await page.evaluate(() => navigator.userAgent);
-  // the plain import fetches one face; a face that is not registered fails, typed, instead of drawing another
-  const lazy = await page.evaluate(async () => {
+  // main entry: DejaVu Sans is built in; bold without its face fails typed
+  const main = await page.evaluate(async () => {
     const lib: string = '/lib/index.js';
     const m = await import(lib) as typeof import('../src/index.ts');
     const [fig, ax] = m.subplots(); ax.plot([1, 2, 3], [1, 4, 9]);
@@ -52,9 +52,30 @@ try {
     const fetched = performance.getEntriesByType('resource').map((r) => new URL(r.name).pathname).filter((p) => p.startsWith('/lib/fonts/'));
     return { ok, err, fetched };
   });
-  const lazyOk = lazy.ok && lazy.err === 'FontNotLoadedError DejaVu Sans:700 mpl/fonts/dejavu-sans-bold' && JSON.stringify(lazy.fetched) === '["/lib/fonts/dejavu-sans.js"]';
-  if (!lazyOk) fails++;
-  console.log(`${lazyOk ? 'PASS' : 'FAIL'} chromium default import: fetched ${lazy.fetched.join(', ')}; bold without its face → ${lazy.err}`);
+  const mainOk = main.ok && main.err === 'FontNotLoadedError DejaVu Sans:700 mpl/fonts/dejavu-sans-bold' && JSON.stringify(main.fetched) === '["/lib/fonts/dejavu-sans.js"]';
+  if (!mainOk) fails++;
+  console.log(`${mainOk ? 'PASS' : 'FAIL'} chromium main entry: fetched ${main.fetched.join(', ')}; bold without its face → ${main.err}`);
+
+  // lean entry: nothing registered; default face and default cmap throw
+  await page.reload();
+  const lean2 = await page.evaluate(async () => {
+    const corePath: string = '/lib/core.js';
+    const m = await import(corePath) as typeof import('../src/core.ts');
+    const [fig, ax] = m.subplots(); ax.plot([1, 2], [1, 2]);
+    let fontErr = 'rendered';
+    try { fig.toSVG(); } catch (e) { fontErr = e instanceof m.FontNotLoadedError ? e.name : String(e); }
+    const faceMod = '/lib/fonts/dejavu-sans.js';
+    const { dejavuSans } = await import(faceMod) as typeof import('../src/fonts/dejavu-sans.ts');
+    m.registerFonts(dejavuSans);
+    fig.toSVG();
+    let cmapErr = 'rendered';
+    try { ax.imshow([[0, 1], [2, 3]]); } catch (e) { cmapErr = e instanceof m.ColormapNotLoadedError ? `${e.name} ${e.cmap}` : String(e); }
+    return { fontErr, cmapErr };
+  });
+  const leanOk = lean2.fontErr === 'FontNotLoadedError' && lean2.cmapErr === 'ColormapNotLoadedError viridis';
+  if (!leanOk) fails++;
+  console.log(`${leanOk ? 'PASS' : 'FAIL'} chromium mpl/core: font→${lean2.fontErr}; imshow default cmap→${lean2.cmapErr}`);
+
   type Out = { name: string; svg: string; png64: string; pal64: string; ms: number };
   const outs: Out[] = await page.evaluate(async ([fx, palette]: readonly [Record<string, unknown>, typeof PALETTE]) => {
     // served paths, typed as the sources they are built from

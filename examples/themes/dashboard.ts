@@ -4,13 +4,18 @@
 // renders against matplotlib's pixel for pixel. Writes examples/out/themes/<name>.{svg,png};
 // docs/images/themes/ holds the same files for the README.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { registerColormaps, registerFonts, subplots } from '../../src/index.ts';
+import { registerColormapRgba, registerColormaps, registerFonts, subplots } from '../../src/index.ts';
 import type { Figure } from '../../src/index.ts';
+import { interBold } from '../../src/fonts/inter-bold.ts';
+import { interMedium } from '../../src/fonts/inter-medium.ts';
 import { interRegular } from '../../src/fonts/inter-regular.ts';
+import { interSemibold } from '../../src/fonts/inter-semibold.ts';
 import { allColormaps } from '../../src/colormaps/all.ts';
+import { allColormapRgba } from '../../src/colormaps/all.rgba.ts';
 
-registerFonts(interRegular);          // the pro sheets set font.family: Inter
+registerFonts(interRegular, interMedium, interSemibold, interBold);  // pro sheets: font.family Inter
 registerColormaps(...allColormaps);
+registerColormapRgba(...allColormapRgba);
 
 type Data = {
   readonly hours: readonly number[]; readonly p50: readonly number[]; readonly p95: readonly number[]; readonly p99: readonly number[];

@@ -1,8 +1,7 @@
 // Colormaps and norms, matching matplotlib.colors (3.11.2): LUT lookup, Normalize,
 // LogNorm, TwoSlopeNorm, and Colormap.__call__(…, bytes=True).
-// Each face of LUT data is its own module under src/colormaps/; viridis is built in.
-import { viridis, viridis_r } from '../colormaps/viridis.ts';
-import { viridis_rgba } from '../colormaps/viridis.rgba.ts';
+// Each face of LUT data is its own module under src/colormaps/. The default entry (mpl) registers
+// viridis; mpl/core registers nothing — pass every pack you need to registerColormaps().
 import { CMAP_NAMES } from './data/colormaps.ts';
 import { log10 } from './libm.ts';
 import { isPlainObject, lookup, prop } from './std.ts';
@@ -86,7 +85,7 @@ function resolve(name: string): Option<Colormap> {
   return some(out);
 }
 
-/** Register one or more colormap packs (each `src/colormaps/*.ts` export). Viridis is built in.
+/** Register one or more colormap packs (each `src/colormaps/*.ts` export).
  *  `_r` variants are separate packs from matplotlib (LinearSegmentedColormap.reversed rebuilds segmentdata — a LUT
  *  flip is wrong). Registering a name again replaces it, float32 sidecar included. */
 export function registerColormaps(...ps: readonly CmapPack[]): void {
@@ -108,6 +107,26 @@ function cmapImport(name: string): { readonly file: string; readonly binding: st
   const binding = name === 'RdBu' ? 'rdBu' : name === 'RdBu_r' ? 'rdBu_r'
     : name.toLowerCase() === name ? name : file + (name.endsWith('_r') ? '_r' : '');
   return { file, binding };
+}
+
+/**
+ * Rendering (or getColormap) needed a shipped colormap that has not been passed to registerColormaps().
+ * Never falls back to another map.
+ */
+export class ColormapNotLoadedError extends Error {
+  readonly cmap: string;
+  readonly module: string;
+  readonly binding: string;
+  constructor(name: string) {
+    const { file, binding } = cmapImport(name);
+    const mod = `mpl/colormaps/${file}`;
+    super(`mpl: colormap '${name}' is not loaded. Register it before rendering:\n` +
+      `  import { registerColormaps } from 'mpl';\n` +
+      `  import { ${binding} } from '${mod}';\n` +
+      `  registerColormaps(${binding});`);
+    this.name = 'ColormapNotLoadedError';
+    this.cmap = name; this.module = mod; this.binding = binding;
+  }
 }
 
 /**
@@ -155,11 +174,7 @@ export function registerColormapRgba(...ps: readonly CmapRgbaPack[]): void {
   }
 }
 
-// Built-in: viridis + viridis_r (matplotlib's default for ScalarMappable)
-registerColormaps(viridis, viridis_r);
-registerColormapRgba(viridis_rgba);  // viridis_r float32 via registerColormapRgba(viridis_r_rgba) when needed
-
-/** matplotlib.pyplot.get_cmap. Unknown or unregistered names error with the import to add. */
+/** matplotlib.pyplot.get_cmap. Unknown names and unregistered shipped names error with the import to add. */
 export function getColormap(name: string): Result<Colormap> {
   const hit = resolve(name);
   if (hit.kind === 'some') return ok(hit.value);
@@ -167,9 +182,16 @@ export function getColormap(name: string): Result<Colormap> {
   if (!CMAP_NAMES.some((n) => n === base)) {
     return err(`Unknown colormap name '${name}'. Available: ${CMAP_NAMES.join(', ')} (and _r)`);
   }
-  const { file, binding } = cmapImport(name);
-  return err(`Colormap '${name}' is not registered. Import it and registerColormaps(…): `
-    + `import { ${binding} } from 'mpl/colormaps/${file}'`);
+  return err(new ColormapNotLoadedError(name).message);
+}
+
+/** Like getColormap but throws ColormapNotLoadedError for an unregistered shipped name. */
+export function requireColormap(name: string): Colormap {
+  const hit = resolve(name);
+  if (hit.kind === 'some') return hit.value;
+  const base = name.endsWith('_r') ? name.slice(0, -2) : name;
+  if (CMAP_NAMES.some((n) => n === base)) throw new ColormapNotLoadedError(name);
+  throw new Error(`Unknown colormap name '${name}'. Available: ${CMAP_NAMES.join(', ')} (and _r)`);
 }
 
 export const availableColormaps = (): readonly string[] =>
@@ -317,6 +339,10 @@ export function scalarToPaints(cmap: Colormap, norm: Norm, data: ArrayLike<numbe
 
 export function parseColormap(v: unknown): Result<Colormap> {
   if (typeof v !== 'string') return err(`cmap must be a colormap name string, got ${typeof v}`);
+  const hit = resolve(v);
+  if (hit.kind === 'some') return ok(hit.value);
+  const base = v.endsWith('_r') ? v.slice(0, -2) : v;
+  if (CMAP_NAMES.some((n) => n === base)) throw new ColormapNotLoadedError(v);
   return getColormap(v);
 }
 

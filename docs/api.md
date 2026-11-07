@@ -14,8 +14,8 @@ subplots() / subplots({ style, rc, figsize, dpi }) -> [fig, ax]
 
 ## Fonts
 
-Each face is its own module, so a bundle carries only the faces you import. DejaVu Sans (matplotlib's
-default) is always registered; register any other face before rendering text that selects it:
+Each face is its own module, so a bundle carries only the faces you import. The default `mpl` entry
+registers DejaVu Sans; `mpl/core` registers nothing — import and `registerFonts` every face you need:
 
 ```ts
 import { registerFonts, subplots } from 'mpl';
@@ -34,7 +34,7 @@ A family mpl does not ship falls through to the next family in the list, as in m
 
 | face | `font.family` | weight | import |
 |---|---|---|---|
-| `DejaVu Sans:400` | DejaVu Sans (`sans-serif`) | 400 | built in |
+| `DejaVu Sans:400` | DejaVu Sans (`sans-serif`) | 400 | built in on `mpl` (register on `mpl/core`) |
 | `DejaVu Sans:700` | DejaVu Sans (`sans-serif`) | 700 | `import { dejavuSansBold } from 'mpl/fonts/dejavu-sans-bold'` |
 | `DejaVu Serif:400` | DejaVu Serif (`serif`) | 400 | `import { dejavuSerif } from 'mpl/fonts/dejavu-serif'` |
 | `DejaVu Serif:700` | DejaVu Serif (`serif`) | 700 | `import { dejavuSerifBold } from 'mpl/fonts/dejavu-serif-bold'` |
@@ -46,6 +46,25 @@ A family mpl does not ship falls through to the next family in the list, as in m
 `import { allFonts } from 'mpl/fonts/all'` and `registerFonts(...allFonts)` registers every face, for when
 size does not matter (Node, tests). `registeredFonts()` lists the registered face ids; `FACE_CATALOG` lists
 every shipped face. A face decodes on first use (a `font.decode` span when tracing); `FACE_LOADS` records when.
+
+## Colormaps
+
+Each colormap is its own module under `mpl/colormaps/*`. The default `mpl` entry registers viridis;
+`mpl/core` registers nothing. An unregistered shipped name throws `ColormapNotLoadedError` (fields `cmap`,
+`module`, `binding`). Register the float32 `.rgba` sidecar when `imshow` uses hanning/bilinear, or
+rendering throws `MissingColormapRgbaError`.
+
+```ts
+import { registerColormapRgba, registerColormaps, subplots } from 'mpl/core';
+import { viridis } from 'mpl/colormaps/viridis';
+import { viridis_rgba } from 'mpl/colormaps/viridis.rgba';
+
+registerColormaps(viridis);
+registerColormapRgba(viridis_rgba);
+```
+
+`import { allColormaps } from 'mpl/colormaps/all'` and `allColormapRgba` from `mpl/colormaps/all.rgba`
+register every pack when size does not matter.
 
 ## Figure
 

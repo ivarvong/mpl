@@ -4,6 +4,8 @@
 import assert from 'node:assert/strict';
 import { Axes, subplots, tracer } from '../src/index.ts';
 import type { AxesGrid2D, SubplotsAxes } from '../src/index.ts';
+import { registerDefaultFonts } from './helpers/register-defaults.ts';
+registerDefaultFonts();
 
 // ---- return shapes: each annotation below is checked by `tsc`, the asserts check the values
 const [, one]: readonly [unknown, Axes] = subplots();

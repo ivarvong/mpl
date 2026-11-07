@@ -1,5 +1,7 @@
 // Warm benchmark: N iterations of a representative chart, p50/p95 per span name.
-import { subplots, tracer } from '../src/index.ts';
+import { registerFonts, subplots, tracer } from '../src/index.ts';
+import { dejavuSans } from '../src/fonts/dejavu-sans.ts';
+registerFonts(dejavuSans);
 const N = Number(process.env['N'] || 30);
 const x = Array.from({ length: 200 }, (_, i) => i / 20);
 function build() {

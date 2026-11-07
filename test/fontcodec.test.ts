@@ -1,10 +1,10 @@
 // Per-face font modules: the encoding is lossless, and the registry never substitutes a face.
-// Runs in its own process so the registry starts as an application's does: DejaVu Sans only.
+// Runs in its own process against mpl/core so the registry starts empty (lean entry).
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { decodeFace, decodeVlq, FACE_CATALOG } from '../src/core/fontcodec.ts';
-import { FACE_LOADS, FontNotLoadedError, registerFonts, registeredFonts, subplots } from '../src/index.ts';
-import { allFonts, dejavuSansBold, interMedium, interRegular } from '../src/fonts/all.ts';
+import { FACE_LOADS, FontNotLoadedError, registerFonts, registeredFonts, subplots } from '../src/core.ts';
+import { allFonts, dejavuSans, dejavuSansBold, interMedium, interRegular } from '../src/fonts/all.ts';
 import { encodeFace } from '../scripts/encode_fonts.ts';
 
 // 1. lossless: each face decodes to exactly the JSON scripts/gen_fonts.py baked before the split
@@ -34,21 +34,23 @@ assert.deepEqual([...decodeVlq(vlq(edge))].slice(3), edge, 'VLQ round-trips edge
 assert.throws(() => decodeVlq('A!'), /bad VLQ character/);
 assert.throws(() => decodeVlq('g'), /truncated VLQ/);
 
-// 2. the registry: DejaVu Sans is there by default and is enough for a default figure
-assert.deepEqual(registeredFonts(), ['DejaVu Sans:400']);
+// 2. the registry starts empty; DejaVu Sans must be registered for a default figure
+assert.deepEqual(registeredFonts(), []);
 const draw = (rc: Readonly<Record<string, unknown>>, title: string, kw: Readonly<Record<string, unknown>>): string => {
   const [fig, ax] = subplots({ rc });
   ax.plot([1, 2, 3], [1, 4, 9]); ax.set_title(title, kw);
   return fig.toSVG();
 };
-assert.ok(draw({}, 'default', {}).includes('<svg'), 'a default figure renders with no font imports');
-assert.deepEqual(FACE_LOADS.map((l) => l.id), ['DejaVu Sans:400'], 'and decodes only DejaVu Sans');
-
-// a face that is not registered fails, typed and with the import to add; nothing is drawn instead
 const err = (f: () => unknown): FontNotLoadedError => {
   try { f(); } catch (e) { if (e instanceof FontNotLoadedError) return e; throw e; }
   assert.fail('expected FontNotLoadedError');
 };
+assert.equal(err(() => draw({}, 'default', {})).face, 'DejaVu Sans:400', 'default figure needs dejavuSans registered');
+registerFonts(dejavuSans);
+assert.ok(draw({}, 'default', {}).includes('<svg'), 'a default figure renders once dejavuSans is registered');
+assert.deepEqual(FACE_LOADS.map((l) => l.id), ['DejaVu Sans:400'], 'and decodes only DejaVu Sans');
+
+// a face that is not registered fails, typed and with the import to add; nothing is drawn instead
 const bold = err(() => draw({}, 'bold', { fontweight: 'bold' }));
 assert.equal(bold.face, 'DejaVu Sans:700'); assert.equal(bold.module, 'mpl/fonts/dejavu-sans-bold'); assert.equal(bold.binding, 'dejavuSansBold');
 assert.match(bold.message, /import \{ dejavuSansBold \} from 'mpl\/fonts\/dejavu-sans-bold';/);

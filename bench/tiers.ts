@@ -21,6 +21,8 @@ const here = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 
 async function child(src: string, warm: number, chart: string): Promise<void> {
   const m = await import(src) as typeof import('../src/index.ts');
+  const { dejavuSans } = await import(new URL('../src/fonts/dejavu-sans.ts', import.meta.url).href) as typeof import('../src/fonts/dejavu-sans.ts');
+  m.registerFonts(dejavuSans);
   const x = Array.from({ length: 200 }, (_, i) => i / 20);
   const build = (): ReturnType<typeof m.subplots>[0] => {
     if (chart === 'line') {

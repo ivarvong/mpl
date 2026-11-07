@@ -2,6 +2,9 @@
 // annotate_dates, text_date_numeric_axis, annotate_category, annotate_arrow_extent (and the scatter legend cases).
 import assert from 'node:assert/strict';
 import { subplots } from '../src/index.ts';
+import { registerDefaultColormaps, registerDefaultFonts } from './helpers/register-defaults.ts';
+registerDefaultFonts();
+registerDefaultColormaps();
 
 const day = (d: number): Date => new Date(Date.UTC(2026, 0, d));
 const ticks = (f: () => ReturnType<typeof subplots>): readonly string[] => {

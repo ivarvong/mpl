@@ -1,5 +1,7 @@
 // Trace one warm render and print the span tree with attributes.
-import { subplots, tracer, renderTree } from '../src/index.ts';
+import { registerFonts, subplots, tracer, renderTree } from '../src/index.ts';
+import { dejavuSans } from '../src/fonts/dejavu-sans.ts';
+registerFonts(dejavuSans);
 const x = Array.from({ length: 200 }, (_, i) => i / 20);
 const build = () => {
   const [fig, ax] = subplots({ style: 'seaborn-v0_8-darkgrid' });
