@@ -455,11 +455,15 @@ export function zlibSync(d: Uint8Array, rowDist = 0, left = 4, effort: Effort = 
 const PIX_RING = 1 << 14;   // ≥ 8192 px: the farthest pixel a 32 KiB byte window can reach
 const ADLER = 65521;
 /** v mod 65521 for an integer 0 ≤ v < 2^53, as v % ADLER. V8's `%` on a double (here past 2^31) is a call into
- *  fmod; the quotient's floor is exact here up to one off (the division rounds), and the fix-ups correct that. */
+ *  fmod; the quotient's floor is exact here up to one off (the division rounds), and the fix-ups correct that.
+ *  `| 0` (exact: the residue is < 65521) hands back a Smi, so unoptimized code does not box the result. */
 const modA = (v: number): number => {
   const r = v - Math.floor(v / ADLER) * ADLER;
-  return r < 0 ? r + ADLER : r >= ADLER ? r - ADLER : r;
+  return (r < 0 ? r + ADLER : r >= ADLER ? r - ADLER : r) | 0;
 };
+/** Singles between Adler reductions. From a, b < 65521, with sum ≤ 1020 and t ≤ 2550 per pixel, after 512 singles
+ *  a < 0.59e6 and b < 6.7e8: both stay Smis (< 2^30), so unoptimized tiers never box them as HeapNumbers. */
+const ADLER_SINGLES = 512;
 
 type Tokens = { readonly tok: Int32Array; readonly n: number; readonly adler: number };
 
@@ -478,7 +482,12 @@ class Intervals {
 }
 
 function tokenizeCanvas(c: Canvas): Tokens {
-  const W = c.w, H = c.h, u = c.u32, px = c.px, RB = W * 4, S = RB + 1, nb = c.nb, blk = c.blk, mix = c.mix;
+  // Pixels and block colors are only compared for equality (and hashed via Math.imul, which takes ToInt32), so read
+  // them as int32: an opaque pixel (0xFFxxxxxx) is then −2^24..−1, a Smi, where the Uint32 value (> 2^30) would be
+  // boxed as a HeapNumber on every load in unoptimized code.
+  const W = c.w, H = c.h, px = c.px, RB = W * 4, S = RB + 1, nb = c.nb, mix = c.mix;
+  const u = new Int32Array(c.u32.buffer, c.u32.byteOffset, c.u32.length);
+  const blk = new Int32Array(c.blk.buffer, c.blk.byteOffset, c.blk.length);
   const HBITS = 15, CHAIN = 4, RM = PIX_RING - 1;
   const head = new Int32Array(1 << HBITS).fill(-1), prev = new Int32Array(PIX_RING);
   let tok = new Int32Array(1 << 16);
@@ -554,9 +563,9 @@ function tokenizeCanvas(c: Canvas): Tokens {
       const q = (row + x) * 4, x0 = px[q], x1 = px[q + 1], x2 = px[q + 2], x3 = px[q + 3];
       const sum = x0 + x1 + x2 + x3, t = 4 * x0 + 3 * x1 + 2 * x2 + x3;
       if (len === 1) {
-        // unreduced: after 1024 singles a < 1.1e6 and b < 4.6e9, far inside 2^53
+        // unreduced for up to ADLER_SINGLES singles: a and b stay below 2^30 (Smi range)
         b += 4 * a + t; a += sum;
-        if (++pending === 1024) { a = modA(a); b = modA(b); pending = 0; }
+        if (++pending === ADLER_SINGLES) { a = modA(a); b = modA(b); pending = 0; }
         x++;
       } else {
         b = modA(b + 4 * a * len + len * t + 2 * sum * len * (len - 1));
