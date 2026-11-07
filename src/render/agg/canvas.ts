@@ -14,7 +14,11 @@ import type { Coverage, IBox } from './raster.ts';
  */
 export type Canvas = {
   readonly w: number; readonly h: number; readonly dpi: number; readonly px: Uint8Array; readonly u32: Uint32Array;
+  /** Same pixels as u32, as int32 — opaque values stay Smis for unoptimized encode/blend code. */
+  readonly i32: Int32Array;
   readonly nb: number; readonly blk: Uint32Array; readonly mix: Uint8Array;
+  /** blk as int32, same Smi reason as i32. */
+  readonly blkI32: Int32Array;
 };
 /** A color quantized like agg::rgba8(agg::rgba): uround(c * 255). */
 export type Rgba8 = { readonly r: number; readonly g: number; readonly b: number; readonly a: number };
@@ -31,10 +35,11 @@ export const BLOCK: number = 1 << BLOCK_SHIFT;
 
 /** RendererAgg::clear fills with _fill_color = rgba(1, 1, 1, 0). */
 export function newCanvas(w: number, h: number, dpi: number): Canvas {
-  const px = new Uint8Array(w * h * 4), u32 = new Uint32Array(px.buffer), clear = pack(255, 255, 255, 0);
+  const px = new Uint8Array(w * h * 4), u32 = new Uint32Array(px.buffer), i32 = new Int32Array(px.buffer), clear = pack(255, 255, 255, 0);
   u32.fill(clear);
   const nb = (w + BLOCK - 1) >> BLOCK_SHIFT;
-  return { w, h, dpi, px, u32, nb, blk: new Uint32Array(nb * h).fill(clear), mix: new Uint8Array(nb * h) };
+  const blk = new Uint32Array(nb * h).fill(clear);
+  return { w, h, dpi, px, u32, i32, nb, blk, blkI32: new Int32Array(blk.buffer), mix: new Uint8Array(nb * h) };
 }
 
 /** Back to the state newCanvas returns. */
@@ -46,7 +51,9 @@ export function clearCanvas(c: Canvas): void {
 /** Wrap RGBA pixels written elsewhere (byteOffset must be a multiple of 4); block state is scanned. */
 export function canvasOf(w: number, h: number, dpi: number, px: Uint8Array): Canvas {
   const nb = (w + BLOCK - 1) >> BLOCK_SHIFT;
-  const c = { w, h, dpi, px, u32: new Uint32Array(px.buffer, px.byteOffset, w * h), nb, blk: new Uint32Array(nb * h), mix: new Uint8Array(nb * h) };
+  const u32 = new Uint32Array(px.buffer, px.byteOffset, w * h);
+  const blk = new Uint32Array(nb * h);
+  const c = { w, h, dpi, px, u32, i32: new Int32Array(px.buffer, px.byteOffset, w * h), nb, blk, blkI32: new Int32Array(blk.buffer), mix: new Uint8Array(nb * h) };
   scanBlocks(c);
   return c;
 }
