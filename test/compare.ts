@@ -31,15 +31,17 @@ function render(fx: Fixture) {
   const m = fig.meta[0];
   const meta = { xlim: m.x.lim, ylim: m.y.lim, xticks: m.x.ticks, yticks: m.y.ticks, xticklabels: m.x.labels, yticklabels: m.y.labels,
                  xoffset: m.x.offset, yoffset: m.y.offset, legend: m.legend.kind === 'some' ? m.legend.value : null };   // fixture JSON encodes absence as null
-  return { meta: { ...meta, axes: all } as Got, svg, scene };
+  // savefig dpi override (fixtures/generate_hidpi.py): raster at png_dpi without mutating figure dpi / layout cache
+  const pngDpi = typeof fx.png_dpi === 'number' ? fx.png_dpi as number : null;
+  return { meta: { ...meta, axes: all } as Got, svg, scene, fig, pngDpi };
 }
 
 let pass = 0, fail = 0; const rows: { name: string; ok: boolean; rms: number; exact: boolean; diff: number }[] = [];
 for (const name of names) {
   if (only && name !== only) continue;
   const fx = loadFixture(name);
-  let got: Got, svg: string, scene: Scene;
-  try { ({ meta: got, svg, scene } = render(fx)); } catch (e) { console.log(`FAIL ${name.padEnd(20)} threw: ${(e as Error).stack?.split('\n').slice(0, 3).join(' | ')}`); fail++; continue; }
+  let got: Got, svg: string, scene: Scene, fig: ReturnType<typeof build>, pngDpi: number | null;
+  try { ({ meta: got, svg, scene, fig, pngDpi } = render(fx)); } catch (e) { console.log(`FAIL ${name.padEnd(20)} threw: ${(e as Error).stack?.split('\n').slice(0, 3).join(' | ')}`); fail++; continue; }
   writeFileSync(OUT + name + '.svg', svg);
   const problems = [];
   if ((fx.legend === null) !== (got.legend === null)) problems.push(`legend presence: got ${JSON.stringify(got.legend)} want ${JSON.stringify(fx.legend)}`);
@@ -66,7 +68,8 @@ for (const name of names) {
   });
 
   const ref = readPNG(readFileSync(REF + name + '.png'));
-  const ours = renderRGBA(scene, new Tracer());
+  // default: figure dpi via toScene(); hidpi fixtures: savefig dpi via toRGBA({ dpi })
+  const ours = pngDpi === null ? renderRGBA(scene, new Tracer()) : fig.toRGBA({ dpi: pngDpi });
   const px = compare(ref, ours);
   // the canvas' uniform-block claims must match its pixels (the PNG encoder trusts them)
   const badBlock = checkBlocks(ours);

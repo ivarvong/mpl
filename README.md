@@ -197,6 +197,8 @@ fig.toSVG();            // string
 fig.svgStream();        // ReadableStream<Uint8Array>, e.g. a Response body in a Worker
 fig.toScene();          // the renderer-independent Scene tree (JSON-able)
 fig.toPNGSync();        // Uint8Array, rasterized by mpl's own port of Agg
+fig.toPNGSync({ dpi: 200 });              // matplotlib savefig dpi (default: figure dpi); pHYs matches Agg
+fig.toPNGSync({ scale: 2 });              // convenience: dpi = figure.dpi × scale (retina = scale 2)
 fig.toPNGSync({ colors: 64 });            // palette PNG: at most 64 colors, about a third of the RGBA file
 fig.toPNGSync({ colors: 64, level: 9 });  // and the built-in deflate's slowest, smallest setting
 ```

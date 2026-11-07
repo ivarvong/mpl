@@ -115,10 +115,10 @@ function glyphText(n: Extract<Node, { kind: 'text' }>, ids: Ids): string {
     } else if (r !== 'horizontal' && r.kind === 'angled') {
       const rad = (r.deg * Math.PI) / 180, c = Math.cos(rad), sA = Math.sin(rad);
       x = pyRound(64 * (n.x + dx * c)) / 64;
-      y = pyRound(64 * (n.y - dx * sA)) / 64;  // SVG y-down: mirror the FT +dx*sin used in agg
+      y = pyRound(64 * (n.y + n.dy - dx * sA)) / 64;  // SVG y-down: mirror the FT +dx*sin used in agg
       rot = ` rotate(${f(-r.deg)})`;
     } else {
-      x = pyRound(64 * (n.x + dx)) / 64; y = pyRound(64 * n.y) / 64; rot = '';
+      x = pyRound(64 * (n.x + dx)) / 64; y = pyRound(64 * (n.y + n.dy)) / 64; rot = '';
     }
     uses.push(`<use href="#${id}" transform="translate(${f(x)} ${f(y)})${rot} scale(${s} ${-s})"/>`);
   }
@@ -159,7 +159,7 @@ function nodeIO(n: Node, ids: Ids): IOList {
       const op = n.color.alpha !== 1 ? ` fill-opacity="${f(n.color.alpha)}"` : '';
       const face = faceById(n.face);
       const wt = face.weight !== 400 ? ` font-weight="${face.weight}"` : '';
-      return `<text x="${f(n.x)}" y="${f(n.y)}" font-family="${esc(face.family)}"${wt} font-size="${f(n.sizePx)}" fill="${n.color.hex}"${op}${rot}>${esc(n.text)}</text>` + NL;
+      return `<text x="${f(n.x)}" y="${f(n.y + n.dy)}" font-family="${esc(face.family)}"${wt} font-size="${f(n.sizePx)}" fill="${n.color.hex}"${op}${rot}>${esc(n.text)}</text>` + NL;
     }
     case 'image': return imageSvg(n);
     case 'group': {

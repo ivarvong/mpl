@@ -2,7 +2,8 @@
 import type { Clip, Ink, Node, Option, Paint, Seg, Stroke } from './types.ts';
 import { none, some } from './types.ts';
 
-/** Agg PathSnapper: pixel centres for odd rounded stroke widths, pixel edges for even (top-left raster coords). */
+/** Agg PathSnapper: pixel centres for odd rounded stroke widths, pixel edges for even (top-left raster coords).
+ *  After the y-up→y-down flip, vertices land on floor(v + 0.5) + off (off = 0.5 for odd stroke px). */
 export const snapOffset = (strokePx: number): number => (Math.round(strokePx) % 2 === 1 ? 0.5 : 0.0);
 export const snap = (v: number, strokePx: number): number => Math.floor(v + 0.5) + snapOffset(strokePx);
 

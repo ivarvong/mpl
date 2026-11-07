@@ -40,7 +40,7 @@ function clipBox(clip: Clip, outer: IBox): IBox {
   }
 }
 
-type Ctx = { readonly c: Canvas; readonly ras: Rasterizer; readonly dpi: number; readonly tracer: Tracer };
+type Ctx = { readonly c: Canvas; readonly ras: Rasterizer; readonly dpi: number; readonly figH: number; readonly tracer: Tracer };
 
 const rectSegs = (x: number, y: number, w: number, h: number): readonly Seg[] =>
   [['M', x, y], ['L', x + w, y], ['L', x + w, y + h], ['L', x, y + h], ['Z']];
@@ -142,11 +142,14 @@ function drawGlyphs(x: Ctx, n: Extract<Node, { kind: 'text' }>): void {
   const face = faceById(n.face);
   const scale = ftScale(face, n.sizePt, x.dpi);
   const color = rgba8(n.color);
-  const H = x.c.h;
+  // Agg RendererAgg.height is the float figsize*dpi (may be *.5); canvas truncates. Flip with figH.
+  const H = x.figH;
   const rot = n.rotation;
+  // Agg _draw_text_glyphs_and_boxes: FT y-up = (H - y_baseline) + dy_up, with dy_up = -n.dy.
+  // Must use that association (not H - (y_baseline + n.dy)) so *.5 26.6 pens match banker's round.
   for (const { gid, dx } of n.glyphs) {
     if (rot === 'horizontal') {
-      drawGlyph(x.c, face, gid, scale, ROT_ID, pyRound(64 * (n.x + dx)), pyRound(64 * (H - n.y)), color);
+      drawGlyph(x.c, face, gid, scale, ROT_ID, pyRound(64 * (n.x + dx)), pyRound(64 * ((H - n.y) - n.dy)), color);
     } else if (rot === 'vertical') {
       drawGlyph(x.c, face, gid, scale, ROT_90, pyRound(64 * n.x), pyRound(64 * (H - n.y + dx)), color);
     } else {
@@ -154,7 +157,7 @@ function drawGlyphs(x: Ctx, n: Extract<Node, { kind: 'text' }>): void {
       const rad = (rot.deg * Math.PI) / 180;
       const c = Math.cos(rad), s = Math.sin(rad);
       const ox = pyRound(64 * (n.x + dx * c));
-      const oy = pyRound(64 * (H - n.y + dx * s));
+      const oy = pyRound(64 * ((H - n.y) - n.dy + dx * s));
       drawGlyph(x.c, face, gid, scale, rotMatDeg(rot.deg), ox, oy, color);
     }
   }
@@ -259,7 +262,7 @@ export function releaseScratch(): void { scratch = none; }
 
 function renderInto(c: Canvas, scene: Scene, tracer: Tracer): Canvas {
   const full: IBox = { x0: 0, y0: 0, x1: c.w, y1: c.h };
-  const x: Ctx = { c, ras: new Rasterizer(full), dpi: scene.dpi, tracer };
+  const x: Ctx = { c, ras: new Rasterizer(full), dpi: scene.dpi, figH: scene.height, tracer };
   tracer.span('raster.background', {}, () => background(x, scene.background, full));
   scene.nodes.forEach((n, i) => tracer.span('raster.node', { i, kind: n.kind }, () => drawNode(x, n, full)));
   return c;

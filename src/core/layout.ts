@@ -225,23 +225,25 @@ function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: numb
       xBoxes.push(...o);
       if (o.length > 0) xUp.push(bottomUp(xt.offset, b.x1, theme.offsetTextPadPt, 'right', theme.xtick.labelSizePt, theme.font.weight));
     }
-    const l = optBox(put(ax.xlabel, (b.x0 + b.x1) / 2, bottom + lp, { kind: 'horizontal', ha: 'center', va: 'top' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseX);
+    const l = optBox(put(ax.xlabel, b.x0 + (b.x1 - b.x0) / 2, bottom + lp, { kind: 'horizontal', ha: 'center', va: 'top' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseX);
     xBoxes.push(...l);
-    if (l.length > 0) xUp.push(bottomUp(ax.xlabel, (b.x0 + b.x1) / 2, A.labelPadPt, 'center', A.labelSizePt, theme.font.labelWeight));
+    if (l.length > 0) xUp.push(bottomUp(ax.xlabel, b.x0 + (b.x1 - b.x0) / 2, A.labelPadPt, 'center', A.labelSizePt, theme.font.labelWeight));
   }
   if (roles.yOnRight) {
     let right = b.x1 + half;
     for (const lb of yb.far) right = Math.max(right, lb.x1);
     if (!ax.hiddenLabels.y) yBoxes.push(...optBox(put(yt.offset, b.x1, b.yTop - pad, { kind: 'horizontal', ha: 'right', va: 'baseline' }, theme.ytick.labelSizePt, theme.ytick.color)));
-    yBoxes.push(...optBox(put(ax.ylabel, right + lp, (b.yTop + b.yBot) / 2, { kind: 'ylabelRight' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseY));
+    yBoxes.push(...optBox(put(ax.ylabel, right + lp, b.yTop + (b.yBot - b.yTop) / 2, { kind: 'ylabelRight' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseY));
   } else {
     let left = b.x0 - half;
     for (const lb of yb.near) left = Math.min(left, lb.x0);
     if (!ax.hiddenLabels.y) yBoxes.push(...optBox(put(yt.offset, b.x0, b.yTop - pad, { kind: 'horizontal', ha: 'left', va: 'baseline' }, theme.ytick.labelSizePt, theme.ytick.color)));
-    yBoxes.push(...optBox(put(ax.ylabel, left - lp, (b.yTop + b.yBot) / 2, { kind: 'ylabel' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseY));
+    yBoxes.push(...optBox(put(ax.ylabel, left - lp, b.yTop + (b.yBot - b.yTop) / 2, { kind: 'ylabel' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseY));
   }
-  const tx0 = ax.titleLoc === 'left' ? b.x0 : ax.titleLoc === 'right' ? b.x1 : (b.x0 + b.x1) / 2;
-  const tb = put(ax.title, tx0, b.yTop - A.titlePadPt * k, { kind: 'horizontal', ha: ax.titleLoc, va: 'baseline' }, A.titleSizePt, A.titleColor, ax.titleWeight);
+  // Agg BboxTransform: x0 + frac*w. (x0+x1)/2 is 1 ulp off when x0+x1 is not dyadic (shifts FreeType 26.6 half-pen).
+  const tx0 = ax.titleLoc === 'left' ? b.x0 : ax.titleLoc === 'right' ? b.x1 : b.x0 + (b.x1 - b.x0) / 2;
+  // Agg flips after ScaledTranslation pad in y-up: H - (bbox.t + pad). yTop - pad is 1 ulp off when t*H is not dyadic.
+  const tb = put(ax.title, tx0, f.H - (b.t + A.titlePadPt * k), { kind: 'horizontal', ha: ax.titleLoc, va: 'baseline' }, A.titleSizePt, A.titleColor, ax.titleWeight);
   // the title's top in display y-up: transAxes + ScaledTranslation(0, pad/72) maps (x, 1) to h·1 + (b + pad/72·dpi)
   // (moved above top tick labels, it has no exact form here: fall back to the flipped box)
   const titleUp: Option<UpEdges> = tb.kind !== 'some' ? none
