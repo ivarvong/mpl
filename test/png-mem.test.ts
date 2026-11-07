@@ -80,9 +80,15 @@ test('pngStreamSync zlib payloads == encodePNGSync single IDAT; IDAT payloads �
 });
 
 test('clean-isolate measured peak ≤ pngPeakBytes (zero tolerance); report slack', () => {
-  const cases = [
-    ...['demo_x1', 'demo_x2', 'demo_x3', 'dashboard_x1', 'dashboard_x2', 'dashboard_x3'].map((key) => ({ kind: 'file' as const, key })),
-    { kind: 'noise' as const, key: 'noise' },
+  // Canvases are built in-process from library specs (no checked-in RGBA dumps or absolute fixture paths).
+  const cases: { key: string; kind: 'demo' | 'dashboard' | 'noise'; scale?: number }[] = [
+    { key: 'demo_x1', kind: 'demo', scale: 1 },
+    { key: 'demo_x2', kind: 'demo', scale: 2 },
+    { key: 'demo_x3', kind: 'demo', scale: 3 },
+    { key: 'dashboard_x1', kind: 'dashboard', scale: 1 },
+    { key: 'dashboard_x2', kind: 'dashboard', scale: 2 },
+    { key: 'dashboard_x3', kind: 'dashboard', scale: 3 },
+    { key: 'noise', kind: 'noise' },
   ];
   const slacks: { key: string; peak: number; bound: number; slack: number }[] = [];
   for (const spec of cases) {
@@ -113,20 +119,24 @@ test('clean-isolate measured peak ≤ pngPeakBytes (zero tolerance); report slac
       console.log(JSON.stringify({ key: 'noise', w: side, h: side, peak, bound, maxChunk, ok: peak <= bound + PNG_PEAK_V8_RECLAIM_SLACK_BYTES && maxChunk <= PNG_IDAT_CHUNK_MAX, formulaSlack: bound - peak, limit: bound + PNG_PEAK_V8_RECLAIM_SLACK_BYTES }));
     ` : `
       import { pngStreamSync, pngPeakBytes, PNG_IDAT_CHUNK_MAX, PNG_PEAK_V8_RECLAIM_SLACK_BYTES } from './src/render/png.ts';
-      import { newCanvas } from './src/render/agg/canvas.ts';
-      import { readFileSync } from 'fs';
+      import { subplots } from './src/index.ts';
+      import { build, loadFixture } from './tools/replay.ts';
       const key = '${spec.key}';
-      const j = JSON.parse(readFileSync('/workspace/perf-out/stream/rgba/' + key + '.json'));
-      let px = new Uint8Array(readFileSync('/workspace/perf-out/stream/rgba/' + key + '.bin'));
-      let blkBuf = readFileSync('/workspace/perf-out/stream/rgba/' + key + '.blk');
-      let mix = new Uint8Array(readFileSync('/workspace/perf-out/stream/rgba/' + key + '.mix'));
-      const c = newCanvas(j.w, j.h, j.dpi);
-      c.px.set(px); c.blk.set(new Uint32Array(blkBuf.buffer, blkBuf.byteOffset, blkBuf.byteLength >> 2)); c.mix.set(mix);
-      px = null; blkBuf = null; mix = null;
+      const scale = ${spec.scale};
+      let fig;
+      if (${JSON.stringify(spec.kind)} === 'demo') {
+        const pair = subplots(1, 1, { figsize: [14, 10.5], dpi: 100 });
+        fig = pair[0];
+        pair[1].plot([0, 1, 2, 3], [0, 1, 0, 1]);
+      } else {
+        fig = build(loadFixture('hidpi_pro_dark_dashboard_200'));
+      }
+      const c = fig.toRGBA({ dpi: 100 * scale });
+      fig = null;
       if (globalThis.gc) { gc(); gc(); }
       await new Promise((r) => setTimeout(r, 40));
       if (globalThis.gc) gc();
-      const bound = pngPeakBytes(j.w, j.h);
+      const bound = pngPeakBytes(c.w, c.h);
       let peak = process.memoryUsage().arrayBuffers;
       const r = pngStreamSync(c).getReader();
       let maxChunk = 0;
@@ -140,7 +150,7 @@ test('clean-isolate measured peak ≤ pngPeakBytes (zero tolerance); report slac
         peak = Math.max(peak, process.memoryUsage().arrayBuffers);
         if (value.byteLength < 0) throw new Error('unreachable');
       }
-      console.log(JSON.stringify({ key, w: j.w, h: j.h, peak, bound, maxChunk, ok: peak <= bound + PNG_PEAK_V8_RECLAIM_SLACK_BYTES && maxChunk <= PNG_IDAT_CHUNK_MAX, formulaSlack: bound - peak, limit: bound + PNG_PEAK_V8_RECLAIM_SLACK_BYTES }));
+      console.log(JSON.stringify({ key, w: c.w, h: c.h, peak, bound, maxChunk, ok: peak <= bound + PNG_PEAK_V8_RECLAIM_SLACK_BYTES && maxChunk <= PNG_IDAT_CHUNK_MAX, formulaSlack: bound - peak, limit: bound + PNG_PEAK_V8_RECLAIM_SLACK_BYTES }));
     `;
     const r = spawnSync(process.execPath, ['--expose-gc', '--input-type=module', '-e', script], {
       cwd: process.cwd(), encoding: 'utf8', maxBuffer: 4 * 1024 * 1024,
