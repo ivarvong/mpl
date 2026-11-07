@@ -1,7 +1,7 @@
 // MissingColormapRgbaError for rgba-stage without float32 sidecar; nearest stays fine without it.
 import assert from 'node:assert/strict';
 import {
-  MissingColormapRgbaError, getColormap, registerColormapRgba, registerColormaps, requireColormapRgba,
+  MissingColormapRgbaError, getColormap, registerColormapRgba, registerColormaps, registeredColormaps, requireColormapRgba,
 } from '../src/core/colormap.ts';
 import { plasma } from '../src/colormaps/plasma.ts';
 import { plasma_rgba, plasma_r_rgba } from '../src/colormaps/plasma.rgba.ts';
@@ -56,6 +56,24 @@ registerColormapRgba(plasma_rgba, plasma_r_rgba);
   const [fig, ax] = subplots({ figsize: [1.2, 1.2] });
   ax.imshow(Z, { cmap: 'plasma', interpolation: 'hanning' });
   assert.ok(fig.toPNGSync().byteLength > 100);
+}
+
+// registration is lazy (decode on first getColormap) but still rejects bad packs when registered
+assert.throws(() => registerColormaps({ name: 'bad', N: 1, b64: 'AAAA' }), /colormap bad: packed length 3, want 32/);
+assert.throws(() => registerColormaps({ name: 'bad', N: 1, b64: '!!!!' }));
+assert.throws(() => registerColormapRgba({ name: 'plasma', N: 256, b64: 'AAAA' }), /registerColormapRgba plasma: length 3, want 4144/);
+assert.ok(!registeredColormaps().includes('bad'));
+// registering a name again replaces it, sidecar included (as an eager registry did)
+{
+  const before = getColormap('plasma');
+  assert.ok(before.ok && before.value.rgba.kind === 'some');
+  registerColormaps(plasma);
+  const after = getColormap('plasma');
+  assert.ok(after.ok && after.value.rgba.kind === 'none');
+  assert.deepEqual(after.value.trunc, before.value.trunc);
+  assert.deepEqual(after.value.round, before.value.round);
+  const again = getColormap('plasma');
+  assert.ok(again.ok && again.value === after.value, 'decoded once, then cached');
 }
 
 console.log('colormap-rgba: MissingColormapRgbaError + nearest-without-sidecar + hanning-with-sidecar ok');
