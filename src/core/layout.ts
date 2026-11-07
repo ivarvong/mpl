@@ -5,7 +5,7 @@ import { dataExtents, unionExtent, viewLimits } from './autoscale.ts';
 import type { AxisDrawn, Sides } from './draw-axis.ts';
 import { drawAxis, labelNodes } from './draw-axis.ts';
 import type { Drawn } from './draw-artists.ts';
-import { drawAxLine, drawBar, drawFill, drawLine, drawPolygon, drawSegments, drawText, drawScatter, drawSpan, drawAnnotation, handleOf } from './draw-artists.ts';
+import { drawAxLine, drawBar, drawFill, drawLine, drawPolygon, drawSegments, drawText, drawScatter, drawSpan, drawAnnotation, drawImage, handleOf } from './draw-artists.ts';
 import type { Frame } from './frame.ts';
 import { axesBox, frame } from './frame.ts';
 import { forward } from './scale.ts';
@@ -53,6 +53,13 @@ function roleImplies(role: AxesRole, hasTwin: boolean, theme: Theme, hidden: Axe
                  patch: true, yOnRight: false };
       case 'twinx':
         return { x: { kind: 'hidden' }, y: { kind: 'shown', sides: { near: false, far: true, labels: 'far' } }, patch: false, yOnRight: true };
+      case 'colorbar':
+        // vertical: ticks on the right; horizontal: ticks on the bottom; patch on for solids
+        if (role.orientation === 'horizontal') {
+          return { x: { kind: 'shown', sides: { near: true, far: false, labels: 'near' } },
+                   y: { kind: 'hidden' }, patch: true, yOnRight: false };
+        }
+        return { x: { kind: 'hidden' }, y: { kind: 'shown', sides: { near: false, far: true, labels: 'far' } }, patch: true, yOnRight: true };
       default: return assertNever(role);
     }
   })();
@@ -81,6 +88,7 @@ function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tr
       case 'axline': return tracer.span('artist.axline', { through: a.through.kind }, (sp) => drawAxLine(a, f, theme, k, clip, sp));
       case 'segments': return tracer.span('artist.segments', { segments: a.x0.length }, () => drawSegments(a, f, theme, k, clip));
       case 'polygon': return tracer.span('artist.polygon', { vertices: a.x.length, closed: a.closed }, () => drawPolygon(a, f, k, clip));
+      case 'image': return tracer.span('artist.image', { rows: a.rows, cols: a.cols }, () => drawImage(a, f, clip));
       case 'errorbar': return { nodes: [], lines: [], boxes: [], points: [], handle: handleOf(a) };
       default: return assertNever(a);
     }
@@ -91,7 +99,7 @@ function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tr
 function zorder(a: Artist): number {
   switch (a.kind) {
     case 'bar': case 'fill': case 'span': return 1;
-    case 'scatter': return a.zorder;
+    case 'scatter': case 'image': return a.zorder;
     case 'axline': return 2;
     case 'line': case 'segments': case 'polygon': return a.zorder;
     case 'text': case 'annotation': case 'errorbar': return 3;
@@ -112,7 +120,7 @@ function legendEntries(ax: AxesSpec, drawn: readonly Drawn[]): readonly LegendEn
       // Line2D, patches and collections are Axes children; hist's labelled bar is a child Rectangle
       case 'line': case 'fill': case 'scatter': case 'axline': case 'segments': case 'polygon': children.push(e); break;
       case 'bar': (a.legend === 'child' ? children : containers).push(e); break;
-      case 'span': case 'errorbar': containers.push(e); break;
+      case 'span': case 'errorbar': case 'image': containers.push(e); break;
       default: assertNever(a);
     }
   });
@@ -277,24 +285,49 @@ type AxesIn = { readonly ax: AxesSpec; readonly x: Shared; readonly y: Shared; r
  * limits, and the shared locator, whose tick space is its own (the leader's) axis length.
  */
 
-/** Bbox.shrunk_to_aspect + anchored('C'): shrink position to the data aspect (adjustable='box'). */
-function applyAspect(position: Position, aspect: AxesSpec['aspect'], xlim: readonly [number, number], ylim: readonly [number, number],
-                     xscale: Scale, yscale: Scale, figW: number, figH: number): Position {
-  if (aspect.kind === 'auto') return position;
-  const ratio = aspect.kind === 'equal' ? 1 : aspect.value;
-  const tx0 = forward(xscale, xlim[0]), tx1 = forward(xscale, xlim[1]);
-  const ty0 = forward(yscale, ylim[0]), ty1 = forward(yscale, ylim[1]);
-  const xsize = Math.max(Math.abs(tx1 - tx0), 1e-30);
-  const ysize = Math.max(Math.abs(ty1 - ty0), 1e-30);
-  const boxAspect = ratio * (ysize / xsize);
+/** Shrink `position` to physical aspect `boxAspect` (= height/width in display units), anchored at [ax,ay]. */
+function shrinkToBoxAspect(position: Position, boxAspect: number, figW: number, figH: number, anchor: readonly [number, number]): Position {
   const figAspect = figH / figW;
   const [l, b, r, top] = position;
   const w = r - l, h = top - b;
   const Htry = w * boxAspect / figAspect;
   let W: number, HH: number;
   if (Htry <= h) { W = w; HH = Htry; } else { W = h * figAspect / boxAspect; HH = h; }
-  const L = l + 0.5 * (w - W), B = b + 0.5 * (h - HH);
+  const L = l + anchor[0] * (w - W), B = b + anchor[1] * (h - HH);
   return [L, B, L + W, B + HH];
+}
+
+/** matplotlib.colorbar._ColorbarAxesLocator: shrink axes for triangular/rectangular extends. */
+function applyColorbarExtend(position: Position, role: AxesSpec['role'], ext: AxesSpec['colorbarExtend']): Position {
+  if (ext.kind === 'none' || role.kind !== 'colorbar') return position;
+  const [l, b, r, t] = position;
+  const w = r - l, h = t - b;
+  const len = 1 + ext.value.lower + ext.value.upper;
+  const shrink = 1 / len, offset = ext.value.lower / len;
+  if (role.orientation === 'vertical') {
+    const hh = h * shrink;
+    return [l, b + offset * h, r, b + offset * h + hh];
+  }
+  const ww = w * shrink;
+  return [l + offset * w, b, l + offset * w + ww, t];
+}
+
+/** Bbox.shrunk_to_aspect + anchored: data aspect (adjustable='box') and/or set_box_aspect. */
+function applyAspect(position: Position, aspect: AxesSpec['aspect'], boxAspect: AxesSpec['boxAspect'],
+                     anchor: readonly [number, number],
+                     xlim: readonly [number, number], ylim: readonly [number, number],
+                     xscale: Scale, yscale: Scale, figW: number, figH: number): Position {
+  // matplotlib: box_aspect is applied first (when set), then data aspect if not 'auto'.
+  let pos = position;
+  if (boxAspect.kind === 'some') pos = shrinkToBoxAspect(pos, boxAspect.value, figW, figH, anchor);
+  if (aspect.kind === 'auto') return pos;
+  const ratio = aspect.kind === 'equal' ? 1 : aspect.value;
+  const tx0 = forward(xscale, xlim[0]), tx1 = forward(xscale, xlim[1]);
+  const ty0 = forward(yscale, ylim[0]), ty1 = forward(yscale, ylim[1]);
+  const xsize = Math.max(Math.abs(tx1 - tx0), 1e-30);
+  const ysize = Math.max(Math.abs(ty1 - ty0), 1e-30);
+  const dataBoxAspect = ratio * (ysize / xsize);
+  return shrinkToBoxAspect(pos, dataBoxAspect, figW, figH, anchor);
 }
 
 function planAxis(which: 'x' | 'y', leader: AxesSpec, extent: Extent, fig: FigureSpec, tracer: Tracer): Shared {
@@ -442,7 +475,8 @@ function layoutParts(fig: FigureSpec, mode: LayoutMode, tracer: Tracer): readonl
   };
   for (let i = 0; i < fig.axes.length; i++) { limsX.push(limitsOf('x', i)); limsY.push(limitsOf('y', i)); }
   const adjusted: AxesSpec[] = fig.axes.map((ax, i) => {
-    const pos = applyAspect(ax.position, ax.aspect, limsX[i].lim, limsY[i].lim, scaleOf(ax.x), scaleOf(ax.y), Wpx, Hpx);
+    const afterExt = applyColorbarExtend(ax.position, ax.role, ax.colorbarExtend);
+    const pos = applyAspect(afterExt, ax.aspect, ax.boxAspect, ax.anchor, limsX[i].lim, limsY[i].lim, scaleOf(ax.x), scaleOf(ax.y), Wpx, Hpx);
     return pos === ax.position ? ax : { ...ax, position: pos };
   });
   const fig2: FigureSpec = { ...fig, axes: adjusted };

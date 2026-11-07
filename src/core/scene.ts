@@ -17,6 +17,7 @@ export function inkOf(fill: Paint, stroke: Option<Stroke>): Option<Ink> {
 }
 
 export const rectNode = (x: number, y: number, w: number, h: number, ink: Ink): Node => ({ kind: 'rect', x, y, w, h, ink });
-export const pathNode = (segs: readonly Seg[], ink: Ink): Node => ({ kind: 'path', segs, ink });
+export const pathNode = (segs: readonly Seg[], ink: Ink, antialiased = true): Node =>
+  ({ kind: 'path', segs, ink, antialiased });
 export const group = (nodes: readonly Node[], clip: Clip): Node => ({ kind: 'group', clip, nodes, tag: '' });
 export const NO_CLIP: Clip = { kind: 'none' };

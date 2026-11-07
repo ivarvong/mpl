@@ -7,7 +7,7 @@ import { faceById, ftScale } from '../core/fonts.ts';
 import { pyRound } from '../core/log.ts';
 import { lookup } from '../core/std.ts';
 import type { Tracer } from '../trace.ts';
-import { blendCoverage, clearCanvas, newCanvas, quantize } from './agg/canvas.ts';
+import { blendCoverage, clearCanvas, invalidateBlocks, newCanvas, quantize } from './agg/canvas.ts';
 import type { Canvas, Rgba8 } from './agg/canvas.ts';
 import { EMPTY, Rasterizer } from './agg/raster.ts';
 import type { Coverage, IBox } from './agg/raster.ts';
@@ -62,11 +62,28 @@ function fillCoverage(ras: Rasterizer, clip: IBox, subs: readonly Sub[]): Covera
   return ras.sweep('nonzero');
 }
 
+/** Agg scanline_bin-style: any AA coverage → 255 (Patch.antialiased=False / RendererAgg mono). */
+function toMono(cov: Coverage): Coverage {
+  const sv = new Uint8Array(cov.sv.length);
+  for (let i = 0; i < cov.sv.length; i++) sv[i] = cov.sv[i] > 0 ? 255 : 0;
+  return { x0: cov.x0, y0: cov.y0, w: cov.w, h: cov.h, rows: cov.rows, sx: cov.sx, sl: cov.sl, sv };
+}
+
 /** RendererAgg::_draw_path: face, then stroke (each its own rasterizer pass). */
-function drawPath(x: Ctx, subs: readonly Sub[], ink: Ink, clip: IBox): void {
+function drawPath(x: Ctx, subs: readonly Sub[], ink: Ink, clip: IBox, antialiased = true): void {
   x.tracer.span('raster.path', { ink: ink.kind, subpaths: subs.length, vertices: subs.reduce((n, s) => n + s.xs.length, 0) }, (sp) => {
-    const fill = (): void => { const cov = fillCoverage(x.ras, clip, subs); sp.setAttribute('fill.runs', cov.sx.length); blendCoverage(x.c, cov, rgba8(ink.kind === 'stroke' ? ink.stroke.color : ink.fill), 0, 0, clip); };
-    const stroke = (s: Stroke): void => { const cov = strokeCoverage(x.ras, clip, subs, s); sp.setAttribute('stroke.runs', cov.sx.length).setAttribute('stroke.w', +s.width.toFixed(3)); blendCoverage(x.c, cov, rgba8(s.color), 0, 0, clip); };
+    const fill = (): void => {
+      let cov = fillCoverage(x.ras, clip, subs);
+      if (!antialiased) cov = toMono(cov);
+      sp.setAttribute('fill.runs', cov.sx.length);
+      blendCoverage(x.c, cov, rgba8(ink.kind === 'stroke' ? ink.stroke.color : ink.fill), 0, 0, clip);
+    };
+    const stroke = (s: Stroke): void => {
+      let cov = strokeCoverage(x.ras, clip, subs, s);
+      if (!antialiased) cov = toMono(cov);
+      sp.setAttribute('stroke.runs', cov.sx.length).setAttribute('stroke.w', +s.width.toFixed(3));
+      blendCoverage(x.c, cov, rgba8(s.color), 0, 0, clip);
+    };
     switch (ink.kind) {
       case 'fill': fill(); return;
       case 'stroke': stroke(ink.stroke); return;
@@ -135,10 +152,38 @@ function drawGlyphs(x: Ctx, n: Extract<Node, { kind: 'text' }>): void {
   }
 }
 
+
+/** Straight-alpha RGBA blit with the renderer clip box (inclusive right/bottom as Agg). */
+function blitImage(c: Canvas, x0: number, y0: number, w: number, h: number, rgba: Uint8Array, clip: IBox): void {
+  invalidateBlocks(c);
+  const x1 = Math.min(x0 + w, clip.x1), y1 = Math.min(y0 + h, clip.y1);
+  const xs = Math.max(x0, clip.x0), ys = Math.max(y0, clip.y0);
+  for (let y = ys; y < y1; y++) {
+    for (let x = xs; x < x1; x++) {
+      const si = ((y - y0) * w + (x - x0)) * 4;
+      const a = rgba[si + 3];
+      if (a === 0) continue;
+      const di = (y * c.w + x) * 4;
+      if (a === 255) { c.px[di] = rgba[si]; c.px[di+1] = rgba[si+1]; c.px[di+2] = rgba[si+2]; c.px[di+3] = 255; }
+      else {
+        // src-over straight alpha
+        const aa = a / 255, ia = 1 - aa;
+        const da = c.px[di+3] / 255;
+        const outA = aa + da * ia;
+        if (outA <= 0) continue;
+        c.px[di] = Math.round((rgba[si] * aa + c.px[di] * da * ia) / outA);
+        c.px[di+1] = Math.round((rgba[si+1] * aa + c.px[di+1] * da * ia) / outA);
+        c.px[di+2] = Math.round((rgba[si+2] * aa + c.px[di+2] * da * ia) / outA);
+        c.px[di+3] = Math.round(outA * 255);
+      }
+    }
+  }
+}
+
 function drawNode(x: Ctx, n: Node, clip: IBox): void {
   switch (n.kind) {
     case 'rect': drawPath(x, flatten(rectSegs(n.x, n.y, n.w, n.h), 0, 0), n.ink, clip); return;
-    case 'path': drawPath(x, flatten(n.segs, 0, 0), n.ink, clip); return;
+    case 'path': drawPath(x, flatten(n.segs, 0, 0), n.ink, clip, n.antialiased); return;
     case 'polyline': {
       const sub: Sub = { xs: Array.from(n.xs), ys: Array.from(n.ys), closed: false };
       if (sub.xs.length > 0) x.tracer.span('raster.polyline', { vertices: sub.xs.length, w: +n.stroke.width.toFixed(3), dash: n.stroke.dash.kind }, (sp) => {
@@ -150,6 +195,10 @@ function drawNode(x: Ctx, n: Node, clip: IBox): void {
     }
     case 'markers': drawMarkers(x, n.shape, n.xs, n.ys, n.ink, clip); return;
     case 'text': drawText(x, n); return;
+    case 'image': {
+      x.tracer.span('raster.image', { w: n.w, h: n.h }, () => blitImage(x.c, n.x, n.y, n.w, n.h, n.rgba, clip));
+      return;
+    }
     case 'group': { const inner = clipBox(n.clip, clip); for (const ch of n.nodes) drawNode(x, ch, inner); return; }
     default: assertNever(n);
   }

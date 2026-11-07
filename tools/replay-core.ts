@@ -13,6 +13,16 @@ export const decode = (a: unknown): unknown => {
   if (Array.isArray(a)) return a.map(decode);
   if (a && typeof a === 'object' && '$dates' in a) return (a.$dates as string[]).map((s) => new Date(s + 'Z'));
   if (a && typeof a === 'object' && '$date' in a) return new Date((a.$date as string) + 'Z');
+  if (a && typeof a === 'object' && '$float' in a) {
+    const s = String((a as { $float: string }).$float);
+    if (s === 'nan') return NaN;
+    if (s === 'inf') return Infinity;
+    if (s === '-inf') return -Infinity;
+    return Number(s);
+  }
+  // {"$array": rows} → nested list (imshow); hist must keep bare list-of-lists as lists
+  if (a && typeof a === 'object' && '$array' in a) return decode((a as { $array: unknown }).$array);
+  // {"$uint8rgb": rows} passes through for Axes.imshow to build a uint8 buffer
   return a;
 };
 /** Replay a fixture's [method, args, kwargs] calls: ax[method](...args, kwargs). */
@@ -32,6 +42,18 @@ export function buildWith(fx: Fixture, subplots: Subplots): Figure {
       const ffn = fn.slice(4);
       const F = fig as unknown as Dyn;
       if (typeof F[ffn] !== 'function') throw new Error(`no Figure.${ffn}`);
+      if (ffn === 'colorbar') {
+        // last mappable on current Axes: prefer image, else numeric-c scatter
+        let mappable: unknown = undefined;
+        for (let i = ax.artists.length - 1; i >= 0; i--) {
+          const a = ax.artists[i];
+          if (a.kind === 'image') { mappable = a; break; }
+          if (a.kind === 'scatter' && a.mappable.kind === 'some') { mappable = a; break; }
+        }
+        if (mappable === undefined) throw new Error('fig.colorbar: no mappable on current Axes');
+        F['colorbar']?.(mappable, kwargs);
+        continue;
+      }
       F[ffn]?.(...args, ...(Object.keys(kwargs).length ? [kwargs] : []));
       continue;
     }

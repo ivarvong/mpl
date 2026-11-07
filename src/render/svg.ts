@@ -1,3 +1,5 @@
+import { encodePNGSync } from './png.ts';
+import { canvasOf } from './agg/canvas.ts';
 // Scene -> SVG as an IOList, flattened once at the boundary or streamed. No DOM.
 import type { Ink, Node, Paint, Scene, Seg, Stroke } from '../core/types.ts';
 import { assertNever } from '../core/types.ts';
@@ -148,6 +150,7 @@ function nodeIO(n: Node, ids: Ids): IOList {
       const wt = face.weight !== 400 ? ` font-weight="${face.weight}"` : '';
       return `<text x="${f(n.x)}" y="${f(n.y)}" font-family="${esc(face.family)}"${wt} font-size="${f(n.sizePx)}" fill="${n.color.hex}"${op}${rot}>${esc(n.text)}</text>` + NL;
     }
+    case 'image': return imageSvg(n);
     case 'group': {
       switch (n.clip.kind) {
         case 'none': return [`<g${tagAttr(n.tag)}>` + NL, n.nodes.map((c) => nodeIO(c, ids)), '</g>' + NL];
@@ -163,11 +166,22 @@ function nodeIO(n: Node, ids: Ids): IOList {
   }
 }
 
+function imageSvg(n: Extract<Node, { kind: 'image' }>): string {
+  const c = canvasOf(n.w, n.h, 100, n.rgba);
+  const png = encodePNGSync(c);
+  let bin = '';
+  for (let i = 0; i < png.length; i++) bin += String.fromCharCode(png[i]);
+  const b64 = btoa(bin);
+  return `<image x="${f(n.x)}" y="${f(n.y)}" width="${f(n.w)}" height="${f(n.h)}" `
+    + `preserveAspectRatio="none" xlink:href="data:image/png;base64,${b64}"/>` + NL;
+}
+
 export function leafCount(n: Node): number {
   switch (n.kind) {
     case 'rect': case 'path': case 'text': return 1;
     case 'polyline': return n.xs.length;
     case 'markers': return n.xs.length;
+    case 'image': return 1;
     case 'group': return n.nodes.reduce((a, c) => a + leafCount(c), 0);
     default: return assertNever(n);
   }

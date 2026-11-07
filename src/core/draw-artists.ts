@@ -10,8 +10,13 @@ import { inkOf, pathNode, rectNode, snap, snapOffset } from './scene.ts';
 import { MARKERS } from './data/markers.ts';
 import { arrowExtents, yaArrowPath } from './arrow.ts';
 import { lookup } from './std.ts';
-import { forward, forwardAll } from './scale.ts';
-import type { Artist, AxLineArtist, MarkerName, ScatterCollection, BarArtist, PolygonArtist, SegmentsArtist, Clip, FillArtist, Handle, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, AnnotationCoords, AnnotationCoordPair, Paint } from './types.ts';
+import { forward, forwardAll, inverse } from './scale.ts';
+import { applyNorm, autoscaleNorm, getColormap, logNorm, mapBytes, normalize, requireColormapRgba } from './colormap.ts';
+import {
+  type Aff, interpolationStage, resampleAffineFloat, resampleAffineRgba,
+  resolveInterp, UnsupportedInterpolationError,
+} from './image-resample.ts';
+import type { Artist, AxLineArtist, MarkerName, ScatterCollection, BarArtist, PolygonArtist, SegmentsArtist, Clip, FillArtist, Handle, ImageArtist, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, AnnotationCoords, AnnotationCoordPair, Paint } from './types.ts';
 import { labelNodes } from './draw-axis.ts';
 import { measure, placeLayout, pxPerPt, strokePx, windowExtent } from './text.ts';
 import type { Face } from './fonts.ts';
@@ -34,6 +39,7 @@ export function handleOf(a: Artist): Option<Handle> {
     case 'bar': case 'fill': case 'polygon': case 'span': return some({ kind: 'patch', face: a.face, edge: a.edge });
     case 'scatter': return some({ kind: 'scatter', shape: a.shape, collection: a.collection, edgeWidthPt: a.edgeWidthPt });
     case 'errorbar': return some({ kind: 'errorbar', errorbar: a.handle });
+    case 'image': return none;
     case 'text': case 'annotation': return none;
     default: return assertNever(a);
   }
@@ -70,6 +76,9 @@ function strokeNodes(xs: Float64Array, ys: Float64Array, stroke: Stroke, theme: 
   }
   return [{ kind: 'polyline', xs: px, ys: py, stroke }];
 }
+
+const clip01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
+const byteTrunc01 = (x: number): number => (clip01(x) * 255) | 0;
 
 export function drawLine(a: LineArtist, f: Frame, theme: Theme, k: number, clip: Clip, span: SpanHandle): Drawn {
   // the stroke follows the drawstyle's step vertices; markers sit on the data points (Line2D.draw)
@@ -175,7 +184,7 @@ export function drawPolygon(a: PolygonArtist, f: Frame, k: number, clip: Clip): 
   const fix = (v: number): number => (rect ? Math.floor(v + 0.5) + off : v);
   const segs: Seg[] = Array.from(xs, (x, i): Seg => [i === 0 ? 'M' : 'L', fix(x), fix(ys[i])]);
   if (a.closed) segs.push(['Z']);
-  return { nodes: [{ kind: 'group', clip, nodes: [pathNode(segs, ink.value)], tag: '' }], lines, boxes: [], points: [], handle };
+  return { nodes: [{ kind: 'group', clip, nodes: [pathNode(segs, ink.value, a.antialiased)], tag: '' }], lines, boxes: [], points: [], handle };
 }
 
 type Pending = { readonly x: number; readonly w: number; y: number; h: number; readonly i: number };
@@ -256,7 +265,7 @@ export function drawFill(a: FillArtist, f: Frame, k: number, clip: Clip): Drawn 
   for (let i = 0; i < n; i++) { xs[i] = X[i] * f.ax + f.cx; up[i] = Y1[i] * f.ay + f.cy; xs[n + i] = X[n - 1 - i] * f.ax + f.cx; up[n + i] = Y2[n - 1 - i] * f.ay + f.cy; }
   const node: Node = asMarker
     ? { kind: 'markers', shape: segs, xs: Float64Array.of(0), ys: Float64Array.of(f.H), ink: ink.value }
-    : { kind: 'path', segs, ink: ink.value };
+    : { kind: 'path', segs, ink: ink.value, antialiased: true };
   return { nodes: [{ kind: 'group', clip, nodes: [node], tag: '' }], lines: [{ xs, ys: up }], boxes: [], points: [], handle };
 }
 
@@ -435,4 +444,138 @@ export function drawSpan(a: SpanArtist, f: Frame, k: number, clip: Clip): Drawn 
     const rect = rectNode(X0, Y0, X1 - X0, Y1 - Y0, ink.value);
     return { nodes: [{ kind: 'group', clip, nodes: [rect], tag: '' }], lines: [], boxes: [], points: [], handle: handleOf(a) };
   }
+}
+
+/** ax.imshow: rasterise a ScalarMappable to an image node. */
+export function drawImage(a: ImageArtist, f: Frame, clip: Clip): Drawn {
+  const handle = handleOf(a);
+  const cmapR = getColormap(a.cmapName);
+  if (!cmapR.ok) return { nodes: [], lines: [], boxes: [], points: [], handle };
+  const cmap = cmapR.value;
+  const norm0 = a.normKind === 'log' ? logNorm(a.vmin, a.vmax) : normalize(a.vmin, a.vmax);
+  const norm = autoscaleNorm(norm0, a.values);
+  const [L, R, B, T] = a.extent;
+  const xs = [tx(f, L), tx(f, R)], ys = [ty(f, B), ty(f, T)];
+  const dx0 = Math.min(xs[0], xs[1]), dx1 = Math.max(xs[0], xs[1]);
+  const dy0 = Math.min(ys[0], ys[1]), dy1 = Math.max(ys[0], ys[1]);
+  const x0 = Math.floor(dx0 + 0.5), x1 = Math.floor(dx1 + 0.5 + 1e-8);
+  const y0 = Math.floor(dy0 + 0.5), y1 = Math.floor(dy1 + 0.5 + 1e-8);
+  const outW = Math.max(0, x1 - x0), outH = Math.max(0, y1 - y0);
+  if (outW === 0 || outH === 0) return { nodes: [], lines: [], boxes: [], points: [], handle };
+  const dispW = Math.abs(dx1 - dx0), dispH = Math.abs(dy1 - dy0);
+  const mode = resolveInterp(a.interpolation, a.cols, a.rows, dispW, dispH);
+
+  const stage = interpolationStage(a.cols, a.rows, dispW, dispH);
+  const mid = new Float64Array(a.values.length);
+  applyNorm(norm, a.values, mid);
+  const { trunc, N } = cmap;
+  const rgba = new Uint8Array(outW * outH * 4);
+  const xSpan = R - L, ySpan = T - B;
+  if (a.channels !== 1) {
+    if (mode !== 'nearest') {
+      throw new UnsupportedInterpolationError(mode, `RGB(A) images only support nearest so far (got ${mode})`);
+    }
+    const ch = a.channels;
+    for (let oy = 0; oy < outH; oy++) {
+      for (let ox = 0; ox < outW; ox++) {
+        const px = x0 + ox + 0.5, py = y0 + oy + 0.5;
+        const xData = inverse(f.xscale, (px - f.cx) / f.ax);
+        const yData = inverse(f.yscale, (f.H - py - f.cy) / f.ay);
+        const u = ((xData - L) / xSpan) * a.cols;
+        const v = a.origin === 'upper' ? ((T - yData) / ySpan) * a.rows : ((yData - B) / ySpan) * a.rows;
+        let ix = Math.floor(u - 1e-9), iy = Math.floor(v - 1e-9);
+        if (ix < 0) ix = 0; else if (ix >= a.cols) ix = a.cols - 1;
+        if (iy < 0) iy = 0; else if (iy >= a.rows) iy = a.rows - 1;
+        const s = (iy * a.cols + ix) * ch;
+        const o = (oy * outW + ox) * 4;
+        rgba[o] = (clip01(a.values[s]) * 255) | 0;
+        rgba[o + 1] = (clip01(a.values[s + 1]) * 255) | 0;
+        rgba[o + 2] = (clip01(a.values[s + 2]) * 255) | 0;
+        const aa = ch === 4 ? clip01(a.values[s + 3]) * a.alpha : a.alpha;
+        rgba[o + 3] = (clip01(aa) * 255) | 0;
+      }
+    }
+    const nodeRgb: Node = { kind: 'image', x: x0, y: y0, w: outW, h: outH, rgba };
+    return { nodes: [{ kind: 'group', clip, nodes: [nodeRgb], tag: '' }], lines: [], boxes: [], points: [], handle };
+  }
+
+  if (mode === 'nearest') {
+    for (let oy = 0; oy < outH; oy++) {
+      for (let ox = 0; ox < outW; ox++) {
+        const px = x0 + ox + 0.5, py = y0 + oy + 0.5;
+        const xData = inverse(f.xscale, (px - f.cx) / f.ax);
+        const yData = inverse(f.yscale, (f.H - py - f.cy) / f.ay);
+        const u = ((xData - L) / xSpan) * a.cols;
+        const v = a.origin === 'upper' ? ((T - yData) / ySpan) * a.rows : ((yData - B) / ySpan) * a.rows;
+        let ix = Math.floor(u - 1e-9), iy = Math.floor(v - 1e-9);
+        if (ix < 0) ix = 0; else if (ix >= a.cols) ix = a.cols - 1;
+        if (iy < 0) iy = 0; else if (iy >= a.rows) iy = a.rows - 1;
+        const val = mid[iy * a.cols + ix];
+        let li: number;
+        if (Number.isNaN(val)) li = N + 2;
+        else {
+          let xa = val * N;
+          if (xa === N) xa = N - 1;
+          if (xa < 0) li = N; else if (xa >= N) li = N + 1; else li = xa | 0;
+        }
+        const s = li * 4, o = (oy * outW + ox) * 4;
+        rgba[o] = trunc[s]; rgba[o + 1] = trunc[s + 1]; rgba[o + 2] = trunc[s + 2];
+        rgba[o + 3] = Math.round(trunc[s + 3] * a.alpha);
+      }
+    }
+  } else if (mode === 'hanning' || mode === 'bilinear') {
+    // Affine input(array)→output(buffer): fit from extent + frame (axis-aligned linear axes).
+    // array (0,0) and (cols,rows) → display → buffer offset.
+    const a0x = tx(f, L), a0y = a.origin === 'upper' ? ty(f, T) : ty(f, B);
+    const a1x = tx(f, R), a1y = a.origin === 'upper' ? ty(f, B) : ty(f, T);
+    const sx = (a1x - a0x) / a.cols;
+    const sy = (a1y - a0y) / a.rows;
+    const aff: Aff = { sx, shy: 0, shx: 0, sy, tx: a0x - x0, ty: a0y - y0 };
+    if (stage === 'data') {
+      // matplotlib: resample raw data, then norm + colormap (not the reverse — float order matters)
+      const sampled = new Float64Array(outW * outH);
+      resampleAffineFloat(a.values, a.cols, a.rows, sampled, outW, outH, aff, mode);
+      const sampledMid = new Float64Array(outW * outH);
+      applyNorm(norm, sampled, sampledMid);
+      mapBytes(cmap, sampledMid, rgba);
+      for (let i = 3; i < rgba.length; i += 4) rgba[i] = Math.round(rgba[i] * a.alpha);
+    } else {
+      // rgba stage: colormap first, then AGG-resample premultiplied float32 RGBA
+      // matplotlib rgba-stage: to_rgba (float LUT), then resample, then bytes=True (trunc)
+      const srcRgba = new Float32Array(a.cols * a.rows * 4);
+      const fl = requireColormapRgba(cmap);
+      for (let i = 0; i < mid.length; i++) {
+        const x = mid[i];
+        let li: number;
+        if (Number.isNaN(x)) li = N + 2;
+        else {
+          let xa = x * N;
+          if (xa === N) xa = N - 1;
+          if (xa < 0) li = N; else if (xa >= N) li = N + 1; else li = xa | 0;
+        }
+        const s = li * 4, o = i * 4;
+        const aa = fl[s + 3] * a.alpha;
+        srcRgba[o] = fl[s] * aa;
+        srcRgba[o + 1] = fl[s + 1] * aa;
+        srcRgba[o + 2] = fl[s + 2] * aa;
+        srcRgba[o + 3] = aa;
+      }
+      const outF = new Float32Array(outW * outH * 4);
+      resampleAffineRgba(srcRgba, a.cols, a.rows, outF, outW, outH, aff, mode);
+      // demultiply + to bytes (matplotlib to_rgba bytes=True, norm=False)
+      // matplotlib.colors.to_rgba(…, bytes=True) truncates (astype uint8), does not round
+      for (let i = 0; i < outF.length; i += 4) {
+        const aa = outF[i + 3];
+        const inv = aa !== 0 ? 1 / aa : 1;
+        rgba[i] = byteTrunc01(outF[i] * inv);
+        rgba[i + 1] = byteTrunc01(outF[i + 1] * inv);
+        rgba[i + 2] = byteTrunc01(outF[i + 2] * inv);
+        rgba[i + 3] = byteTrunc01(aa);
+      }
+    }
+  } else {
+    throw new UnsupportedInterpolationError(String(mode), 'not implemented');
+  }
+  const node: Node = { kind: 'image', x: x0, y: y0, w: outW, h: outH, rgba };
+  return { nodes: [{ kind: 'group', clip, nodes: [node], tag: '' }], lines: [], boxes: [], points: [], handle };
 }

@@ -2,7 +2,7 @@
 // `unknown` until parsed here into the typed model (parse, don't validate);
 // unknown keyword arguments are errors, as in matplotlib.
 import { parsePaint, parseRgb } from './core/colors.ts';
-import { isNumericColorArray, parseColormap, parseNormKw, scalarToPaints } from './core/colormap.ts';
+import { getColormap, isNumericColorArray, mapPaints, parseColormap, parseNormKw, scalarToPaints } from './core/colormap.ts';
 import { date2num, fromEpochMs } from './core/dates.ts';
 import { MARKERS } from './core/data/markers.ts';
 import type { Fmt, FmtShape } from './core/fmt.ts';
@@ -13,6 +13,7 @@ import { scaleOf } from './core/ticks.ts';
 import { parseFmt, parseLinestyle, parseMarker } from './core/fmt.ts';
 import { layoutFigure, supBoxes, tightBoxes, unionBox } from './core/layout.ts';
 import type { GridSpec, SubplotParams, SubplotSpec } from './core/gridspec.ts';
+import { gridSpec, subgridspec, subplotSpec } from './core/gridspec.ts';
 import { cellPosition, validParams } from './core/gridspec.ts';
 import { parseWeight } from './core/fonts.ts';
 import type { RcLayer, RcValue } from './core/rc.ts';
@@ -24,7 +25,7 @@ import { parseFontSize, parseLegendLoc, parseTheme, scatterPointsOf } from './co
 import type {
   Artist, Aspect, AxesMeta, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
   AxLineArtist, AxLineThrough, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist,
-  LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, PxBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
+  LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, PxBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, ImageArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
 } from './core/types.ts';
 import { assertNever, err, none, ok, some, unwrap } from './core/types.ts';
 import { iolistToString } from './render/iolist.ts';
@@ -107,6 +108,69 @@ function parseSeries(v: unknown, what: string): Result<Series> {
     else return err(`${what}[${i}]: expected a number, got ${JSON.stringify(x)}`);
   }
   return ok({ kind: 'numeric', values: out });
+}
+
+
+function parseImageGrid(Z: unknown): {
+  readonly values: Float64Array; readonly rows: number; readonly cols: number; readonly channels: 1 | 3 | 4;
+} {
+  // Accept {"$uint8rgb": rows} from fixtures / replay
+  if (isPlainObject(Z) && Object.prototype.hasOwnProperty.call(Z, '$uint8rgb')) {
+    const rowsArr = Z['$uint8rgb'];
+    if (!Array.isArray(rowsArr) || rowsArr.length === 0) throw new TypeError('imshow: $uint8rgb must be a non-empty array');
+    return parseImageGrid(rowsArr.map((row: unknown) => {
+      if (!Array.isArray(row)) throw new TypeError('imshow: bad $uint8rgb row');
+      return row.map((pix: unknown) => {
+        if (!Array.isArray(pix)) throw new TypeError('imshow: bad $uint8rgb pixel');
+        return pix.map((c: unknown) => (typeof c === 'number' ? c / 255 : c));
+      });
+    }));
+  }
+  if (!Array.isArray(Z) || Z.length === 0) throw new TypeError('imshow: Z must be a non-empty 2-D array');
+  const rows = Z.length;
+  const row0 = Z[0];
+  if (!Array.isArray(row0) || row0.length === 0) throw new TypeError('imshow: Z must be a 2-D array');
+  const cell0 = row0[0];
+  const isRgb = Array.isArray(cell0);
+  if (!isRgb) {
+    // scalar grid
+    const cols = row0.length;
+    const values = new Float64Array(rows * cols);
+    for (let r = 0; r < rows; r++) {
+      const row = Z[r];
+      if (!Array.isArray(row) || row.length !== cols) throw new TypeError(`imshow: ragged rows`);
+      for (let c = 0; c < cols; c++) {
+        const v = row[c];
+        if (typeof v !== 'number') throw new TypeError(`imshow: Z[${r}][${c}] must be a number`);
+        values[r * cols + c] = v;
+      }
+    }
+    return { values, rows, cols, channels: 1 };
+  }
+  const ch = cell0.length;
+  if (ch !== 3 && ch !== 4) throw new TypeError('imshow: RGB(A) pixels must have 3 or 4 channels');
+  const cols = row0.length;
+  const values = new Float64Array(rows * cols * ch);
+  let maxAbs = 0;
+  for (let r = 0; r < rows; r++) {
+    const row = Z[r];
+    if (!Array.isArray(row) || row.length !== cols) throw new TypeError('imshow: ragged RGB rows');
+    for (let c = 0; c < cols; c++) {
+      const pix = row[c];
+      if (!Array.isArray(pix) || pix.length !== ch) throw new TypeError(`imshow: Z[${r}][${c}] bad RGB pixel`);
+      for (let k = 0; k < ch; k++) {
+        const v = pix[k];
+        if (typeof v !== 'number') throw new TypeError(`imshow: Z[${r}][${c}][${k}] must be a number`);
+        values[(r * cols + c) * ch + k] = v;
+        if (Math.abs(v) > maxAbs) maxAbs = Math.abs(v);
+      }
+    }
+  }
+  // uint8 0..255 → float 0..1 (matplotlib)
+  if (maxAbs > 1) {
+    for (let i = 0; i < values.length; i++) values[i] = values[i] / 255;
+  }
+  return { values, rows, cols, channels: ch as 3 | 4 };
 }
 
 /** Broadcast a scalar or array kwarg to n values. */
@@ -340,7 +404,7 @@ export class Axes {
   readonly role: AxesRole;
   readonly theme: Theme;
   /** The SubplotSpec this Axes occupies; its position follows the figure's subplot parameters. */
-  readonly cell: SubplotSpec;
+  cell: SubplotSpec;
   readonly artists: Artist[] = [];
   readonly xaxis: Axis;
   readonly yaxis: Axis;
@@ -367,6 +431,15 @@ export class Axes {
   private patchCycle = 0;
   /** set_aspect: 'auto' | 'equal' | number (adjustable='box'). */
   private aspect: Aspect = { kind: 'auto' };
+  /** set_box_aspect: physical H/W of the Axes box; none when unset. */
+  private boxAspect: Option<number> = none;
+  /** Axes.set_anchor: (x, y) in [0,1] within the original position when box/data aspect shrinks it. */
+  private anchorXY: readonly [number, number] = [0.5, 0.5];
+  /** Colorbar axes: hide the short-axis ticks and use a custom outline later. */
+  /** True when this Axes is a colorbar cax. */
+  colorbarMode = false;
+  /** Triangular colorbar extends (axes-fraction lengths); none when extend='neither'. */
+  colorbarExtend: Option<{ readonly lower: number; readonly upper: number }> = none;
 
   constructor(fig: Figure, role: AxesRole, cell: SubplotSpec, xaxis: Axis, yaxis: Axis) {
     this.fig = fig; this.role = role; this.theme = fig.theme; this.cell = cell; this.yaxis = yaxis;
@@ -407,6 +480,21 @@ export class Axes {
     if (typeof aspect === 'number' && Number.isFinite(aspect) && aspect > 0) { this.aspect = { kind: 'ratio', value: aspect }; return this; }
     throw new Error(`set_aspect: aspect must be 'auto', 'equal', or a positive number, got ${JSON.stringify(aspect)}`);
   }
+  /** set_box_aspect(aspect | null) — physical height/width of the Axes box (colorbar uses 20). */
+  set_box_aspect(aspect: unknown): this {
+    if (typeof aspect === 'number' && Number.isFinite(aspect) && aspect > 0) { this.boxAspect = some(aspect); return this; }
+    throw new Error(`set_box_aspect: aspect must be a positive number, got ${JSON.stringify(aspect)}`);
+  }
+  /** set_anchor(anchor) — 'C' or [x, y] in [0, 1]; where a shrunk box sits in the original position. */
+  set_anchor(anchor: unknown): this {
+    if (anchor === 'C' || anchor === 'center') { this.anchorXY = [0.5, 0.5]; return this; }
+    if (Array.isArray(anchor) && anchor.length === 2 && typeof anchor[0] === 'number' && typeof anchor[1] === 'number') {
+      this.anchorXY = [Number(anchor[0]), Number(anchor[1])]; return this;
+    }
+    throw new Error(`set_anchor: expected 'C' or [x, y], got ${JSON.stringify(anchor)}`);
+  }
+  /** Replace this Axes' SubplotSpec (colorbar make_axes_gridspec). */
+  set_subplotspec(ss: SubplotSpec): void { this.cell = ss; }
   private next(which: 'line' | 'patch'): Rgb {
     const c = this.theme.axes.cycle;
     return which === 'line' ? c[this.lineCycle++ % c.length] : c[this.patchCycle++ % c.length];
@@ -859,7 +947,7 @@ export class Axes {
         const edgeP = st.edge.kind === 'some' ? st.edge.value : fill ? forced : colors[k];
         const face: Paint = fill ? withAlphaOpt(st.face.kind === 'some' ? st.face.value : colors[k], alpha) : { kind: 'none' };
         const px = (vertical ? o.x : o.y).slice(0, split), py = (vertical ? o.y : o.x).slice(0, split);
-        const poly: PolygonArtist = { kind: 'polygon', x: px, y: py, closed: fill, face, edge: edgeOf(withAlphaOpt(edgeP, alpha), lw), label: lblOf(k), clip, zorder: fill ? 1 : 2, orientation };
+        const poly: PolygonArtist = { kind: 'polygon', x: px, y: py, closed: fill, face, edge: edgeOf(withAlphaOpt(edgeP, alpha), lw), label: lblOf(k), clip, zorder: fill ? 1 : 2, orientation, antialiased: true };
         this.artists.push(poly);
         polys.unshift(poly);
       }
@@ -1043,6 +1131,60 @@ export class Axes {
   }
 
   /**
+   * imshow(Z, { cmap, norm, vmin, vmax, origin, extent, interpolation, aspect, alpha })
+   * — display a 2-D array as an image. Default interpolation is 'auto' (nearest when
+   * zoomed in, hanning when downsampling). Sets aspect to 'equal' unless overridden.
+   */
+  imshow(Z: unknown, kwargs: Kwargs = {}): ImageArtist {
+    const kw = new KwReader(kwargs, 'imshow');
+    const { values, rows, cols, channels } = parseImageGrid(Z);
+    const cmap = kw.read(['cmap'], parseColormap, () => unwrap(parseColormap('viridis')));
+    const vminO = kw.read(['vmin'], (v): Result<Option<number>> => (typeof v === 'number' && Number.isFinite(v) ? ok(some(v)) : err('vmin must be a number')), (): Option<number> => none);
+    const vmaxO = kw.read(['vmax'], (v): Result<Option<number>> => (typeof v === 'number' && Number.isFinite(v) ? ok(some(v)) : err('vmax must be a number')), (): Option<number> => none);
+    const normKw = kw.read(['norm'], (v): Result<Option<unknown>> => ok(some(v)), (): Option<unknown> => none);
+    const normParsed = unwrap(parseNormKw({ vmin: vminO, vmax: vmaxO, norm: normKw }));
+    let lo = vminO.kind === 'some' ? vminO.value : NaN;
+    let hi = vmaxO.kind === 'some' ? vmaxO.value : NaN;
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+      lo = Infinity; hi = -Infinity;
+      for (let i = 0; i < values.length; i++) {
+        const v = values[i]; if (!Number.isFinite(v)) continue;
+        if (v < lo) lo = v; if (v > hi) hi = v;
+      }
+      if (!(lo <= hi)) { lo = 0; hi = 1; }
+    }
+    const origin = kw.read(['origin'], (v): Result<'upper' | 'lower'> => (v === 'upper' || v === 'lower' ? ok(v) : err("origin must be 'upper' or 'lower'")), () => 'upper' as const);
+    const interp = kw.read(['interpolation'], (v): Result<ImageArtist['interpolation']> => {
+      if (v === 'nearest' || v === 'none' || v === 'antialiased' || v === 'auto' || v === 'hanning' || v === 'bilinear') return ok(v);
+      return err("interpolation must be 'nearest'|'none'|'antialiased'|'auto'|'hanning'|'bilinear'");
+    }, () => 'auto' as const);
+    const extent = kw.read(['extent'], (v): Result<readonly [number, number, number, number]> => {
+      if (!Array.isArray(v) || v.length !== 4 || !v.every((x) => typeof x === 'number')) return err('extent must be [left, right, bottom, top]');
+      return ok([Number(v[0]), Number(v[1]), Number(v[2]), Number(v[3])]);
+    }, () => (origin === 'upper'
+      ? [-0.5, cols - 0.5, rows - 0.5, -0.5] as const
+      : [-0.5, cols - 0.5, -0.5, rows - 0.5] as const));
+    const alpha = kw.read(['alpha'], (v): Result<number> => (typeof v === 'number' && v >= 0 && v <= 1 ? ok(v) : err('alpha must be in [0, 1]')), () => 1);
+    const aspect = kw.read(['aspect'], (v): Result<unknown> => ok(v), (): unknown => 'equal');
+    const lbl = kw.read(['label'], label, (): Label => ({ kind: 'none' }));
+    const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => true);
+    const zorder = kw.read(['zorder'], num('zorder'), () => 0);
+    kw.done();
+    if (aspect === 'equal' || aspect === 'auto' || (typeof aspect === 'number' && aspect > 0)) this.set_aspect(aspect);
+    else this.set_aspect('equal');
+    const im: ImageArtist = {
+      kind: 'image', values, rows, cols, channels, cmapName: cmap.name, vmin: lo, vmax: hi,
+      normKind: normParsed.kind === 'log' ? 'log' : 'linear',
+      extent, origin, interpolation: interp, alpha, label: lbl, clip, zorder,
+    };
+    this.artists.push(im);
+    this.xaxis.request(); this.yaxis.request();
+    this.set_xlim(extent[0], extent[1]);
+    this.set_ylim(extent[2], extent[3]);
+    return im;
+  }
+
+  /**
    * scatter(x, y, { s, c, marker, cmap, norm, vmin, vmax, alpha, edgecolors, linewidths, zorder, clip_on })
    * — PathCollection. A numeric `c` array with `cmap` (default viridis) maps through Normalize(vmin, vmax).
    */
@@ -1076,6 +1218,7 @@ export class Axes {
     const vmax = kw.read(['vmax'], (v): Result<Option<number>> => (typeof v === 'number' && Number.isFinite(v) ? ok(some(v)) : err('vmax must be a number')), (): Option<number> => none);
     const normKw = kw.read(['norm'], (v): Result<Option<unknown>> => ok(some(v)), (): Option<unknown> => none);
     let colorList0: readonly Paint[];
+    let mappable: ScatterArtist['mappable'] = none;
     if (cRaw.kind === 'some' && isNumericColorArray(cRaw.value)) {
       const raw = cRaw.value;
       const arr = raw instanceof Float64Array ? raw
@@ -1085,6 +1228,17 @@ export class Axes {
       if (arr.length !== 1 && arr.length !== n) throw new Error(`c has ${arr.length} values, expected 1 or ${n}`);
       const norm = unwrap(parseNormKw({ vmin, vmax, norm: normKw }));
       colorList0 = scalarToPaints(cmap, norm, arr);
+      let lo = vmin.kind === 'some' ? vmin.value : Infinity;
+      let hi = vmax.kind === 'some' ? vmax.value : -Infinity;
+      if (!(Number.isFinite(lo) && Number.isFinite(hi))) {
+        lo = Infinity; hi = -Infinity;
+        for (let i = 0; i < arr.length; i++) {
+          const v = arr[i]; if (!Number.isFinite(v)) continue;
+          if (v < lo) lo = v; if (v > hi) hi = v;
+        }
+        if (!(lo <= hi)) { lo = 0; hi = 1; }
+      }
+      mappable = some({ cmapName: cmap.name, vmin: lo, vmax: hi, normKind: norm.kind === 'log' ? 'log' as const : 'linear' as const });
     } else if (cRaw.kind === 'some') {
       colorList0 = unwrap(parsePaintOrList(cRaw.value));
       // cmap/norm/vmin/vmax with a colour c are accepted (matplotlib stores them) but do not colour the faces
@@ -1102,7 +1256,7 @@ export class Axes {
     kw.done();
     const withAlpha = (p: Paint): Paint => (p.kind === 'solid' && alpha.kind === 'some' ? { kind: 'solid', color: { hex: p.color.hex, alpha: alpha.value } } : p);
     const collection = { sizesPt2: sizes, faces: colorList0.map(withAlpha), edges: edgecolorsList.map(withAlpha) };
-    const sc: ScatterArtist = { kind: 'scatter', x: xs, y: ys, shape: marker.kind === 'some' ? marker.value : 'o', edgeWidthPt: linewidths, label: lbl, clip, collection, zorder };
+    const sc: ScatterArtist = { kind: 'scatter', x: xs, y: ys, shape: marker.kind === 'some' ? marker.value : 'o', edgeWidthPt: linewidths, label: lbl, clip, collection, zorder, mappable };
     this.artists.push(sc);
     this.xaxis.request(); this.yaxis.request();
     return sc;
@@ -1336,7 +1490,7 @@ export class Axes {
   spec(): AxesSpec {
     return {
       role: this.role, position: this.position, artists: [...this.artists], title: this.title, titleLoc: this.titleLoc, titleWeight: this.titleWeight, xlabel: this.xlabel, ylabel: this.ylabel,
-      x: this.xaxis.spec(), y: this.yaxis.spec(), grid: this.grid_, legend: this.legendSpec, aspect: this.aspect,
+      x: this.xaxis.spec(), y: this.yaxis.spec(), grid: this.grid_, legend: this.legendSpec, aspect: this.aspect, boxAspect: this.boxAspect, anchor: this.anchorXY, colorbarExtend: this.colorbarExtend,
       spines: {
         left: { visible: this.spineOv.left.visible, color: this.spineOv.left.color, widthPt: this.spineOv.left.widthPt, position: this.spineOv.left.position },
         right: { visible: this.spineOv.right.visible, color: this.spineOv.right.color, widthPt: this.spineOv.right.widthPt, position: this.spineOv.right.position },
@@ -1434,8 +1588,182 @@ function parseGridSpec(nrowsRaw: unknown, ncolsRaw: unknown, kwargs: Kwargs): Gr
   const widthRatios = kw.read(['width_ratios'], ratios('width_ratios', ncols), () => ones(ncols));
   const heightRatios = kw.read(['height_ratios'], ratios('height_ratios', nrows), () => ones(nrows));
   kw.done();
-  return { nrows, ncols, widthRatios, heightRatios, overrides };
+  return { nrows, ncols, widthRatios, heightRatios, overrides, parent: none };
 }
+
+
+const isArtist = (v: unknown): v is Artist => {
+  if (!isPlainObject(v)) return false;
+  const k = prop(v, 'kind');
+  return k.kind === 'some' && typeof k.value === 'string';
+};
+
+/** A ScalarMappable state for colorbar: imshow or numeric-c scatter. */
+const mappableOf = (a: Artist): Option<{ readonly cmapName: string; readonly vmin: number; readonly vmax: number; readonly normKind: 'linear' | 'log' }> => {
+  if (a.kind === 'image') return some({ cmapName: a.cmapName, vmin: a.vmin, vmax: a.vmax, normKind: a.normKind });
+  if (a.kind === 'scatter' && a.mappable.kind === 'some') return a.mappable;
+  return none;
+};
+
+/** Colorbar.make_axes_gridspec for a given location: nest a GridSpec in the parent's cell. */
+function makeAxesGridspec(parent: Axes, opts: {
+  readonly location: 'right' | 'left' | 'top' | 'bottom';
+  readonly fraction: number; readonly pad: number; readonly shrink: number; readonly aspect: number;
+  readonly anchor: readonly [number, number]; readonly panchor: readonly [number, number];
+}): { readonly cax: Axes; readonly orientation: 'vertical' | 'horizontal'; readonly aspect: number } {
+  const { location, fraction, pad, shrink, aspect: aspect0, anchor, panchor } = opts;
+  const whSpace = 2 * pad / (1 - pad);
+  let gs: GridSpec;
+  let ssMain: SubplotSpec;
+  let ssCb: SubplotSpec;
+  let aspect = aspect0;
+  if (location === 'left' || location === 'right') {
+    const hr = [(1 - anchor[1]) * (1 - shrink), shrink, anchor[1] * (1 - shrink)];
+    gs = subgridspec(parent.cell, 3, 2, {
+      wspace: whSpace, hspace: 0,
+      heightRatios: hr,
+      widthRatios: location === 'left' ? [fraction, 1 - fraction - pad] : [1 - fraction - pad, fraction],
+    });
+    if (location === 'left') {
+      ssMain = subplotSpec(gs, 0, 3, 1, 2);
+      ssCb = subplotSpec(gs, 1, 2, 0, 1);
+    } else {
+      ssMain = subplotSpec(gs, 0, 3, 0, 1);
+      ssCb = subplotSpec(gs, 1, 2, 1, 2);
+    }
+  } else {
+    const wr = [anchor[0] * (1 - shrink), shrink, (1 - anchor[0]) * (1 - shrink)];
+    gs = subgridspec(parent.cell, 2, 3, {
+      hspace: whSpace, wspace: 0,
+      widthRatios: wr,
+      heightRatios: location === 'top' ? [fraction, 1 - fraction - pad] : [1 - fraction - pad, fraction],
+    });
+    aspect = 1 / aspect0;
+    if (location === 'top') {
+      ssMain = subplotSpec(gs, 1, 2, 0, 3);
+      ssCb = subplotSpec(gs, 0, 1, 1, 2);
+    } else {
+      ssMain = subplotSpec(gs, 0, 1, 0, 3);
+      ssCb = subplotSpec(gs, 1, 2, 1, 2);
+    }
+  }
+  parent.set_subplotspec(ssMain);
+  parent.set_anchor(panchor);
+  const cax = parent.fig.addAxesFromSpec(ssCb, { kind: 'colorbar', orientation: (location === 'left' || location === 'right') ? 'vertical' : 'horizontal' });
+  cax.set_anchor(anchor);
+  cax.set_box_aspect(aspect);
+  cax.set_aspect('auto');
+  cax.colorbarMode = true;
+  return { cax, orientation: (location === 'left' || location === 'right') ? 'vertical' : 'horizontal', aspect };
+}
+
+/** Default extendfrac when Colorbar.extendfrac is None (matplotlib colorbar.py). */
+const COLORBAR_EXTENDFRAC = 0.05;
+
+/** Colorbar: solids as N coloured bars matching matplotlib's pcolormesh flat-shading strip.
+ *  `extend` adds under/over triangles in axes-fraction coords (default extendfrac=0.05) and
+ *  shrinks the axes box like `_ColorbarAxesLocator`. */
+export class Colorbar {
+  readonly ax: Axes;
+  readonly orientation: 'vertical' | 'horizontal';
+  constructor(cax: Axes, m: { readonly cmapName: string; readonly vmin: number; readonly vmax: number; readonly normKind: 'linear' | 'log' },
+              orientation: 'vertical' | 'horizontal', cblabel: string,
+              extend: 'neither' | 'min' | 'max' | 'both' = 'neither') {
+    this.ax = cax;
+    this.orientation = orientation;
+    const cmapR = getColormap(m.cmapName);
+    if (!cmapR.ok) throw new Error(`colorbar: unknown colormap ${m.cmapName}`);
+    const cmap = cmapR.value;
+    const N = cmap.N;
+    const lo = m.vmin, hi = m.vmax;
+    const span = hi - lo;
+    const b = new Float64Array(N + 1);
+    for (let i = 0; i <= N; i++) b[i] = lo + span * (i / N);
+    const mid = new Float64Array(N);
+    for (let i = 0; i < N; i++) mid[i] = (i + 0.5) / N;
+    const faces = mapPaints(cmap, mid);
+    const x = new Float64Array(N), y = new Float64Array(N), w = new Float64Array(N), h = new Float64Array(N);
+    if (orientation === 'vertical') {
+      for (let i = 0; i < N; i++) { x[i] = 0; w[i] = 1; y[i] = b[i]; h[i] = b[i + 1] - b[i]; }
+      cax.set_xlim(0, 1);
+      cax.set_ylim(lo, hi);
+    } else {
+      for (let i = 0; i < N; i++) { y[i] = 0; h[i] = 1; x[i] = b[i]; w[i] = b[i + 1] - b[i]; }
+      cax.set_ylim(0, 1);
+      cax.set_xlim(lo, hi);
+    }
+    // under / over from cmap LUT indices N / N+1 (matplotlib Colorbar._do_extends → cmap(norm(values)))
+    const under = mapPaints(cmap, [-1])[0];
+    const over = mapPaints(cmap, [2])[0];
+    const extendLower = extend === 'min' || extend === 'both';
+    const extendUpper = extend === 'max' || extend === 'both';
+    const bot = extendLower ? -COLORBAR_EXTENDFRAC : 0;
+    const top = extendUpper ? 1 + COLORBAR_EXTENDFRAC : 1;
+    // axes-fraction → data (colorbar ylim/xlim stay vmin/vmax; tips sit outside)
+    const axToData = (u: number, v: number): readonly [number, number] =>
+      orientation === 'vertical' ? [u, lo + v * span] : [lo + u * span, v];
+    // Extend triangles behind solids (zorder just below bar=1), clip_on=False
+    if (extendLower) {
+      const tri = orientation === 'vertical'
+        ? [[0, 0], [0.5, bot], [1, 0]] as const
+        : [[0, 0], [bot, 0.5], [0, 1]] as const;
+      const pts = tri.map(([u, v]) => axToData(u, v));
+      cax.artists.push({
+        kind: 'polygon',
+        x: Float64Array.from(pts.map((p) => p[0])),
+        y: Float64Array.from(pts.map((p) => p[1])),
+        closed: true, face: under, edge: { kind: 'none' },
+        label: { kind: 'none' }, clip: false, zorder: 0.9, orientation, antialiased: false,
+      });
+    }
+    if (extendUpper) {
+      const tri = orientation === 'vertical'
+        ? [[0, 1], [0.5, top], [1, 1]] as const
+        : [[1, 0], [top, 0.5], [1, 1]] as const;
+      const pts = tri.map(([u, v]) => axToData(u, v));
+      cax.artists.push({
+        kind: 'polygon',
+        x: Float64Array.from(pts.map((p) => p[0])),
+        y: Float64Array.from(pts.map((p) => p[1])),
+        closed: true, face: over, edge: { kind: 'none' },
+        label: { kind: 'none' }, clip: false, zorder: 0.9, orientation, antialiased: false,
+      });
+    }
+    const bar: BarArtist = {
+      kind: 'bar', orientation,
+      x, y, w, h, face: faces[0], faces, edge: { kind: 'none' },
+      label: { kind: 'none' }, clip: false, sticky: false, legend: 'container',
+    };
+    cax.artists.push(bar);
+    // Colorbar outline spine: pointed path when extended (matplotlib._ColorbarSpine / _do_extends)
+    for (const side of ['left', 'right', 'top', 'bottom'] as const) cax.spines[side].set_visible(false);
+    const xyOutAx: readonly (readonly [number, number])[] = orientation === 'vertical'
+      ? [[0, 0], [0.5, bot], [1, 0], [1, 1], [0.5, top], [0, 1], [0, 0]]
+      : [[0, 0], [bot, 0.5], [0, 1], [1, 1], [top, 0.5], [1, 0], [0, 0]];
+    const xyOut = xyOutAx.map(([u, v]) => axToData(u, v));
+    const outline: PolygonArtist = {
+      kind: 'polygon',
+      x: Float64Array.from(xyOut.map((p) => p[0])),
+      y: Float64Array.from(xyOut.map((p) => p[1])),
+      closed: true,
+      face: { kind: 'none' },
+      edge: { kind: 'on', color: cax.theme.axes.edge, widthPt: cax.theme.axes.linewidthPt },
+      label: { kind: 'none' }, clip: false, zorder: 2,
+      orientation, antialiased: true,
+    };
+    cax.artists.push(outline);
+    if (cblabel) {
+      if (orientation === 'vertical') cax.set_ylabel(cblabel);
+      else cax.set_xlabel(cblabel);
+    }
+  }
+  set_label(s: unknown): this {
+    if (this.orientation === 'vertical') this.ax.set_ylabel(s);
+    else this.ax.set_xlabel(s);
+    return this;
+  }
+}
+
 
 export class Figure {
   readonly theme: Theme;
@@ -1470,9 +1798,87 @@ export class Figure {
   }
   /** add_subplot() — one Axes filling a 1x1 GridSpec, placed by the subplot parameters. */
   add_subplot(): Axes {
-    const grid: GridSpec = { nrows: 1, ncols: 1, widthRatios: [1], heightRatios: [1], overrides: NO_OVERRIDES };
+    const grid: GridSpec = gridSpec(1, 1, [1], [1], NO_OVERRIDES);
     return this.addCell({ grid, rows: [0, 1], cols: [0, 1] }, none, none);
   }
+  /** Add an Axes for a free SubplotSpec (colorbar cax). */
+  addAxesFromSpec(cell: SubplotSpec, role: AxesRole = { kind: 'primary' }): Axes {
+    const ax = new Axes(this, role, cell, new Axis(), new Axis());
+    this.axes.push(ax);
+    this.touch();
+    return ax;
+  }
+
+  /**
+   * fig.colorbar(mappable, { ax, label, orientation, shrink, pad, fraction, aspect, location })
+   * — steal space from ax via make_axes_gridspec (use_gridspec=True) and draw a continuous colorbar.
+   */
+  colorbar(mappable: unknown, kwargs: Kwargs = {}): Colorbar {
+    const kw = new KwReader(kwargs, 'Figure.colorbar');
+    const axKw = kw.read(['ax'], (v): Result<Axes> => (v instanceof Axes ? ok(v) : err('ax must be an Axes')), (): Axes => {
+      if (isArtist(mappable)) {
+        for (const a of this.axes) { if (a.artists.includes(mappable)) return a; }
+      }
+      if (this.axes.length === 0) throw new Error('colorbar: no Axes to steal space from');
+      return this.axes[0];
+    });
+    const orientationKw = kw.read(['orientation'], (v): Result<Option<'vertical' | 'horizontal'>> =>
+      (v === 'vertical' || v === 'horizontal' ? ok(some(v)) : err("orientation must be 'vertical'|'horizontal'")),
+      (): Option<'vertical' | 'horizontal'> => none);
+    const locationDefault: 'right' | 'left' | 'top' | 'bottom' =
+      orientationKw.kind === 'some' && orientationKw.value === 'horizontal' ? 'bottom'
+      : orientationKw.kind === 'some' && orientationKw.value === 'vertical' ? 'right'
+      : 'right';
+    const location = kw.read(['location'], (v): Result<'right' | 'left' | 'top' | 'bottom'> =>
+      (v === 'right' || v === 'left' || v === 'top' || v === 'bottom' ? ok(v) : err("location must be 'right'|'left'|'top'|'bottom'")),
+      () => locationDefault);
+    const fraction = kw.read(['fraction'], num('fraction'), () => 0.15);
+    const pad = kw.read(['pad'], num('pad'), () => (location === 'left' ? 0.1 : location === 'bottom' ? 0.15 : 0.05));
+    const shrink = kw.read(['shrink'], num('shrink'), () => 1.0);
+    const aspectN = kw.read(['aspect'], num('aspect'), () => 20);
+    const cblabel = kw.read(['label'], (v): Result<string> => ok(str(v)), () => '');
+    const extend = kw.read(['extend'], (v): Result<'neither' | 'both' | 'min' | 'max'> =>
+      (v === 'neither' || v === 'both' || v === 'min' || v === 'max' ? ok(v)
+        : err("extend must be 'neither'|'both'|'min'|'max'")), () => 'neither' as const);
+    kw.done();
+    const locDefaults = {
+      right: { anchor: [0.0, 0.5] as const, panchor: [1.0, 0.5] as const },
+      left: { anchor: [1.0, 0.5] as const, panchor: [0.0, 0.5] as const },
+      top: { anchor: [0.5, 0.0] as const, panchor: [0.5, 1.0] as const },
+      bottom: { anchor: [0.5, 1.0] as const, panchor: [0.5, 0.0] as const },
+    };
+    const d = locDefaults[location];
+    const { cax, orientation: orient0, aspect: aspectMade } = makeAxesGridspec(axKw, {
+      location, fraction, pad, shrink, aspect: aspectN, anchor: d.anchor, panchor: d.panchor,
+    });
+    const orientation = orientationKw.kind === 'some' ? orientationKw.value : orient0;
+    // `_ColorbarAxesLocator`: record extend lengths; layout shrinks the position, then box_aspect
+    const extLower = (extend === 'min' || extend === 'both') ? COLORBAR_EXTENDFRAC : 0;
+    const extUpper = (extend === 'max' || extend === 'both') ? COLORBAR_EXTENDFRAC : 0;
+    const extLen = 1 + extLower + extUpper;
+    if (extLen > 1) {
+      const frac = 1 / extLen;
+      cax.colorbarExtend = some({ lower: extLower, upper: extUpper });
+      if (orientation === 'vertical') cax.set_box_aspect(aspectMade * frac);
+      else cax.set_box_aspect(aspectMade / frac);
+    }
+    let state: { cmapName: string; vmin: number; vmax: number; normKind: 'linear' | 'log' };
+    if (isArtist(mappable)) {
+      const mo = mappableOf(mappable);
+      if (mo.kind === 'none') throw new Error('colorbar: mappable has no colormap state (imshow or scatter with numeric c)');
+      state = mo.value;
+    } else {
+      let found: Option<{ cmapName: string; vmin: number; vmax: number; normKind: 'linear' | 'log' }> = none;
+      for (let i = axKw.artists.length - 1; i >= 0; i--) {
+        const mo = mappableOf(axKw.artists[i]);
+        if (mo.kind === 'some') { found = mo; break; }
+      }
+      if (found.kind === 'none') throw new Error('colorbar: no mappable on Axes');
+      state = found.value;
+    }
+    return new Colorbar(cax, state, orientation, cblabel, extend);
+  }
+
   private addCell(cell: SubplotSpec, sharex: Option<Axes>, sharey: Option<Axes>): Axes {
     const ax = new Axes(this, { kind: 'primary' }, cell, sharex.kind === 'some' ? sharex.value.xaxis : new Axis(), sharey.kind === 'some' ? sharey.value.yaxis : new Axis());
     this.axes.push(ax);
