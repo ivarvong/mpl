@@ -5,7 +5,6 @@
 //   - advances: FT_MulFix(hAdvance, x_scale), in 26.6
 //   - kerning: HarfBuzz em_mult on the hb-ft font scale, in 26.6
 //   - substitutions: the GSUB lookups behind ccmp/locl/rlig/calt/clig/liga for Latin text
-import { dejavuSans } from '../fonts/dejavu-sans.ts';
 import { decodeFace, FACE_CATALOG, type BakedFace, type CatalogEntry, type FaceId } from './fontcodec.ts';
 import { lookup } from './std.ts';
 import { assertNever } from './types.ts';
@@ -115,11 +114,10 @@ function load(d: FaceData): Face {
 
 // ------------------------------------------------------------------ the face registry
 // Each shipped face is its own module (mpl/fonts/<name>), so a bundle carries only the faces an
-// application imports. DejaVu Sans, matplotlib's default face, is always registered; the others are
-// passed to registerFonts(). A face decodes on first use. Font selection always runs over the whole
-// catalog, as matplotlib's does over its installed fonts, so registering faces never changes which
-// face a text gets; selecting a face that is not registered throws FontNotLoadedError instead of
-// silently drawing another one.
+// application imports. No face is registered by default: pass every face you need to registerFonts().
+// A face decodes on first use. Font selection always runs over the whole catalog, as matplotlib's
+// does over its installed fonts, so registering faces never changes which face a text gets; selecting
+// a face that is not registered throws FontNotLoadedError instead of silently drawing another one.
 
 /** Rendering needed a shipped face that has not been passed to registerFonts(). */
 export class FontNotLoadedError extends Error {
@@ -154,7 +152,6 @@ const entryOf = (id: FaceId): CatalogEntry => {
 export function registerFonts(...faces: readonly BakedFace[]): void {
   for (const b of faces) if (!registry.has(b.id)) registry.set(b.id, { entry: entryOf(b.id), baked: b, face: { kind: 'none' } });
 }
-registerFonts(dejavuSans);
 
 /** The ids of the registered faces, in catalog order. */
 export const registeredFonts = (): readonly FaceId[] => FACE_CATALOG.filter((e) => registry.has(e.id)).map((e) => e.id);

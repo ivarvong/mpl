@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { subplots } from '../src/index.ts';
+import { registerDefaultFonts } from './helpers/register-defaults.ts';
+registerDefaultFonts();
 
 // unknown rc keys raise a clear error; svg.fonttype is a known key
 try {

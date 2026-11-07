@@ -20,6 +20,6 @@ export type { AttrValue, FinishedSpan, SpanHandle } from './trace.ts';
 export type * from './core/types.ts';
 export { modern, modernDark, paperClassic, paperModern } from './presets.ts';
 
-export { availableColormaps, getColormap, logNorm, MissingColormapRgbaError, normalize, registerColormapRgba, registerColormaps, registeredColormaps, requireColormapRgba, twoSlopeNorm } from './core/colormap.ts';
+export { availableColormaps, ColormapNotLoadedError, getColormap, logNorm, MissingColormapRgbaError, normalize, registerColormapRgba, registerColormaps, registeredColormaps, requireColormap, requireColormapRgba, twoSlopeNorm } from './core/colormap.ts';
 export type { CmapRgbaPack } from './core/colormap.ts';
 export type { CmapPack, Colormap, Norm } from './core/colormap.ts';

@@ -4,10 +4,11 @@
 // matplotlib. Writes examples/out/gantt.{svg,png}; docs/images/gantt.svg is this SVG.
 import { registerFonts, subplots } from '../src/index.ts';
 // the root label is bold: DejaVu Sans Bold is its own module (in an app, 'mpl/fonts/dejavu-sans-bold')
+import { dejavuSans } from '../src/fonts/dejavu-sans.ts';
 import { dejavuSansBold } from '../src/fonts/dejavu-sans-bold.ts';
 import { save } from './_save.ts';
 
-registerFonts(dejavuSansBold);
+registerFonts(dejavuSans, dejavuSansBold);
 
 const spans = [
   { label: 'GET /api/checkout', start: 0, end: 120, color: 'C0' },

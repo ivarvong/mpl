@@ -2,7 +2,7 @@
 // `unknown` until parsed here into the typed model (parse, don't validate);
 // unknown keyword arguments are errors, as in matplotlib.
 import { parsePaint, parseRgb } from './core/colors.ts';
-import { getColormap, isNumericColorArray, mapPaints, parseColormap, parseNormKw, scalarToPaints } from './core/colormap.ts';
+import { isNumericColorArray, mapPaints, parseColormap, parseNormKw, requireColormap, scalarToPaints } from './core/colormap.ts';
 import { date2num, fromEpochMs } from './core/dates.ts';
 import { MARKERS } from './core/data/markers.ts';
 import type { Fmt, FmtShape } from './core/fmt.ts';
@@ -1671,9 +1671,7 @@ export class Colorbar {
               extend: 'neither' | 'min' | 'max' | 'both' = 'neither') {
     this.ax = cax;
     this.orientation = orientation;
-    const cmapR = getColormap(m.cmapName);
-    if (!cmapR.ok) throw new Error(`colorbar: unknown colormap ${m.cmapName}`);
-    const cmap = cmapR.value;
+    const cmap = requireColormap(m.cmapName);
     const N = cmap.N;
     const lo = m.vmin, hi = m.vmax;
     const span = hi - lo;

@@ -4,6 +4,8 @@
 import { readFileSync } from 'node:fs';
 import { subplots } from '../src/index.ts';
 import type { Axes, HistResult, HistResultMulti } from '../src/index.ts';
+import { registerDefaultFonts } from './helpers/register-defaults.ts';
+registerDefaultFonts();
 
 type Case = { name: string; setup: [string, unknown[], Record<string, unknown>][]; method: string; args: unknown[]; kwargs: Record<string, unknown>;
   ok: boolean; n?: string[] | string[][]; bins?: string[]; patches?: number; error?: string; message?: string };

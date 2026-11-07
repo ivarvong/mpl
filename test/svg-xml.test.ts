@@ -4,6 +4,9 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { subplots } from '../src/index.ts';
+import { registerDefaultColormaps, registerDefaultFonts } from './helpers/register-defaults.ts';
+registerDefaultFonts();
+registerDefaultColormaps();
 
 const prefixesBound = (svg: string, where: string): void => {
   const root = svg.slice(0, svg.indexOf('>') + 1);

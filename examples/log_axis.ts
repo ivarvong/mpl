@@ -1,6 +1,9 @@
 // Log scale with matplotlib's LogLocator and 10^n tick labels: examples/out/log_axis.{svg,png}
-import { subplots } from '../src/index.ts';
+import { registerFonts, subplots } from '../src/index.ts';
+import { dejavuSans } from '../src/fonts/dejavu-sans.ts';
 import { save } from './_save.ts';
+
+registerFonts(dejavuSans);
 
 const x = Array.from({ length: 60 }, (_, i) => i);
 

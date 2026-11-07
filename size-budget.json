@@ -2,15 +2,19 @@
   "tolerance": 0.02,
   "note": "bytes; esbuild --minify then gzip -9; see scripts/bundle_size.ts",
   "core": {
-    "min": 311598,
-    "gzip": 109719
+    "min": 302924,
+    "gzip": 102914
   },
   "core+dejavu-sans": {
-    "min": 466167,
-    "gzip": 167847
+    "min": 457710,
+    "gzip": 159973
+  },
+  "core+inter+2cmaps": {
+    "min": 653227,
+    "gzip": 182624
   },
   "everything": {
-    "min": 1205257,
-    "gzip": 381100
+    "min": 1197499,
+    "gzip": 373383
   }
 }

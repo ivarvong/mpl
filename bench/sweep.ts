@@ -1,6 +1,8 @@
 // Parametric sweeps: time layout and render vs N, report log-log slope (1.0 = linear).
-import { subplots, tracer, type Figure } from '../src/index.ts';
+import { registerFonts, subplots, tracer, type Figure } from '../src/index.ts';
 import { toSVG } from '../src/render/svg.ts';
+import { dejavuSans } from '../src/fonts/dejavu-sans.ts';
+registerFonts(dejavuSans);
 const REPS = Number(process.env['REPS'] || 5);
 const timeIt = (fn: () => void): number => { let best = Infinity; for (let i = 0; i < REPS; i++) { const t = performance.now(); fn(); best = Math.min(best, performance.now() - t); } return best; };
 const lin = (n: number, a: number, b: number): number[] => Array.from({ length: n }, (_, i) => a + (b - a) * i / Math.max(1, n - 1));

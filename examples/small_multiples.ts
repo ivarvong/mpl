@@ -3,8 +3,11 @@
 // does the spacing. The same calls are an oracle case (fixtures/ref/example_small_multiples), checked
 // pixel for pixel against matplotlib. Writes examples/out/small_multiples.{svg,png};
 // docs/images/small_multiples.svg is this SVG.
-import { subplots } from '../src/index.ts';
+import { registerFonts, subplots } from '../src/index.ts';
+import { dejavuSans } from '../src/fonts/dejavu-sans.ts';
 import { save } from './_save.ts';
+
+registerFonts(dejavuSans);
 
 const months = Array.from({ length: 12 }, (_, i) => i + 1);
 // monthly means, rounded to 0.1 °C (illustrative seasonal curves)

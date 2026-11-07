@@ -1,5 +1,10 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { subplots } from '../src/index.ts';
+import { registerColormaps, registerFonts, subplots } from '../src/index.ts';
+import { dejavuSans } from '../src/fonts/dejavu-sans.ts';
+import { viridis } from '../src/colormaps/viridis.ts';
+
+registerFonts(dejavuSans);
+registerColormaps(viridis);
 
 mkdirSync('examples/out', { recursive: true });
 const x = Array.from({ length: 40 }, (_, i) => (i / 39) * 4 * Math.PI);

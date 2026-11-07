@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { subplots, tracer } from '../src/index.ts';
+import { registerDefaultFonts } from './helpers/register-defaults.ts';
+registerDefaultFonts();
 
 const [fig, ax] = subplots();
 ax.plot([0, 1, 2, 3], [1, 4, 9, 16], 'o-', { label: 'sq' });

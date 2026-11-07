@@ -12,13 +12,35 @@ export const BUDGET_FILE = join(ROOT, 'size-budget.json');
 
 /** What an application imports, and which modules it leaves out. */
 export type Scenario = { readonly what: string; readonly entry: string; readonly external: readonly string[] };
-const TYPICAL = `import { subplots } from './index.js';
+const TYPICAL = `import { registerFonts, subplots } from './index.js';
+import { dejavuSans } from './fonts/dejavu-sans.js';
+registerFonts(dejavuSans);
+const [fig, ax] = subplots();
+ax.plot([1, 2, 3], [1, 4, 9]);
+export const svg = fig.toSVG(), png = fig.toPNGSync();`;
+const CORE_ONLY = `import { subplots } from './index.js';
+const [fig, ax] = subplots();
+ax.plot([1, 2, 3], [1, 4, 9]);
+export const svg = fig.toSVG(), png = fig.toPNGSync();`;
+const INTER_2CMAP = `import { registerColormapRgba, registerColormaps, registerFonts, subplots } from './index.js';
+import { interRegular } from './fonts/inter-regular.js';
+import { interMedium } from './fonts/inter-medium.js';
+import { interSemibold } from './fonts/inter-semibold.js';
+import { interBold } from './fonts/inter-bold.js';
+import { magma } from './colormaps/magma.js';
+import { magma_rgba } from './colormaps/magma.rgba.js';
+import { viridis } from './colormaps/viridis.js';
+import { viridis_rgba } from './colormaps/viridis.rgba.js';
+registerFonts(interRegular, interMedium, interSemibold, interBold);
+registerColormaps(magma, viridis);
+registerColormapRgba(magma_rgba, viridis_rgba);
 const [fig, ax] = subplots();
 ax.plot([1, 2, 3], [1, 4, 9]);
 export const svg = fig.toSVG(), png = fig.toPNGSync();`;
 export const ENTRIES: Readonly<Record<string, Scenario>> = {
-  core: { what: 'the typical import without any glyph data (DejaVu Sans left external): code, tables, style sheets', entry: TYPICAL, external: ['*/fonts/dejavu-sans.js'] },
-  'core+dejavu-sans': { what: 'the typical import as shipped: subplots → plot → toSVG + toPNGSync, with the default face', entry: TYPICAL, external: [] },
+  core: { what: 'subplots → plot → toSVG + toPNGSync with no faces or colormaps registered (code + tables only)', entry: CORE_ONLY, external: [] },
+  'core+dejavu-sans': { what: 'typical default-rc chart: core + dejavuSans registered', entry: TYPICAL, external: [] },
+  'core+inter+2cmaps': { what: 'pro-dark dashboard assets: Inter×4 + magma + viridis (+ rgba)', entry: INTER_2CMAP, external: [] },
   everything: { what: 'every export of mpl plus every face (mpl/fonts/all)', entry: "export * from './index.js';\nexport * from './fonts/all.js';", external: [] },
 };
 

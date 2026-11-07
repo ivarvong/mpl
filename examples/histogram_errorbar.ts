@@ -4,10 +4,14 @@
 // whole milliseconds, not measurements. The same calls are an oracle case
 // (fixtures/ref/example_histogram_errorbar), checked pixel for pixel against matplotlib.
 // Writes examples/out/histogram_errorbar.{svg,png}; docs/images/histogram_errorbar.svg is this SVG.
-import { subplots } from '../src/index.ts';
+import { registerFonts, subplots } from '../src/index.ts';
+import { dejavuSans } from '../src/fonts/dejavu-sans.ts';
 import { save } from './_save.ts';
 
 // illustrative latency samples (ms), 120 requests each
+
+registerFonts(dejavuSans);
+
 const before = [144, 166, 61, 136, 129, 173, 133, 152, 147, 173, 122, 192, 112, 155, 149, 249, 109, 159, 125, 97, 166, 85, 103, 135, 172, 162, 143, 76, 110, 118,
   95, 69, 137, 164, 115, 172, 81, 93, 136, 112, 160, 151, 115, 84, 110, 152, 162, 112, 69, 80, 148, 114, 115, 93, 92, 171, 150, 105, 133, 141,
   214, 90, 140, 170, 206, 104, 114, 160, 75, 144, 240, 149, 57, 97, 105, 183, 123, 69, 128, 136, 109, 92, 248, 171, 176, 123, 103, 111, 81, 213,

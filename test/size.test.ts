@@ -20,7 +20,7 @@ for (const m of await Promise.all(Object.keys(ENTRIES).map(measure))) {
     else console.log(`PASS size ${name} ${k}: ${kib(got)} (budget ${kib(want)}, ${delta})`);
   }
 }
-// a user pays only for the faces they import: the typical import carries DejaVu Sans and nothing else
+// a user pays only for the faces they import: core has none; core+dejavu-sans carries only that face
 const fontsIn = async (name: string): Promise<string[]> => (await measure(name)).parts.map((p) => p.group).filter((g) => g.endsWith('(glyph outlines + metrics)')).toSorted();
 const expected = [['core', []], ['core+dejavu-sans', ['font dejavu-sans (glyph outlines + metrics)']]] as const;
 const found = await Promise.all(expected.map(([name]) => fontsIn(name)));

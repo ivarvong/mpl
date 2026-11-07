@@ -14,14 +14,15 @@ subplots() / subplots({ style, rc, figsize, dpi }) -> [fig, ax]
 
 ## Fonts
 
-Each face is its own module, so a bundle carries only the faces you import. DejaVu Sans (matplotlib's
-default) is always registered; register any other face before rendering text that selects it:
+Each face is its own module, so a bundle carries only the faces you import. Nothing is registered by
+default — import and `registerFonts` every face your chart will select (matplotlib's default is DejaVu Sans):
 
 ```ts
 import { registerFonts, subplots } from 'mpl';
+import { dejavuSans } from 'mpl/fonts/dejavu-sans';
 import { dejavuSansBold } from 'mpl/fonts/dejavu-sans-bold';
 
-registerFonts(dejavuSansBold);
+registerFonts(dejavuSans, dejavuSansBold);
 const [fig, ax] = subplots();
 ax.set_title('Bold title', { fontweight: 'bold' });
 ```
@@ -34,7 +35,7 @@ A family mpl does not ship falls through to the next family in the list, as in m
 
 | face | `font.family` | weight | import |
 |---|---|---|---|
-| `DejaVu Sans:400` | DejaVu Sans (`sans-serif`) | 400 | built in |
+| `DejaVu Sans:400` | DejaVu Sans (`sans-serif`) | 400 | `import { dejavuSans } from 'mpl/fonts/dejavu-sans'` |
 | `DejaVu Sans:700` | DejaVu Sans (`sans-serif`) | 700 | `import { dejavuSansBold } from 'mpl/fonts/dejavu-sans-bold'` |
 | `DejaVu Serif:400` | DejaVu Serif (`serif`) | 400 | `import { dejavuSerif } from 'mpl/fonts/dejavu-serif'` |
 | `DejaVu Serif:700` | DejaVu Serif (`serif`) | 700 | `import { dejavuSerifBold } from 'mpl/fonts/dejavu-serif-bold'` |
@@ -46,6 +47,26 @@ A family mpl does not ship falls through to the next family in the list, as in m
 `import { allFonts } from 'mpl/fonts/all'` and `registerFonts(...allFonts)` registers every face, for when
 size does not matter (Node, tests). `registeredFonts()` lists the registered face ids; `FACE_CATALOG` lists
 every shipped face. A face decodes on first use (a `font.decode` span when tracing); `FACE_LOADS` records when.
+
+## Colormaps
+
+Each colormap is its own module under `mpl/colormaps/*`. Nothing is registered by default; an unregistered
+shipped name throws `ColormapNotLoadedError` (fields `cmap`, `module`, `binding`). Register the float32
+`.rgba` sidecar too when `imshow` uses hanning/bilinear, or rendering throws `MissingColormapRgbaError`.
+
+```ts
+import { registerColormapRgba, registerColormaps, registerFonts, subplots } from 'mpl';
+import { dejavuSans } from 'mpl/fonts/dejavu-sans';
+import { viridis } from 'mpl/colormaps/viridis';
+import { viridis_rgba } from 'mpl/colormaps/viridis.rgba';
+
+registerFonts(dejavuSans);
+registerColormaps(viridis);
+registerColormapRgba(viridis_rgba);
+```
+
+`import { allColormaps } from 'mpl/colormaps/all'` and `allColormapRgba` from `mpl/colormaps/all.rgba`
+register every pack when size does not matter.
 
 ## Figure
 
