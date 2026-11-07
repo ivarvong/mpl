@@ -1,7 +1,7 @@
 // Colormaps and norms, matching matplotlib.colors (3.11.2): LUT lookup, Normalize,
 // LogNorm, TwoSlopeNorm, and Colormap.__call__(…, bytes=True).
 // Each face of LUT data is its own module under src/colormaps/; viridis is built in.
-import { viridis } from '../colormaps/viridis.ts';
+import { viridis, viridis_r } from '../colormaps/viridis.ts';
 import { CMAP_NAMES } from './data/colormaps.ts';
 import { log10 } from './libm.ts';
 import { isPlainObject, lookup, prop } from './std.ts';
@@ -33,28 +33,10 @@ function bake(pack: CmapPack): Colormap {
   return { name: pack.name, N: pack.N, trunc: raw.subarray(0, half), round: raw.subarray(half) };
 }
 
-function revLut(src: Uint8Array, N: number): Uint8Array {
-  const lut = new Uint8Array(4 * (N + 3));
-  for (let i = 0; i < N; i++) {
-    const s = (N - 1 - i) * 4, d = i * 4;
-    lut[d] = src[s]; lut[d + 1] = src[s + 1]; lut[d + 2] = src[s + 2]; lut[d + 3] = src[s + 3];
-  }
-  const u = N * 4, o = (N + 1) * 4, b = (N + 2) * 4;
-  for (let k = 0; k < 4; k++) { lut[u + k] = src[o + k]; lut[o + k] = src[u + k]; lut[b + k] = src[b + k]; }
-  return lut;
-}
-
-function reversedOf(c: Colormap): Colormap {
-  return {
-    name: c.name.endsWith('_r') ? c.name.slice(0, -2) : `${c.name}_r`,
-    N: c.N, trunc: revLut(c.trunc, c.N), round: revLut(c.round, c.N),
-  };
-}
-
+/** Register a baked pack as-is. `_r` variants are separate packs from matplotlib
+ *  (LinearSegmentedColormap.reversed rebuilds segmentdata — a LUT flip is wrong). */
 function put(c: Colormap): void {
   registry.set(c.name, c);
-  const rev = reversedOf(c);
-  registry.set(rev.name, rev);
 }
 
 /** Register one or more colormap packs (each `src/colormaps/*.ts` export). Viridis is built in. */
@@ -62,8 +44,8 @@ export function registerColormaps(...packs: readonly CmapPack[]): void {
   for (const p of packs) put(bake(p));
 }
 
-// Built-in: viridis (matplotlib's default for ScalarMappable)
-registerColormaps(viridis);
+// Built-in: viridis + viridis_r (matplotlib's default for ScalarMappable)
+registerColormaps(viridis, viridis_r);
 
 /** matplotlib.pyplot.get_cmap. Unknown or unregistered names error with the import to add. */
 export function getColormap(name: string): Result<Colormap> {
@@ -73,11 +55,10 @@ export function getColormap(name: string): Result<Colormap> {
   if (!CMAP_NAMES.some((n) => n === base)) {
     return err(`Unknown colormap name '${name}'. Available: ${CMAP_NAMES.join(', ')} (and _r)`);
   }
-  const mod = base === 'RdBu' ? 'rdBu' : base.toLowerCase() === base ? base : base[0].toLowerCase() + base.slice(1);
-  // Greys/Blues file names are lowercased
   const file = base === 'RdBu' ? 'rdBu' : base.toLowerCase();
+  const exp = name === 'RdBu' ? 'rdBu' : name === 'RdBu_r' ? 'rdBu_r' : name.toLowerCase() === name ? name : file + (name.endsWith('_r') ? '_r' : '');
   return err(`Colormap '${name}' is not registered. Import it and registerColormaps(…): `
-    + `import { ${mod === 'rdBu' ? 'rdBu' : file} } from 'mpljs/colormaps/${file}'`);
+    + `import { ${exp} } from 'mpljs/colormaps/${file}'`);
 }
 
 export const availableColormaps = (): readonly string[] =>
