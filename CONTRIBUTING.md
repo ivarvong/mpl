@@ -23,6 +23,10 @@ npm run example   # render examples/out/quickstart.{svg,png}
   (see "Regenerating the oracle" in the README and the FreeType caveat in docs/fixtures.md: do not commit fixtures from a different FreeType), and commit the new files in `fixtures/ref/`.
   Do not hand-edit anything under `fixtures/ref/` or `src/core/data/` (generated).
 - Performance claims need numbers from `bench/bench.ts` or `bench/sweep.ts`.
+- Performance PRs also report `bench/tiers.ts` (`npm run bench:tiers -- <base>/src/index.ts` for an A/B against main): the cold
+  first render and warm p50 under default V8, `--max-opt=2`, `--max-opt=1` and `--single-threaded`, alongside the warm numbers.
+  Serverless isolates (Cloudflare Workers) mostly run a chart's first few renders, in unoptimized tiers, without background
+  compile or GC threads. A warm TurboFan-only win can be invisible there, and a cold-only cost invisible in a warm bench.
 
 ## Pull requests
 
