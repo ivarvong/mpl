@@ -20,6 +20,9 @@ export const decode = (a: unknown): unknown => {
     if (s === '-inf') return -Infinity;
     return Number(s);
   }
+  // {"$array": rows} → nested list (imshow); hist must keep bare list-of-lists as lists
+  if (a && typeof a === 'object' && '$array' in a) return decode((a as { $array: unknown }).$array);
+  // {"$uint8rgb": rows} passes through for Axes.imshow to build a uint8 buffer
   return a;
 };
 /** Replay a fixture's [method, args, kwargs] calls: ax[method](...args, kwargs). */

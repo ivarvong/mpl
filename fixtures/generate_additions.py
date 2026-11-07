@@ -26,7 +26,11 @@ def dates(start, n, step):
 
 def date(s): return {"$date": s}
 def decode(a):
-    """JSON spec -> matplotlib args: {"$dates": [...]} is a datetime64 array, {"$date": s} one datetime64, at any depth."""
+    """JSON spec -> matplotlib args. Tags (at any depth):
+    {"$dates": [...]} / {"$date": s} → datetime64; {"$float": "nan"|"inf"|"-inf"} → float;
+    {"$uint8rgb": rows} → uint8 ndarray; {"$array": rows} → float ndarray (imshow only —
+    a bare list-of-lists must stay a list so hist treats rows as datasets, not columns).
+    """
     if isinstance(a, dict) and "$dates" in a:
         return np.array(a["$dates"], dtype="datetime64[us]")
     if isinstance(a, dict) and "$date" in a:
@@ -35,14 +39,10 @@ def decode(a):
         return float(a["$float"])  # "nan", "inf", "-inf"
     if isinstance(a, dict) and "$uint8rgb" in a:
         return np.asarray(a["$uint8rgb"], dtype=np.uint8)
+    if isinstance(a, dict) and "$array" in a:
+        return np.asarray(decode(a["$array"]), dtype=float)
     if isinstance(a, list):
-        out = [decode(v) for v in a]
-        if out and all(isinstance(r, list) for r in out):
-            try:
-                return np.asarray(out, dtype=float)
-            except (TypeError, ValueError):
-                return out
-        return out
+        return [decode(v) for v in a]
     return a
 
 def axis_record(axis):
@@ -402,34 +402,30 @@ case("aspect_equal_grid",
 
 
 # cmap-2: imshow + colorbar (nearest first)
-IM = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
+# {"$array": ...} → float ndarray in decode (explicit; bare lists stay lists for hist)
+IM = {"$array": [[0, 1, 2], [3, 4, 5], [6, 7, 8]]}
 case("imshow_nearest_viridis", ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}))
 case("imshow_nearest_lower", ("imshow", [IM], {"cmap": "plasma", "interpolation": "nearest", "origin": "lower"}))
 case("imshow_nearest_extent", ("imshow", [IM], {"cmap": "coolwarm", "interpolation": "nearest", "extent": [0, 3, 0, 2], "origin": "lower"}))
 case("imshow_auto_small", ("imshow", [IM], {"cmap": "viridis"}))  # auto → nearest when zoomed in
 
-IM = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
-# already added above - ensure IM reused
 case("colorbar_imshow_viridis", ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}), ("fig.colorbar", []))
 case("colorbar_imshow_label", ("imshow", [IM], {"cmap": "plasma", "interpolation": "nearest"}), ("fig.colorbar", [], {"label": "intensity"}))
 case("colorbar_scatter", ("scatter", [lin(20, 0, 10), lin(20, 0, 5)], {"c": lin(20, 0, 1), "cmap": "coolwarm", "s": 40}), ("fig.colorbar", []))
 case("colorbar_imshow_tight", ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}), ("fig.colorbar", []), ("fig.tight_layout", []))
-case("colorbar_grid", ("$subplots", [1, 2]), ("sca", [0]), ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}), ("fig.colorbar", []), ("sca", [1]), ("imshow", [[[0, 1], [1, 0]]], {"cmap": "magma", "interpolation": "nearest"}), ("fig.colorbar", []))
+case("colorbar_grid", ("$subplots", [1, 2]), ("sca", [0]), ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}), ("fig.colorbar", []), ("sca", [1]), ("imshow", [{"$array": [[0, 1], [1, 0]]}], {"cmap": "magma", "interpolation": "nearest"}), ("fig.colorbar", []))
 
 # more imshow cases
-case("imshow_nan", ("imshow", [[[0, 1, {"$float": "nan"}], [3, 4, 5], [6, 7, 8]]], {"cmap": "viridis", "interpolation": "nearest"}))
+case("imshow_nan", ("imshow", [{"$array": [[0, 1, {"$float": "nan"}], [3, 4, 5], [6, 7, 8]]}], {"cmap": "viridis", "interpolation": "nearest"}))
 case("imshow_vmin_vmax", ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest", "vmin": 2, "vmax": 6}))
 case("imshow_origin_extent_auto", ("imshow", [IM], {"cmap": "RdBu", "origin": "lower", "extent": [-1, 1, -1, 1]}))
 
-
-
 # Downsampling: auto → hanning when data has more pixels than display
-import numpy as _np
-_Zbig = np.linspace(0, 1, 80 * 80).reshape(80, 80).tolist()
+_Zbig = {"$array": np.linspace(0, 1, 80 * 80).reshape(80, 80).tolist()}
 case("imshow_downsample_auto", ("imshow", [_Zbig], {"cmap": "viridis"}))
 case("imshow_downsample_nearest", ("imshow", [_Zbig], {"cmap": "viridis", "interpolation": "nearest"}))
 # True downsample: 200×200 into a small axes → auto/hanning, rgba-stage
-_Zdown = np.linspace(0, 1, 200 * 200).reshape(200, 200).tolist()
+_Zdown = {"$array": np.linspace(0, 1, 200 * 200).reshape(200, 200).tolist()}
 case("imshow_true_downsample_hanning",
      ("$rc", [], {"figure.figsize": [1.2, 1.2]}),
      ("imshow", [_Zdown], {"cmap": "viridis", "interpolation": "hanning"}))
@@ -438,10 +434,10 @@ case("imshow_true_downsample_auto",
      ("imshow", [_Zdown], {"cmap": "viridis"}))
 case("imshow_upsample_hanning",
      ("$rc", [], {"figure.figsize": [2.0, 2.0]}),
-     ("imshow", [[[0, 1], [2, 3]]], {"cmap": "viridis", "interpolation": "hanning"}))
+     ("imshow", [{"$array": [[0, 1], [2, 3]]}], {"cmap": "viridis", "interpolation": "hanning"}))
 # RGB / RGBA
-_rgb = [[[1, 0, 0], [0, 1, 0]], [[0, 0, 1], [1, 1, 0]]]
-_rgba = [[[1, 0, 0, 1], [0, 1, 0, 0.5]], [[0, 0, 1, 1], [1, 1, 0, 0.25]]]
+_rgb = {"$array": [[[1, 0, 0], [0, 1, 0]], [[0, 0, 1], [1, 1, 0]]]}
+_rgba = {"$array": [[[1, 0, 0, 1], [0, 1, 0, 0.5]], [[0, 0, 1, 1], [1, 1, 0, 0.25]]]}
 case("imshow_rgb_float", ("imshow", [_rgb], {"interpolation": "nearest"}))
 case("imshow_rgba_float", ("imshow", [_rgba], {"interpolation": "nearest"}))
 # uint8 RGB: encode as {"$uint8rgb": rows} so decode builds a uint8 array
