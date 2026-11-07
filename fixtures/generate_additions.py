@@ -550,6 +550,11 @@ for st, cmap, vmin, heat in [("pro-dark", "viridis", -20, "magma"), ("pro-mono",
     calls += [("fig.suptitle", [f"checkout service \u00b7 last 24 h \u00b7 {st}"]),
               ("fig.subplots_adjust", [], {"left": 0.045, "right": 0.975, "bottom": 0.07, "top": 0.89, "wspace": 0.3, "hspace": 0.42})]
     styled(st, f"theme_{st.replace('-', '_')}_dashboard", *calls)
+# marker paths at full precision: a 6-digit unit circle flattens differently, moving antialiased edge pixels
+MPX = [round(0.37 * i % 10, 4) for i in range(300)]
+MPY = [round((0.61 * i) % 7 + 0.013 * i, 4) for i in range(300)]
+case("scatter_marker_precision", ("scatter", [MPX, MPY], {"c": [i % 17 for i in range(300)], "s": 14}),
+     ("scatter", [[v + 0.05 for v in MPX], MPY], {"c": [i % 5 for i in range(300)], "s": 40, "marker": "o", "cmap": "plasma"}))
 # tight_layout with no titles: the top is the axes patch (h·1 + b) and the bottom the x tick labels, both y-up
 styled("pro-mono", "theme_pro_mono_tight_untitled",
        ("$subplots", [1, 3], {"figsize": [9, 2.8], "sharey": True}),
