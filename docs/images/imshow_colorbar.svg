@@ -289,7 +289,7 @@
 <text x="529.8022" y="62.8762" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">1.0</text>
 <path d="M520.5 427.5 L525.5 427.5 M520.5 353.5 L525.5 353.5 M520.5 279.5 L525.5 279.5 M520.5 205.5 L525.5 205.5 M520.5 132.5 L525.5 132.5 M520.5 58.5 L525.5 58.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
 <g data-artist="artist/1/polygon">
-<path d="M502.5 427.5 L520.5 427.5 L520.5 58.5 L502.5 58.5 Z" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<path d="M502.5 427.5 L511.5 427.5 L520.5 427.5 L520.5 58.5 L511.5 58.5 L502.5 58.5 L502.5 427.5 Z" fill="none" stroke="#000000" stroke-width="1.1111"/>
 </g>
 <text x="568.0195" y="272.5094" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-90 568.0195 272.5094)">intensity</text>
 </svg>

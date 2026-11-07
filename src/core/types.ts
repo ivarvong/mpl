@@ -63,7 +63,7 @@ export type Clip = { readonly kind: 'none' } | { readonly kind: 'rect'; readonly
 /** Renderer-independent output of layout, in device px, top-left origin, Agg snapping applied. */
 export type Node =
   | { readonly kind: 'rect'; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly ink: Ink }
-  | { readonly kind: 'path'; readonly segs: readonly Seg[]; readonly ink: Ink }
+  | { readonly kind: 'path'; readonly segs: readonly Seg[]; readonly ink: Ink; readonly antialiased: boolean }
   | { readonly kind: 'polyline'; readonly xs: Float64Array; readonly ys: Float64Array; readonly stroke: Stroke }
   | { readonly kind: 'markers'; readonly shape: readonly Seg[]; readonly xs: Float64Array; readonly ys: Float64Array; readonly ink: Ink }
   | { readonly kind: 'text'; readonly text: string; readonly x: number; readonly y: number; readonly sizePx: number; readonly sizePt: number;
@@ -142,6 +142,8 @@ export type PolygonArtist = {
   readonly kind: 'polygon'; readonly x: Float64Array; readonly y: Float64Array; readonly closed: boolean;
   readonly face: Paint; readonly edge: BarEdge; readonly label: Label; readonly clip: boolean; readonly zorder: number;
   readonly orientation: Orientation;
+  /** matplotlib Patch.antialiased; false → Agg mono binary coverage (colorbar extend triangles). */
+  readonly antialiased: boolean;
 };
 /** The look of an errorbar's legend entry (HandlerErrorbar): the data line (absent for fmt='none'), the bar
  *  lines, and the first cap line's marker style (absent without caps or limit markers). */
@@ -306,6 +308,9 @@ export type AxesSpec = {
   readonly boxAspect: Option<number>;
   /** set_anchor: where the shrunk box sits in the original position (matplotlib default 'C' = [0.5,0.5]). */
   readonly anchor: readonly [number, number];
+  /** Colorbar triangular extends: fractions of the *inner* axes (default extendfrac=0.05).
+   *  Layout shrinks the axes box like matplotlib._ColorbarAxesLocator before box_aspect. */
+  readonly colorbarExtend: Option<{ readonly lower: number; readonly upper: number }>;
   readonly spines: {
     readonly left: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };
     readonly right: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };

@@ -184,7 +184,7 @@ export function drawPolygon(a: PolygonArtist, f: Frame, k: number, clip: Clip): 
   const fix = (v: number): number => (rect ? Math.floor(v + 0.5) + off : v);
   const segs: Seg[] = Array.from(xs, (x, i): Seg => [i === 0 ? 'M' : 'L', fix(x), fix(ys[i])]);
   if (a.closed) segs.push(['Z']);
-  return { nodes: [{ kind: 'group', clip, nodes: [pathNode(segs, ink.value)], tag: '' }], lines, boxes: [], points: [], handle };
+  return { nodes: [{ kind: 'group', clip, nodes: [pathNode(segs, ink.value, a.antialiased)], tag: '' }], lines, boxes: [], points: [], handle };
 }
 
 type Pending = { readonly x: number; readonly w: number; y: number; h: number; readonly i: number };
@@ -265,7 +265,7 @@ export function drawFill(a: FillArtist, f: Frame, k: number, clip: Clip): Drawn 
   for (let i = 0; i < n; i++) { xs[i] = X[i] * f.ax + f.cx; up[i] = Y1[i] * f.ay + f.cy; xs[n + i] = X[n - 1 - i] * f.ax + f.cx; up[n + i] = Y2[n - 1 - i] * f.ay + f.cy; }
   const node: Node = asMarker
     ? { kind: 'markers', shape: segs, xs: Float64Array.of(0), ys: Float64Array.of(f.H), ink: ink.value }
-    : { kind: 'path', segs, ink: ink.value };
+    : { kind: 'path', segs, ink: ink.value, antialiased: true };
   return { nodes: [{ kind: 'group', clip, nodes: [node], tag: '' }], lines: [{ xs, ys: up }], boxes: [], points: [], handle };
 }
 

@@ -16,7 +16,7 @@ import { autoTicks } from '../src/core/ticker.ts';
 type TextNode = Extract<Node, { kind: 'text' }> & { readonly weight?: number };   // weight rides along for scaleScene
 const rgb = (hex: string, alpha = 1): Rgb => ({ hex, alpha });
 const rect = ({ x, y, w, h, fill, fillAlpha = 1 }: { x: number; y: number; w: number; h: number; fill: string; fillAlpha?: number }): Node => ({ kind: 'rect', x, y, w, h, ink: { kind: 'fill', fill: rgb(fill, fillAlpha) } });
-const path = ({ segs, stroke, strokeWidth }: { segs: Seg[]; stroke: string; strokeWidth: number }): Node => ({ kind: 'path', segs, ink: { kind: 'stroke', stroke: { color: rgb(stroke), width: strokeWidth, cap: 'butt', join: 'miter', dash: { kind: 'solid' } } } });
+const path = ({ segs, stroke, strokeWidth }: { segs: Seg[]; stroke: string; strokeWidth: number }): Node => ({ kind: 'path', segs, ink: { kind: 'stroke', stroke: { color: rgb(stroke), width: strokeWidth, cap: 'butt', join: 'miter', dash: { kind: 'solid' } } }, antialiased: true });
 const text = ({ text: t, x, y, size, color, weight = 400 }: { text: string; x: number; y: number; size: number; color: string; weight?: number }): TextNode => ({ kind: 'text', text: t, x, y, sizePx: size, sizePt: size, weight, face: resolveFace([FONT], weight).id, glyphs: [], color: rgb(color), rotation: 'horizontal' });
 const group = (nodes: Node[]): Node => ({ kind: 'group', clip: { kind: 'none' }, nodes, tag: '' });
 

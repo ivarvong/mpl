@@ -297,6 +297,21 @@ function shrinkToBoxAspect(position: Position, boxAspect: number, figW: number, 
   return [L, B, L + W, B + HH];
 }
 
+/** matplotlib.colorbar._ColorbarAxesLocator: shrink axes for triangular/rectangular extends. */
+function applyColorbarExtend(position: Position, role: AxesSpec['role'], ext: AxesSpec['colorbarExtend']): Position {
+  if (ext.kind === 'none' || role.kind !== 'colorbar') return position;
+  const [l, b, r, t] = position;
+  const w = r - l, h = t - b;
+  const len = 1 + ext.value.lower + ext.value.upper;
+  const shrink = 1 / len, offset = ext.value.lower / len;
+  if (role.orientation === 'vertical') {
+    const hh = h * shrink;
+    return [l, b + offset * h, r, b + offset * h + hh];
+  }
+  const ww = w * shrink;
+  return [l + offset * w, b, l + offset * w + ww, t];
+}
+
 /** Bbox.shrunk_to_aspect + anchored: data aspect (adjustable='box') and/or set_box_aspect. */
 function applyAspect(position: Position, aspect: AxesSpec['aspect'], boxAspect: AxesSpec['boxAspect'],
                      anchor: readonly [number, number],
@@ -460,7 +475,8 @@ function layoutParts(fig: FigureSpec, mode: LayoutMode, tracer: Tracer): readonl
   };
   for (let i = 0; i < fig.axes.length; i++) { limsX.push(limitsOf('x', i)); limsY.push(limitsOf('y', i)); }
   const adjusted: AxesSpec[] = fig.axes.map((ax, i) => {
-    const pos = applyAspect(ax.position, ax.aspect, ax.boxAspect, ax.anchor, limsX[i].lim, limsY[i].lim, scaleOf(ax.x), scaleOf(ax.y), Wpx, Hpx);
+    const afterExt = applyColorbarExtend(ax.position, ax.role, ax.colorbarExtend);
+    const pos = applyAspect(afterExt, ax.aspect, ax.boxAspect, ax.anchor, limsX[i].lim, limsY[i].lim, scaleOf(ax.x), scaleOf(ax.y), Wpx, Hpx);
     return pos === ax.position ? ax : { ...ax, position: pos };
   });
   const fig2: FigureSpec = { ...fig, axes: adjusted };

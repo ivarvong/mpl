@@ -448,10 +448,25 @@ case("imshow_rgba_float", ("imshow", [_rgba], {"interpolation": "nearest"}))
 _rgb8 = {"$uint8rgb": [[[255, 0, 0], [0, 255, 0]], [[0, 0, 255], [255, 255, 0]]]}
 case("imshow_rgb_uint8", ("imshow", [_rgb8], {"interpolation": "nearest"}))
 # Colorbar extend + horizontal
-# extend triangles not yet pixel-exact — UnsupportedColorbarExtendError until ported
-# case("colorbar_extend_both",
-#      ("imshow", [IM], {"cmap": "viridis", "vmin": 2, "vmax": 6, "interpolation": "nearest"}),
-#      ("fig.colorbar", [], {"extend": "both"}))
+# extend triangles: default extendfrac=0.05, under/over from cmap LUT, axes shrunk like _ColorbarAxesLocator
+case("colorbar_extend_both",
+     ("imshow", [IM], {"cmap": "viridis", "vmin": 2, "vmax": 6, "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"extend": "both"}))
+case("colorbar_extend_min",
+     ("imshow", [IM], {"cmap": "viridis", "vmin": 2, "vmax": 6, "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"extend": "min"}))
+case("colorbar_extend_max",
+     ("imshow", [IM], {"cmap": "viridis", "vmin": 2, "vmax": 6, "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"extend": "max"}))
+case("colorbar_extend_both_horizontal",
+     ("imshow", [IM], {"cmap": "viridis", "vmin": 2, "vmax": 6, "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"extend": "both", "orientation": "horizontal"}))
+case("colorbar_extend_min_horizontal",
+     ("imshow", [IM], {"cmap": "viridis", "vmin": 2, "vmax": 6, "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"extend": "min", "orientation": "horizontal"}))
+case("colorbar_extend_max_horizontal",
+     ("imshow", [IM], {"cmap": "viridis", "vmin": 2, "vmax": 6, "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"extend": "max", "orientation": "horizontal"}))
 case("colorbar_horizontal",
      ("imshow", [IM], {"cmap": "plasma", "interpolation": "nearest"}),
      ("fig.colorbar", [], {"orientation": "horizontal", "label": "h"}))

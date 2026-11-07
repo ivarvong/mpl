@@ -2,6 +2,7 @@
 // LogNorm, TwoSlopeNorm, and Colormap.__call__(…, bytes=True).
 // Each face of LUT data is its own module under src/colormaps/; viridis is built in.
 import { viridis, viridis_r } from '../colormaps/viridis.ts';
+import { viridis_rgba } from '../colormaps/viridis.rgba.ts';
 import { CMAP_NAMES } from './data/colormaps.ts';
 import { log10 } from './libm.ts';
 import { isPlainObject, lookup, prop } from './std.ts';
@@ -30,20 +31,28 @@ const registry = new Map<string, Colormap>();
 
 function bake(pack: CmapPack): Colormap {
   const raw = fromB64(pack.b64);
-  const half = 4 * (pack.N + 3);
-  const want = 2 * half + half * 4; // trunc + round + float32
-  // Accept legacy trunc+round packs (no float32) by synthesizing rgba from round/255
-  if (raw.length === 2 * half) {
-    const trunc = raw.subarray(0, half), round = raw.subarray(half);
-    const rgba = new Float32Array(half);
-    for (let i = 0; i < half; i++) rgba[i] = round[i] / 255;
+  const nComp = 4 * (pack.N + 3);
+  // trunc + round (shipped packs): synthesize rgba from round/255; exact float32 attached via registerColormapRgba
+  if (raw.length === 2 * nComp) {
+    const trunc = raw.subarray(0, nComp), round = raw.subarray(nComp);
+    const rgba = new Float32Array(nComp);
+    for (let i = 0; i < nComp; i++) rgba[i] = round[i] / 255;
     return { name: pack.name, N: pack.N, trunc, round, rgba };
   }
-  if (raw.length !== want) throw new Error(`colormap ${pack.name}: packed length ${raw.length}, want ${want}`);
-  const trunc = raw.subarray(0, half);
-  const round = raw.subarray(half, 2 * half);
-  const rgba = new Float32Array(raw.buffer, raw.byteOffset + 2 * half, half);
-  return { name: pack.name, N: pack.N, trunc, round, rgba };
+  // float32-only pack: derive trunc/round (may disagree with matplotlib on a few entries due to f32)
+  if (raw.length === nComp * 4) {
+    const rgba = new Float32Array(raw.buffer, raw.byteOffset, nComp);
+    const trunc = new Uint8Array(nComp);
+    const round = new Uint8Array(nComp);
+    for (let i = 0; i < nComp; i++) {
+      const v = rgba[i] * 255;
+      trunc[i] = v < 0 ? 0 : v > 255 ? 255 : (v | 0);
+      const r = Math.floor(v + 0.5);
+      round[i] = r < 0 ? 0 : r > 255 ? 255 : r;
+    }
+    return { name: pack.name, N: pack.N, trunc, round, rgba };
+  }
+  throw new Error(`colormap ${pack.name}: packed length ${raw.length}, want ${2 * nComp} (trunc+round) or ${nComp * 4} (float32)`);
 }
 
 /** Register a baked pack as-is. `_r` variants are separate packs from matplotlib
@@ -57,8 +66,26 @@ export function registerColormaps(...packs: readonly CmapPack[]): void {
   for (const p of packs) put(bake(p));
 }
 
+/** Float32 LUT sidecar (matplotlib `_lut`) for rgba-stage AGG resampling. */
+export type CmapRgbaPack = { readonly name: string; readonly N: number; readonly b64: string };
+
+/** Replace a registered colormap's rgba float LUT with the exact matplotlib float32 `_lut`. */
+export function registerColormapRgba(...packs: readonly CmapRgbaPack[]): void {
+  for (const p of packs) {
+    const hit = lookup(registry, p.name);
+    if (hit.kind === 'none') throw new Error(`registerColormapRgba: ${p.name} is not registered`);
+    const c = hit.value;
+    const nComp = 4 * (p.N + 3);
+    const raw = fromB64(p.b64);
+    if (raw.length !== nComp * 4) throw new Error(`registerColormapRgba ${p.name}: length ${raw.length}, want ${nComp * 4}`);
+    const rgba = new Float32Array(raw.buffer, raw.byteOffset, nComp);
+    registry.set(p.name, { name: c.name, N: c.N, trunc: c.trunc, round: c.round, rgba });
+  }
+}
+
 // Built-in: viridis + viridis_r (matplotlib's default for ScalarMappable)
 registerColormaps(viridis, viridis_r);
+registerColormapRgba(viridis_rgba);  // viridis_r float32 via registerColormapRgba(viridis_r_rgba) when needed
 
 /** matplotlib.pyplot.get_cmap. Unknown or unregistered names error with the import to add. */
 export function getColormap(name: string): Result<Colormap> {

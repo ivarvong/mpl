@@ -1,11 +1,13 @@
 // Numeric oracle for colormaps and norms against fixtures/colormap_oracle.json (matplotlib 3.11.2).
 import { readFileSync } from 'node:fs';
 import {
-  applyNorm, availableColormaps, getColormap, logNorm, mapBytes, normalize, registerColormaps, twoSlopeNorm,
+  applyNorm, availableColormaps, getColormap, logNorm, mapBytes, normalize, registerColormapRgba, registerColormaps, twoSlopeNorm,
 } from '../src/core/colormap.ts';
 import { unwrap as unwrapR } from '../src/core/types.ts';
 import { allColormaps } from '../src/colormaps/all.ts';
+import { allColormapRgba } from '../src/colormaps/all.rgba.ts';
 registerColormaps(...allColormaps);
+registerColormapRgba(...allColormapRgba);
 
 type Oracle = {
   bytes_xs: (number | string)[];

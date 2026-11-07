@@ -438,6 +438,8 @@ export class Axes {
   /** Colorbar axes: hide the short-axis ticks and use a custom outline later. */
   /** True when this Axes is a colorbar cax. */
   colorbarMode = false;
+  /** Triangular colorbar extends (axes-fraction lengths); none when extend='neither'. */
+  colorbarExtend: Option<{ readonly lower: number; readonly upper: number }> = none;
 
   constructor(fig: Figure, role: AxesRole, cell: SubplotSpec, xaxis: Axis, yaxis: Axis) {
     this.fig = fig; this.role = role; this.theme = fig.theme; this.cell = cell; this.yaxis = yaxis;
@@ -945,7 +947,7 @@ export class Axes {
         const edgeP = st.edge.kind === 'some' ? st.edge.value : fill ? forced : colors[k];
         const face: Paint = fill ? withAlphaOpt(st.face.kind === 'some' ? st.face.value : colors[k], alpha) : { kind: 'none' };
         const px = (vertical ? o.x : o.y).slice(0, split), py = (vertical ? o.y : o.x).slice(0, split);
-        const poly: PolygonArtist = { kind: 'polygon', x: px, y: py, closed: fill, face, edge: edgeOf(withAlphaOpt(edgeP, alpha), lw), label: lblOf(k), clip, zorder: fill ? 1 : 2, orientation };
+        const poly: PolygonArtist = { kind: 'polygon', x: px, y: py, closed: fill, face, edge: edgeOf(withAlphaOpt(edgeP, alpha), lw), label: lblOf(k), clip, zorder: fill ? 1 : 2, orientation, antialiased: true };
         this.artists.push(poly);
         polys.unshift(poly);
       }
@@ -1488,7 +1490,7 @@ export class Axes {
   spec(): AxesSpec {
     return {
       role: this.role, position: this.position, artists: [...this.artists], title: this.title, titleLoc: this.titleLoc, titleWeight: this.titleWeight, xlabel: this.xlabel, ylabel: this.ylabel,
-      x: this.xaxis.spec(), y: this.yaxis.spec(), grid: this.grid_, legend: this.legendSpec, aspect: this.aspect, boxAspect: this.boxAspect, anchor: this.anchorXY,
+      x: this.xaxis.spec(), y: this.yaxis.spec(), grid: this.grid_, legend: this.legendSpec, aspect: this.aspect, boxAspect: this.boxAspect, anchor: this.anchorXY, colorbarExtend: this.colorbarExtend,
       spines: {
         left: { visible: this.spineOv.left.visible, color: this.spineOv.left.color, widthPt: this.spineOv.left.widthPt, position: this.spineOv.left.position },
         right: { visible: this.spineOv.right.visible, color: this.spineOv.right.color, widthPt: this.spineOv.right.widthPt, position: this.spineOv.right.position },
@@ -1655,12 +1657,18 @@ function makeAxesGridspec(parent: Axes, opts: {
   return { cax, orientation: (location === 'left' || location === 'right') ? 'vertical' : 'horizontal', aspect };
 }
 
-/** Colorbar: solids as N coloured bars matching matplotlib's pcolormesh flat-shading strip. */
+/** Default extendfrac when Colorbar.extendfrac is None (matplotlib colorbar.py). */
+const COLORBAR_EXTENDFRAC = 0.05;
+
+/** Colorbar: solids as N coloured bars matching matplotlib's pcolormesh flat-shading strip.
+ *  `extend` adds under/over triangles in axes-fraction coords (default extendfrac=0.05) and
+ *  shrinks the axes box like `_ColorbarAxesLocator`. */
 export class Colorbar {
   readonly ax: Axes;
   readonly orientation: 'vertical' | 'horizontal';
   constructor(cax: Axes, m: { readonly cmapName: string; readonly vmin: number; readonly vmax: number; readonly normKind: 'linear' | 'log' },
-              orientation: 'vertical' | 'horizontal', cblabel: string) {
+              orientation: 'vertical' | 'horizontal', cblabel: string,
+              extend: 'neither' | 'min' | 'max' | 'both' = 'neither') {
     this.ax = cax;
     this.orientation = orientation;
     const cmapR = getColormap(m.cmapName);
@@ -1668,8 +1676,9 @@ export class Colorbar {
     const cmap = cmapR.value;
     const N = cmap.N;
     const lo = m.vmin, hi = m.vmax;
+    const span = hi - lo;
     const b = new Float64Array(N + 1);
-    for (let i = 0; i <= N; i++) b[i] = lo + (hi - lo) * (i / N);
+    for (let i = 0; i <= N; i++) b[i] = lo + span * (i / N);
     const mid = new Float64Array(N);
     for (let i = 0; i < N; i++) mid[i] = (i + 0.5) / N;
     const faces = mapPaints(cmap, mid);
@@ -1683,24 +1692,64 @@ export class Colorbar {
       cax.set_ylim(0, 1);
       cax.set_xlim(lo, hi);
     }
+    // under / over from cmap LUT indices N / N+1 (matplotlib Colorbar._do_extends → cmap(norm(values)))
+    const under = mapPaints(cmap, [-1])[0];
+    const over = mapPaints(cmap, [2])[0];
+    const extendLower = extend === 'min' || extend === 'both';
+    const extendUpper = extend === 'max' || extend === 'both';
+    const bot = extendLower ? -COLORBAR_EXTENDFRAC : 0;
+    const top = extendUpper ? 1 + COLORBAR_EXTENDFRAC : 1;
+    // axes-fraction → data (colorbar ylim/xlim stay vmin/vmax; tips sit outside)
+    const axToData = (u: number, v: number): readonly [number, number] =>
+      orientation === 'vertical' ? [u, lo + v * span] : [lo + u * span, v];
+    // Extend triangles behind solids (zorder just below bar=1), clip_on=False
+    if (extendLower) {
+      const tri = orientation === 'vertical'
+        ? [[0, 0], [0.5, bot], [1, 0]] as const
+        : [[0, 0], [bot, 0.5], [0, 1]] as const;
+      const pts = tri.map(([u, v]) => axToData(u, v));
+      cax.artists.push({
+        kind: 'polygon',
+        x: Float64Array.from(pts.map((p) => p[0])),
+        y: Float64Array.from(pts.map((p) => p[1])),
+        closed: true, face: under, edge: { kind: 'none' },
+        label: { kind: 'none' }, clip: false, zorder: 0.9, orientation, antialiased: false,
+      });
+    }
+    if (extendUpper) {
+      const tri = orientation === 'vertical'
+        ? [[0, 1], [0.5, top], [1, 1]] as const
+        : [[1, 0], [top, 0.5], [1, 1]] as const;
+      const pts = tri.map(([u, v]) => axToData(u, v));
+      cax.artists.push({
+        kind: 'polygon',
+        x: Float64Array.from(pts.map((p) => p[0])),
+        y: Float64Array.from(pts.map((p) => p[1])),
+        closed: true, face: over, edge: { kind: 'none' },
+        label: { kind: 'none' }, clip: false, zorder: 0.9, orientation, antialiased: false,
+      });
+    }
     const bar: BarArtist = {
       kind: 'bar', orientation,
       x, y, w, h, face: faces[0], faces, edge: { kind: 'none' },
       label: { kind: 'none' }, clip: false, sticky: false, legend: 'container',
     };
     cax.artists.push(bar);
-    // Colorbar outline spine: one closed rectangle (matplotlib._ColorbarSpine), not four Axes spines
+    // Colorbar outline spine: pointed path when extended (matplotlib._ColorbarSpine / _do_extends)
     for (const side of ['left', 'right', 'top', 'bottom'] as const) cax.spines[side].set_visible(false);
-    const [ox0, oy0, ox1, oy1] = orientation === 'vertical' ? [0, lo, 1, hi] : [lo, 0, hi, 1];
+    const xyOutAx: readonly (readonly [number, number])[] = orientation === 'vertical'
+      ? [[0, 0], [0.5, bot], [1, 0], [1, 1], [0.5, top], [0, 1], [0, 0]]
+      : [[0, 0], [bot, 0.5], [0, 1], [1, 1], [top, 0.5], [1, 0], [0, 0]];
+    const xyOut = xyOutAx.map(([u, v]) => axToData(u, v));
     const outline: PolygonArtist = {
       kind: 'polygon',
-      x: Float64Array.of(ox0, ox1, ox1, ox0),
-      y: Float64Array.of(oy0, oy0, oy1, oy1),
+      x: Float64Array.from(xyOut.map((p) => p[0])),
+      y: Float64Array.from(xyOut.map((p) => p[1])),
       closed: true,
       face: { kind: 'none' },
       edge: { kind: 'on', color: cax.theme.axes.edge, widthPt: cax.theme.axes.linewidthPt },
       label: { kind: 'none' }, clip: false, zorder: 2,
-      orientation,
+      orientation, antialiased: true,
     };
     cax.artists.push(outline);
     if (cblabel) {
@@ -1791,9 +1840,6 @@ export class Figure {
     const extend = kw.read(['extend'], (v): Result<'neither' | 'both' | 'min' | 'max'> =>
       (v === 'neither' || v === 'both' || v === 'min' || v === 'max' ? ok(v)
         : err("extend must be 'neither'|'both'|'min'|'max'")), () => 'neither' as const);
-    if (extend !== 'neither') {
-      throw new Error(`UnsupportedColorbarExtendError: extend=${JSON.stringify(extend)} is not yet pixel-exact; only 'neither' is supported`);
-    }
     kw.done();
     const locDefaults = {
       right: { anchor: [0.0, 0.5] as const, panchor: [1.0, 0.5] as const },
@@ -1802,10 +1848,20 @@ export class Figure {
       bottom: { anchor: [0.5, 1.0] as const, panchor: [0.5, 0.0] as const },
     };
     const d = locDefaults[location];
-    const { cax, orientation: orient0 } = makeAxesGridspec(axKw, {
+    const { cax, orientation: orient0, aspect: aspectMade } = makeAxesGridspec(axKw, {
       location, fraction, pad, shrink, aspect: aspectN, anchor: d.anchor, panchor: d.panchor,
     });
     const orientation = orientationKw.kind === 'some' ? orientationKw.value : orient0;
+    // `_ColorbarAxesLocator`: record extend lengths; layout shrinks the position, then box_aspect
+    const extLower = (extend === 'min' || extend === 'both') ? COLORBAR_EXTENDFRAC : 0;
+    const extUpper = (extend === 'max' || extend === 'both') ? COLORBAR_EXTENDFRAC : 0;
+    const extLen = 1 + extLower + extUpper;
+    if (extLen > 1) {
+      const frac = 1 / extLen;
+      cax.colorbarExtend = some({ lower: extLower, upper: extUpper });
+      if (orientation === 'vertical') cax.set_box_aspect(aspectMade * frac);
+      else cax.set_box_aspect(aspectMade / frac);
+    }
     let state: { cmapName: string; vmin: number; vmax: number; normKind: 'linear' | 'log' };
     if (isArtist(mappable)) {
       const mo = mappableOf(mappable);
@@ -1820,7 +1876,7 @@ export class Figure {
       if (found.kind === 'none') throw new Error('colorbar: no mappable on Axes');
       state = found.value;
     }
-    return new Colorbar(cax, state, orientation, cblabel);
+    return new Colorbar(cax, state, orientation, cblabel, extend);
   }
 
   private addCell(cell: SubplotSpec, sharex: Option<Axes>, sharey: Option<Axes>): Axes {
