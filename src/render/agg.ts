@@ -158,24 +158,32 @@ function blitImage(c: Canvas, x0: number, y0: number, w: number, h: number, rgba
   invalidateBlocks(c);
   const x1 = Math.min(x0 + w, clip.x1), y1 = Math.min(y0 + h, clip.y1);
   const xs = Math.max(x0, clip.x0), ys = Math.max(y0, clip.y0);
+  if (x1 <= xs || y1 <= ys) return;
+  const cw = c.w, px = c.px, u32 = c.u32;
+  const srcU = new Uint32Array(rgba.buffer, rgba.byteOffset, rgba.byteLength >> 2);
   for (let y = ys; y < y1; y++) {
-    for (let x = xs; x < x1; x++) {
-      const si = ((y - y0) * w + (x - x0)) * 4;
-      const a = rgba[si + 3];
-      if (a === 0) continue;
-      const di = (y * c.w + x) * 4;
-      if (a === 255) { c.px[di] = rgba[si]; c.px[di+1] = rgba[si+1]; c.px[di+2] = rgba[si+2]; c.px[di+3] = 255; }
-      else {
-        // src-over straight alpha
-        const aa = a / 255, ia = 1 - aa;
-        const da = c.px[di+3] / 255;
-        const outA = aa + da * ia;
-        if (outA <= 0) continue;
-        c.px[di] = Math.round((rgba[si] * aa + c.px[di] * da * ia) / outA);
-        c.px[di+1] = Math.round((rgba[si+1] * aa + c.px[di+1] * da * ia) / outA);
-        c.px[di+2] = Math.round((rgba[si+2] * aa + c.px[di+2] * da * ia) / outA);
-        c.px[di+3] = Math.round(outA * 255);
+    const sBase = (y - y0) * w - x0;   // src pixel index = sBase + x
+    const dBase = y * cw;               // dest pixel index = dBase + x
+    let x = xs;
+    while (x < x1) {
+      const si = sBase + x;
+      const a = rgba[si * 4 + 3];
+      if (a === 0) { x++; continue; }
+      if (a === 255) {
+        let e = x + 1;
+        while (e < x1 && rgba[(sBase + e) * 4 + 3] === 255) e++;
+        u32.set(srcU.subarray(si, si + (e - x)), dBase + x);
+        x = e; continue;
       }
+      const di = (dBase + x) * 4, so = si * 4;
+      const aa = a / 255, ia = 1 - aa, da = px[di + 3] / 255, outA = aa + da * ia;
+      if (outA > 0) {
+        px[di] = Math.round((rgba[so] * aa + px[di] * da * ia) / outA);
+        px[di + 1] = Math.round((rgba[so + 1] * aa + px[di + 1] * da * ia) / outA);
+        px[di + 2] = Math.round((rgba[so + 2] * aa + px[di + 2] * da * ia) / outA);
+        px[di + 3] = Math.round(outA * 255);
+      }
+      x++;
     }
   }
 }

@@ -162,6 +162,8 @@ export class Rasterizer {
  */
 const grow = (a: Int32Array): Int32Array<ArrayBuffer> => { const b = new Int32Array(a.length * 2); b.set(a); return b; };
 let CX = new Int32Array(4096), CY = new Int32Array(4096), CC = new Int32Array(4096), CA = new Int32Array(4096);
+let SW_SX = new Int32Array(4096), SW_SL = new Int32Array(4096), SW_SV = new Uint8Array(4096);
+let SW_KX = new Int32Array(64), SW_KI = new Int32Array(64), SW_KF = new Float64Array(64);
 
 class Grid {
   readonly x0: number; readonly y0: number; readonly w: number; readonly h: number;
@@ -195,23 +197,24 @@ class Grid {
     };
     const rows = new Int32Array(h + 1);
     let cap = Math.max(16, n * 2), m = 0;
-    let sx = new Int32Array(cap), sl = new Int32Array(cap), sv = new Uint8Array(cap);
+    if (SW_SX.length < cap) { SW_SX = new Int32Array(cap); SW_SL = new Int32Array(cap); SW_SV = new Uint8Array(cap); }
+    let sx = SW_SX, sl = SW_SL, sv = SW_SV;
     const push = (x: number, len: number, v: number): void => {
       if (m === cap) {
         cap *= 2;
-        const a = new Int32Array(cap); a.set(sx); sx = a;
-        const b = new Int32Array(cap); b.set(sl); sl = b;
-        const c = new Uint8Array(cap); c.set(sv); sv = c;
+        const a = new Int32Array(cap); a.set(sx.subarray(0, m)); sx = a; SW_SX = a;
+        const b = new Int32Array(cap); b.set(sl.subarray(0, m)); sl = b; SW_SL = b;
+        const c = new Uint8Array(cap); c.set(sv.subarray(0, m)); sv = c; SW_SV = c;
       }
       sx[m] = x; sl[m] = len; sv[m] = v; m++;
     };
     // per-row order by x: insertion sort (rows hold a handful of cells), typed sort for long rows
-    let kx = new Int32Array(64), ki = new Int32Array(64), kf = new Float64Array(64);
+    let kx = SW_KX, ki = SW_KI, kf = SW_KF;
     for (let r = 0; r < h; r++) {
       rows[r] = m;
       const a = start[r], k = start[r + 1] - a;
       if (k === 0) continue;
-      if (kx.length < k) { kx = new Int32Array(k * 2); ki = new Int32Array(k * 2); kf = new Float64Array(k * 2); }
+      if (kx.length < k) { kx = new Int32Array(k * 2); ki = new Int32Array(k * 2); kf = new Float64Array(k * 2); SW_KX = kx; SW_KI = ki; SW_KF = kf; }
       if (k <= 48) {
         for (let j = 0; j < k; j++) {
           const i = order[a + j], x = CX[i];
@@ -237,7 +240,8 @@ class Grid {
       }
     }
     rows[h] = m;
-    return { x0: this.x0, y0: this.y0, w, h, rows, sx: sx.subarray(0, m), sl: sl.subarray(0, m), sv: sv.subarray(0, m) };
+    // copy out of the pool: Coverage is retained across later sweeps
+    return { x0: this.x0, y0: this.y0, w, h, rows, sx: sx.slice(0, m), sl: sl.slice(0, m), sv: sv.slice(0, m) };
   }
 }
 
