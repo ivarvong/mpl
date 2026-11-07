@@ -148,27 +148,29 @@ The SVG as a generator of string chunks.
 
 The SVG as a byte stream (Workers, browsers, Node).
 
-### `Figure.toRGBA()`
+### `Figure.toRGBA(kwargs?)`
 
-RGBA8 pixels (straight alpha), rasterized like matplotlib's Agg backend.
+RGBA8 pixels (straight alpha), rasterized like matplotlib's Agg backend. Optional { dpi | scale }.
+
+Keyword arguments (unknown keys throw): `dpi`, `scale`
 
 ### `Figure.toPNG(kwargs?)`
 
-toPNG({ colors }) — PNG bytes via the platform's CompressionStream (Workers, browsers, Node ≥ 18). 8-bit RGBA, or with colors (1..256) a palette PNG of at most that many colors: exact when the figure has that few, else quantized deterministically (frequent colors kept exact).
+toPNG({ colors, dpi, scale }) — PNG bytes via CompressionStream. dpi is matplotlib savefig dpi (default: figure dpi); scale is a convenience for dpi = figure.dpi × scale. Writes pHYs like Agg.
 
-Keyword arguments (unknown keys throw): `colors`
+Keyword arguments (unknown keys throw): `colors`, `dpi`, `scale`
 
 ### `Figure.toPNGSync(kwargs?)`
 
-toPNGSync({ colors, level }) — PNG bytes, synchronously, with the built-in deflate. colors as in toPNG; level (1..9, as zlib's) trades time for size; left out, the default chart-tuned encoder runs. The encode is synchronous and its cost grows with the level's match-chain length (up to 4096 candidates at 9): level 9 can take many seconds on a large, noisy canvas.
+toPNGSync({ colors, level, dpi, scale }) — PNG bytes synchronously. dpi/scale as in toPNG; level (1..9) is the built-in deflate effort. Matches matplotlib fig.savefig(…, format='png', dpi=D) pixel-for-pixel, including the pHYs chunk.
 
-Keyword arguments (unknown keys throw): `colors`, `level`
+Keyword arguments (unknown keys throw): `colors`, `level`, `dpi`, `scale`
 
 ### `Figure.pngStream(kwargs?)`
 
-pngStream({ colors }) — PNG as a byte stream: IHDR first, IDAT chunks as the compressor yields them. colors as in toPNG.
+pngStream({ colors, dpi, scale }) — PNG as a byte stream; dpi/scale as in toPNG.
 
-Keyword arguments (unknown keys throw): `colors`
+Keyword arguments (unknown keys throw): `colors`, `dpi`, `scale`
 
 ## Axes
 

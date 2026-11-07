@@ -2219,31 +2219,77 @@ export class Figure {
   /** The SVG as a byte stream (Workers, browsers, Node). */
   svgStream(): ReadableStream<Uint8Array> { return svgStream(this.toScene(), tracer); }
 
-  /** RGBA8 pixels (straight alpha), rasterized like matplotlib's Agg backend. */
-  toRGBA(): Canvas { const scene = this.toScene(); return tracer.span('render.raster', { w: scene.width, h: scene.height }, () => renderRGBA(scene, tracer)); }
-  /** toPNG({ colors }) — PNG bytes via the platform's CompressionStream (Workers, browsers, Node ≥ 18). 8-bit RGBA, or with colors (1..256) a palette PNG of at most that many colors: exact when the figure has that few, else quantized deterministically (frequent colors kept exact). */
+  /**
+   * Layout at a savefig dpi (matplotlib Figure.savefig(dpi=…)). Default is this.dpi
+   * (rc savefig.dpi = 'figure'). Does not mutate the figure's dpi or layout cache.
+   */
+  private sceneAtDpi(dpi: number): Scene {
+    if (dpi === this.dpi) return this.toScene();
+    const spec = { ...this.spec(), dpi };
+    const root = tracer.startTrace('figure.layout', { axes: this.axes.length, dpi, savefig: true });
+    try {
+      const { scene } = layoutFigure(spec, tracer);
+      root.setAttribute('nodes', scene.nodes.length);
+      return scene;
+    } catch (e) { root.recordException(e); throw e; } finally { root.end(); }
+  }
+
+  /** Resolve savefig dpi from kwargs: dpi, or scale × figure.dpi (not both). Omitted → figure dpi. */
+  private saveDpi(kw: KwReader, fn: string): number {
+    const dpiV = kw.get(['dpi']);
+    const scaleV = kw.get(['scale']);
+    if (dpiV.kind === 'some' && scaleV.kind === 'some') {
+      throw new TypeError(`${fn}() got both dpi and scale (pass one)`);
+    }
+    if (dpiV.kind === 'some') return saveDpiOf(dpiV.value, 'dpi');
+    if (scaleV.kind === 'some') {
+      const s = saveDpiOf(scaleV.value, 'scale');
+      return saveDpiOf(this.dpi * s, 'dpi (= figure.dpi × scale)');
+    }
+    return this.dpi;
+  }
+
+  /** RGBA8 pixels (straight alpha), rasterized like matplotlib's Agg backend. Optional { dpi | scale }. */
+  toRGBA(kwargs: Kwargs = {}): Canvas {
+    const kw = new KwReader(kwargs, 'toRGBA');
+    const dpi = this.saveDpi(kw, 'toRGBA');
+    kw.done();
+    const scene = this.sceneAtDpi(dpi);
+    return tracer.span('render.raster', { w: scene.width, h: scene.height, dpi }, () => renderRGBA(scene, tracer));
+  }
+  /**
+   * toPNG({ colors, dpi, scale }) — PNG bytes via CompressionStream. dpi is matplotlib savefig dpi
+   * (default: figure dpi); scale is a convenience for dpi = figure.dpi × scale. Writes pHYs like Agg.
+   */
   toPNG(kwargs: Kwargs = {}): Promise<Uint8Array> {
     const kw = new KwReader(kwargs, 'toPNG');
     const colors = kw.read(['colors'], paletteColors, (): Option<number> => none);
+    const dpi = this.saveDpi(kw, 'toPNG');
     kw.done();
-    return encodePNG(this.toRGBA(), { colors });
+    return encodePNG(this.toRGBA({ dpi }), { colors });
   }
-  /** toPNGSync({ colors, level }) — PNG bytes, synchronously, with the built-in deflate. colors as in toPNG; level (1..9, as zlib's) trades time for size; left out, the default chart-tuned encoder runs. The encode is synchronous and its cost grows with the level's match-chain length (up to 4096 candidates at 9): level 9 can take many seconds on a large, noisy canvas. */
+  /**
+   * toPNGSync({ colors, level, dpi, scale }) — PNG bytes synchronously. dpi/scale as in toPNG;
+   * level (1..9) is the built-in deflate effort. Matches matplotlib fig.savefig(…, format='png', dpi=D)
+   * pixel-for-pixel, including the pHYs chunk.
+   */
   toPNGSync(kwargs: Kwargs = {}): Uint8Array {
     const kw = new KwReader(kwargs, 'toPNGSync');
     const colors = kw.read(['colors'], paletteColors, (): Option<number> => none);
     const level = kw.read(['level'], (v): Result<Option<number>> => (Number.isInteger(v) && Number(v) >= 1 && Number(v) <= 9 ? ok(some(Number(v))) : err('level must be an integer in 1..9')), (): Option<number> => none);
+    const dpi = this.saveDpi(kw, 'toPNGSync');
     kw.done();
-    const scene = this.toScene();
-    const c = tracer.span('render.raster', { w: scene.width, h: scene.height }, () => renderScratch(scene, tracer));
-    return tracer.span('png.encode', { w: c.w, h: c.h }, (sp) => { const b = encodePNGSync(c, { colors, level }); sp.setAttribute('bytes', b.length); return b; });
+    const scene = this.sceneAtDpi(dpi);
+    const c = tracer.span('render.raster', { w: scene.width, h: scene.height, dpi }, () => renderScratch(scene, tracer));
+    return tracer.span('png.encode', { w: c.w, h: c.h, dpi }, (sp) => { const b = encodePNGSync(c, { colors, level }); sp.setAttribute('bytes', b.length); return b; });
   }
-  /** pngStream({ colors }) — PNG as a byte stream: IHDR first, IDAT chunks as the compressor yields them. colors as in toPNG. */
+  /** pngStream({ colors, dpi, scale }) — PNG as a byte stream; dpi/scale as in toPNG. */
   pngStream(kwargs: Kwargs = {}): ReadableStream<Uint8Array> {
     const kw = new KwReader(kwargs, 'pngStream');
     const colors = kw.read(['colors'], paletteColors, (): Option<number> => none);
+    const dpi = this.saveDpi(kw, 'pngStream');
     kw.done();
-    return pngStream(this.toRGBA(), { colors });
+    return pngStream(this.toRGBA({ dpi }), { colors });
   }
 }
 
@@ -2265,6 +2311,17 @@ const weightOf = (v: unknown): Result<number> => (typeof v === 'number' || typeo
 /** A palette PNG's color budget: an integer in 1..256 (a PNG palette holds at most 256 entries). */
 const paletteColors = (v: unknown): Result<Option<number>> =>
   (Number.isInteger(v) && Number(v) >= 1 && Number(v) <= 256 ? ok(some(Number(v))) : err(`colors must be an integer in 1..256, got ${JSON.stringify(v)}`));
+
+/** savefig dpi: finite and > 0, capped so a canvas stays below ~100 MP at typical figsizes. */
+const MAX_SAVE_DPI = 10_000;
+function saveDpiOf(v: unknown, what: string): number {
+  if (typeof v !== 'number' || !Number.isFinite(v) || !(v > 0)) {
+    const shown = typeof v === 'number' ? String(v) : JSON.stringify(v);
+    throw new RangeError(`${what} must be a finite number > 0, got ${shown}`);
+  }
+  if (v > MAX_SAVE_DPI) throw new RangeError(`${what} must be ≤ ${MAX_SAVE_DPI}, got ${v}`);
+  return v;
+}
 /** One annotate() coordinate in its axis' system: 'data' through the axis converter, anything else a plain number. */
 function annotationValue(v: unknown, c: AnnotationCoords, axis: Axis, what: string): number {
   switch (c.kind) {
