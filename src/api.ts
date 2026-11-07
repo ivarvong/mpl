@@ -2,6 +2,7 @@
 // `unknown` until parsed here into the typed model (parse, don't validate);
 // unknown keyword arguments are errors, as in matplotlib.
 import { parsePaint, parseRgb } from './core/colors.ts';
+import { isNumericColorArray, parseColormap, parseNormKw, scalarToPaints } from './core/colormap.ts';
 import { date2num, fromEpochMs } from './core/dates.ts';
 import { MARKERS } from './core/data/markers.ts';
 import type { Fmt, FmtShape } from './core/fmt.ts';
@@ -21,7 +22,7 @@ import type { StyleSpec } from './core/style.ts';
 import { composeStyles } from './core/style.ts';
 import { parseFontSize, parseLegendLoc, parseTheme, scatterPointsOf } from './core/theme.ts';
 import type {
-  Artist, AxesMeta, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
+  Artist, Aspect, AxesMeta, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
   AxLineArtist, AxLineThrough, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist,
   LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, PxBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
 } from './core/types.ts';
@@ -364,6 +365,8 @@ export class Axes {
   // matplotlib keeps separate cyclers for lines (_get_lines) and filled patches (_get_patches_for_fill)
   private lineCycle = 0;
   private patchCycle = 0;
+  /** set_aspect: 'auto' | 'equal' | number (adjustable='box'). */
+  private aspect: Aspect = { kind: 'auto' };
 
   constructor(fig: Figure, role: AxesRole, cell: SubplotSpec, xaxis: Axis, yaxis: Axis) {
     this.fig = fig; this.role = role; this.theme = fig.theme; this.cell = cell; this.yaxis = yaxis;
@@ -394,6 +397,16 @@ export class Axes {
   set_xscale(s: unknown): this { this.xaxis.setScale(s); return this; }
   /** set_yscale('linear' | 'log') */
   set_yscale(s: unknown): this { this.yaxis.setScale(s); return this; }
+  /**
+   * set_aspect('auto' | 'equal' | number) — data aspect ratio with adjustable='box' (matplotlib default
+   * for set_aspect). The Axes box is shrunk and centred to match; 'equal' is ratio 1.
+   */
+  set_aspect(aspect: unknown): this {
+    if (aspect === 'auto') { this.aspect = { kind: 'auto' }; return this; }
+    if (aspect === 'equal') { this.aspect = { kind: 'equal' }; return this; }
+    if (typeof aspect === 'number' && Number.isFinite(aspect) && aspect > 0) { this.aspect = { kind: 'ratio', value: aspect }; return this; }
+    throw new Error(`set_aspect: aspect must be 'auto', 'equal', or a positive number, got ${JSON.stringify(aspect)}`);
+  }
   private next(which: 'line' | 'patch'): Rgb {
     const c = this.theme.axes.cycle;
     return which === 'line' ? c[this.lineCycle++ % c.length] : c[this.patchCycle++ % c.length];
@@ -1029,14 +1042,16 @@ export class Axes {
     return a;
   }
 
-  /** scatter(x, y, { s, c, marker, alpha, edgecolors, linewidths, zorder, clip_on }) */
+  /**
+   * scatter(x, y, { s, c, marker, cmap, norm, vmin, vmax, alpha, edgecolors, linewidths, zorder, clip_on })
+   * — PathCollection. A numeric `c` array with `cmap` (default viridis) maps through Normalize(vmin, vmax).
+   */
   scatter(xRaw: unknown, yRaw: unknown, kwargs: Kwargs = {}): ScatterArtist {
     const kw = new KwReader(kwargs, 'scatter');
     const xs = this.xaxis.convert(unwrap(parseSeries(xRaw, 'x')));
     const ys = this.yaxis.convert(unwrap(parseSeries(yRaw, 'y')));
     if (xs.length !== ys.length) throw new RangeError(`scatter: x and y must have the same length, got ${xs.length} and ${ys.length}`);
     const n = xs.length;
-    // the sizes as given (get_sizes: a scalar is one size); default lines.markersize ** 2
     const sizes = kw.read(['s'], (v): Result<Float64Array> => {
       const p = parseSeries(v, 's');
       if (!p.ok) return p;
@@ -1054,21 +1069,40 @@ export class Axes {
       for (const c of v) { const p = this.paint(c); if (!p.ok) return p; out.push(p.value); }
       return ok(out);
     };
-    const colorList0 = kw.read(['c', 'color'], (v) => parsePaintOrList(v), (): readonly Paint[] => [{ kind: 'solid', color: this.next('patch') }]);
-    // edgecolors='face' (rc scatter.edgecolors) strokes each marker in its own face colour
+    // c / color: a colour, a list of colours, or a numeric array (ScalarMappable)
+    const cRaw = kw.get(['c', 'color']);
+    const cmap = kw.read(['cmap'], parseColormap, () => unwrap(parseColormap('viridis')));
+    const vmin = kw.read(['vmin'], (v): Result<Option<number>> => (typeof v === 'number' && Number.isFinite(v) ? ok(some(v)) : err('vmin must be a number')), (): Option<number> => none);
+    const vmax = kw.read(['vmax'], (v): Result<Option<number>> => (typeof v === 'number' && Number.isFinite(v) ? ok(some(v)) : err('vmax must be a number')), (): Option<number> => none);
+    const normKw = kw.read(['norm'], (v): Result<Option<unknown>> => ok(some(v)), (): Option<unknown> => none);
+    let colorList0: readonly Paint[];
+    if (cRaw.kind === 'some' && isNumericColorArray(cRaw.value)) {
+      const raw = cRaw.value;
+      const arr = raw instanceof Float64Array ? raw
+        : raw instanceof Float32Array ? Float64Array.from(raw)
+        : Array.isArray(raw) ? Float64Array.from(raw.map(Number))
+        : (() => { throw new Error('c must be a numeric array'); })();
+      if (arr.length !== 1 && arr.length !== n) throw new Error(`c has ${arr.length} values, expected 1 or ${n}`);
+      const norm = unwrap(parseNormKw({ vmin, vmax, norm: normKw }));
+      colorList0 = scalarToPaints(cmap, norm, arr);
+    } else if (cRaw.kind === 'some') {
+      colorList0 = unwrap(parsePaintOrList(cRaw.value));
+      // cmap/norm/vmin/vmax with a colour c are accepted (matplotlib stores them) but do not colour the faces
+    } else {
+      colorList0 = [{ kind: 'solid', color: this.next('patch') }];
+    }
     const se = this.theme.scatterEdge;
     const edgecolorsGiven = kw.read(['edgecolors', 'edgecolor'], (v) => (v === 'face' ? ok(colorList0) : parsePaintOrList(v)), (): readonly Paint[] => (se.kind === 'face' ? colorList0 : [se.paint]));
-    // an unfilled marker ('x', '+', '|', '_') strokes in its face colour ('face'; matplotlib warns and ignores a given
-    // edgecolor) at lines.linewidth by default
     const filled = MARKERS[marker.kind === 'some' ? marker.value : 'o'].filled;
     const edgecolorsList = filled ? edgecolorsGiven : colorList0;
     const linewidths = kw.read(['linewidths', 'linewidth', 'lw'], num('linewidths'), () => (filled ? this.theme.patch.linewidthPt : this.theme.lines.widthPt));
     const lbl = kw.read(['label'], label, (): Label => ({ kind: 'none' }));
     const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => true);
+    const zorder = kw.read(['zorder'], num('zorder'), () => 1);
     kw.done();
     const withAlpha = (p: Paint): Paint => (p.kind === 'solid' && alpha.kind === 'some' ? { kind: 'solid', color: { hex: p.color.hex, alpha: alpha.value } } : p);
     const collection = { sizesPt2: sizes, faces: colorList0.map(withAlpha), edges: edgecolorsList.map(withAlpha) };
-    const sc: ScatterArtist = { kind: 'scatter', x: xs, y: ys, shape: marker.kind === 'some' ? marker.value : 'o', edgeWidthPt: linewidths, label: lbl, clip, collection };
+    const sc: ScatterArtist = { kind: 'scatter', x: xs, y: ys, shape: marker.kind === 'some' ? marker.value : 'o', edgeWidthPt: linewidths, label: lbl, clip, collection, zorder };
     this.artists.push(sc);
     this.xaxis.request(); this.yaxis.request();
     return sc;
@@ -1302,7 +1336,7 @@ export class Axes {
   spec(): AxesSpec {
     return {
       role: this.role, position: this.position, artists: [...this.artists], title: this.title, titleLoc: this.titleLoc, titleWeight: this.titleWeight, xlabel: this.xlabel, ylabel: this.ylabel,
-      x: this.xaxis.spec(), y: this.yaxis.spec(), grid: this.grid_, legend: this.legendSpec,
+      x: this.xaxis.spec(), y: this.yaxis.spec(), grid: this.grid_, legend: this.legendSpec, aspect: this.aspect,
       spines: {
         left: { visible: this.spineOv.left.visible, color: this.spineOv.left.color, widthPt: this.spineOv.left.widthPt, position: this.spineOv.left.position },
         right: { visible: this.spineOv.right.visible, color: this.spineOv.right.color, widthPt: this.spineOv.right.widthPt, position: this.spineOv.right.position },

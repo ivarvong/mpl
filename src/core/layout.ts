@@ -8,6 +8,7 @@ import type { Drawn } from './draw-artists.ts';
 import { drawAxLine, drawBar, drawFill, drawLine, drawPolygon, drawSegments, drawText, drawScatter, drawSpan, drawAnnotation, handleOf } from './draw-artists.ts';
 import type { Frame } from './frame.ts';
 import { axesBox, frame } from './frame.ts';
+import { forward } from './scale.ts';
 import { layoutLegend } from './legend.ts';
 import type { Box } from './legend-index.ts';
 import { tickLabelText } from './log.ts';
@@ -18,7 +19,7 @@ import { placeText, pxPerPt } from './text.ts';
 import { resolveFace } from './fonts.ts';
 import type { TickSet } from './ticks.ts';
 import { computeTicks, scaleOf, tickSpace } from './ticks.ts';
-import type { Option, Artist, AxesMeta, AxesRole, AxesSpec, AxisBelow, AxisMeta, Clip, FigureSpec, LegendEntry, Node, Placement, PxBox, Rgb, Scene, Stroke, Theme, TickTheme } from './types.ts';
+import type { Option, Artist, AxesMeta, AxesRole, AxesSpec, AxisBelow, AxisMeta, Clip, FigureSpec, LegendEntry, Node, Placement, Position, PxBox, Rgb, Scale, Scene, Stroke, Theme, TickTheme } from './types.ts';
 import { assertNever, none, some } from './types.ts';
 import type { Tracer } from '../trace.ts';
 
@@ -89,7 +90,8 @@ function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tr
 /** Artist.zorder: patches and path/fill collections 1, lines and line collections 2 (or what the artist says), text 3. */
 function zorder(a: Artist): number {
   switch (a.kind) {
-    case 'bar': case 'fill': case 'span': case 'scatter': return 1;   // PathCollection: Collection.zorder
+    case 'bar': case 'fill': case 'span': return 1;
+    case 'scatter': return a.zorder;
     case 'axline': return 2;
     case 'line': case 'segments': case 'polygon': return a.zorder;
     case 'text': case 'annotation': case 'errorbar': return 3;
@@ -274,6 +276,27 @@ type AxesIn = { readonly ax: AxesSpec; readonly x: Shared; readonly y: Shared; r
  * One axis of a share group (sharex/sharey, twinx): autoscale_view over the union of the siblings' data
  * limits, and the shared locator, whose tick space is its own (the leader's) axis length.
  */
+
+/** Bbox.shrunk_to_aspect + anchored('C'): shrink position to the data aspect (adjustable='box'). */
+function applyAspect(position: Position, aspect: AxesSpec['aspect'], xlim: readonly [number, number], ylim: readonly [number, number],
+                     xscale: Scale, yscale: Scale, figW: number, figH: number): Position {
+  if (aspect.kind === 'auto') return position;
+  const ratio = aspect.kind === 'equal' ? 1 : aspect.value;
+  const tx0 = forward(xscale, xlim[0]), tx1 = forward(xscale, xlim[1]);
+  const ty0 = forward(yscale, ylim[0]), ty1 = forward(yscale, ylim[1]);
+  const xsize = Math.max(Math.abs(tx1 - tx0), 1e-30);
+  const ysize = Math.max(Math.abs(ty1 - ty0), 1e-30);
+  const boxAspect = ratio * (ysize / xsize);
+  const figAspect = figH / figW;
+  const [l, b, r, top] = position;
+  const w = r - l, h = top - b;
+  const Htry = w * boxAspect / figAspect;
+  let W: number, HH: number;
+  if (Htry <= h) { W = w; HH = Htry; } else { W = h * figAspect / boxAspect; HH = h; }
+  const L = l + 0.5 * (w - W), B = b + 0.5 * (h - HH);
+  return [L, B, L + W, B + HH];
+}
+
 function planAxis(which: 'x' | 'y', leader: AxesSpec, extent: Extent, fig: FigureSpec, tracer: Tracer): Shared {
   const theme = fig.theme, dpi = fig.dpi;
   const box = axesBox(leader.position, fig.widthIn * dpi, fig.heightIn * dpi);
@@ -396,20 +419,46 @@ function layoutParts(fig: FigureSpec, mode: LayoutMode, tracer: Tracer): readonl
   const ext = fig.axes.map((ax) => tracer.span('datalimits', { artists: ax.artists.length }, (sp) => {
     const e = dataExtents(ax.artists); sp.setAttribute('values', e.x.count + e.y.count); return e;
   }));
-  // plan: one set of limits and ticks per share group (sharex/sharey, twinx); apply: every member reuses it
+  const Wpx = fig.widthIn * fig.dpi, Hpx = fig.heightIn * fig.dpi;
+  // Limits first (no box size needed), then apply_aspect to each Axes' position, then ticks on the adjusted box.
+  type Lim = { readonly lim: readonly [number, number]; readonly minpos: number };
+  const limsX: Lim[] = [];
+  const limsY: Lim[] = [];
+  const limCache = new Map<string, Lim>();
+  const limitsOf = (which: 'x' | 'y', i: number): Lim => {
+    const lead = which === 'x' ? fig.axes[i].xShare : fig.axes[i].yShare;
+    const key = `${which}${lead}`;
+    const found = lookup(limCache, key);
+    if (found.kind === 'some') return found.value;
+    const group = fig.axes.map((_, j) => j).filter((j) => (which === 'x' ? fig.axes[j].xShare : fig.axes[j].yShare) === lead);
+    const leader = fig.axes[lead];
+    const spec = which === 'x' ? leader.x : leader.y;
+    const sc = scaleOf(spec);
+    const extent = unionExtent(group.map((j) => ext[j][which]));
+    const lim = viewLimits(spec, sc, extent, which === 'x' ? fig.theme.axes.xmargin : fig.theme.axes.ymargin);
+    const L: Lim = { lim, minpos: extent.minpos };
+    limCache.set(key, L);
+    return L;
+  };
+  for (let i = 0; i < fig.axes.length; i++) { limsX.push(limitsOf('x', i)); limsY.push(limitsOf('y', i)); }
+  const adjusted: AxesSpec[] = fig.axes.map((ax, i) => {
+    const pos = applyAspect(ax.position, ax.aspect, limsX[i].lim, limsY[i].lim, scaleOf(ax.x), scaleOf(ax.y), Wpx, Hpx);
+    return pos === ax.position ? ax : { ...ax, position: pos };
+  });
+  const fig2: FigureSpec = { ...fig, axes: adjusted };
   const planned = new Map<string, Shared>();
   const shared = (which: 'x' | 'y', i: number): Shared => {
-    const lead = which === 'x' ? fig.axes[i].xShare : fig.axes[i].yShare;
+    const lead = which === 'x' ? adjusted[i].xShare : adjusted[i].yShare;
     const key = `${which}${lead}`;
     const found = lookup(planned, key);
     if (found.kind === 'some') return found.value;
-    const group = fig.axes.map((_, j) => j).filter((j) => (which === 'x' ? fig.axes[j].xShare : fig.axes[j].yShare) === lead);
-    const p = tracer.span(`plan.${which}`, { group: group.length }, () => planAxis(which, fig.axes[lead], unionExtent(group.map((j) => ext[j][which])), fig, tracer));
+    const group = adjusted.map((_, j) => j).filter((j) => (which === 'x' ? adjusted[j].xShare : adjusted[j].yShare) === lead);
+    const p = tracer.span(`plan.${which}`, { group: group.length }, () => planAxis(which, adjusted[lead], unionExtent(group.map((j) => ext[j][which])), fig2, tracer));
     planned.set(key, p);
     return p;
   };
-  return fig.axes.map((ax, i) => tracer.span('axes.layout', { artists: ax.artists.length, role: ax.role.kind, index: i, mode }, () =>
-    layoutAxes({ ax, x: shared('x', i), y: shared('y', i), hasTwin: ax.role.kind === 'primary' && twinGroup(fig.axes, i).length > 1 }, fig, mode, tracer)));
+  return adjusted.map((ax, i) => tracer.span('axes.layout', { artists: ax.artists.length, role: ax.role.kind, index: i, mode }, () =>
+    layoutAxes({ ax, x: shared('x', i), y: shared('y', i), hasTwin: ax.role.kind === 'primary' && twinGroup(adjusted, i).length > 1 }, fig2, mode, tracer)));
 }
 
 /** Each Axes' tight bbox (px, y down), as layoutFigure's meta[i].tight, without drawing what does not enter it. */

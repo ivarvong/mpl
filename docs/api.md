@@ -159,6 +159,10 @@ set_xscale('linear' | 'log')
 
 set_yscale('linear' | 'log')
 
+### `Axes.set_aspect(aspect)`
+
+set_aspect('auto' | 'equal' | number) — data aspect ratio with adjustable='box' (matplotlib default for set_aspect). The Axes box is shrunk and centred to match; 'equal' is ratio 1.
+
 ### `Axes.plot(...args)`
 
 plot(y) | plot(x, y) | plot(x, y, fmt), with an optional trailing kwargs object ({ drawstyle | ds, … }).
@@ -253,9 +257,9 @@ Keyword arguments (unknown keys throw): `xytext`, `xycoords`, `textcoords`, `arr
 
 ### `Axes.scatter(xRaw, yRaw, kwargs?)`
 
-scatter(x, y, { s, c, marker, alpha, edgecolors, linewidths, zorder, clip_on })
+scatter(x, y, { s, c, marker, cmap, norm, vmin, vmax, alpha, edgecolors, linewidths, zorder, clip_on }) — PathCollection. A numeric `c` array with `cmap` (default viridis) maps through Normalize(vmin, vmax).
 
-Keyword arguments (unknown keys throw): `s`, `marker`, `alpha`, `c | color`, `edgecolors | edgecolor`, `linewidths | linewidth | lw`, `label`, `clip_on | clipon | clip`
+Keyword arguments (unknown keys throw): `s`, `marker`, `alpha`, `c | color`, `cmap`, `vmin`, `vmax`, `norm`, `edgecolors | edgecolor`, `linewidths | linewidth | lw`, `label`, `clip_on | clipon | clip`, `zorder`
 
 ### `Axes.axvspan(xmin, xmax, kwargs?)`
 

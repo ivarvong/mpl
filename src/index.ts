@@ -19,3 +19,6 @@ export type { FaceLoad } from './core/fonts.ts';
 export type { AttrValue, FinishedSpan, SpanHandle } from './trace.ts';
 export type * from './core/types.ts';
 export { modern, modernDark, paperClassic, paperModern } from './presets.ts';
+
+export { availableColormaps, getColormap, logNorm, normalize, registerColormaps, registeredColormaps, twoSlopeNorm } from './core/colormap.ts';
+export type { CmapPack, Colormap, Norm } from './core/colormap.ts';
