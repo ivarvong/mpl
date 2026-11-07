@@ -1,5 +1,5 @@
 // One service-health dashboard per bundled pro theme: latency percentiles with bands, stacked request
-// counts by status, a value-coloured scatter, and per-service error-rate small multiples. Each figure is
+// counts by status, a latency heatmap with a colorbar, per-service error rates, and a value-coloured scatter. Each figure is
 // also an oracle case (fixtures/ref/theme_<name>_dashboard), and test/examples.test.ts checks these
 // renders against matplotlib's pixel for pixel. Writes examples/out/themes/<name>.{svg,png};
 // docs/images/themes/ holds the same files for the README.
@@ -16,19 +16,20 @@ type Data = {
   readonly hours: readonly number[]; readonly p50: readonly number[]; readonly p95: readonly number[]; readonly p99: readonly number[];
   readonly bucket: readonly string[]; readonly ok: readonly number[]; readonly e4: readonly number[]; readonly e5: readonly number[];
   readonly size: readonly number[]; readonly dur: readonly number[]; readonly cache: readonly number[];
+  readonly heat: readonly (readonly number[])[];
   readonly errors: Readonly<Record<'api' | 'web' | 'worker', readonly number[]>>;
 };
 const D: Data = JSON.parse(readFileSync(new URL('./data.json', import.meta.url), 'utf8'));
 
 /** Each theme with the colormap that reads best on its background (vmin pulls the dark end off a dark face). */
 export const THEMES = [
-  { name: 'pro-dark', cmap: 'viridis', vmin: -20 },
-  { name: 'pro-mono', cmap: 'Blues', vmin: -40 },
-  { name: 'pro-ember', cmap: 'inferno', vmin: -40 },
-  { name: 'pro-slate', cmap: 'plasma', vmin: -10 },
+  { name: 'pro-dark', cmap: 'viridis', vmin: -20, heat: 'magma' },
+  { name: 'pro-mono', cmap: 'Blues', vmin: -40, heat: 'Greys' },
+  { name: 'pro-ember', cmap: 'inferno', vmin: -40, heat: 'inferno' },
+  { name: 'pro-slate', cmap: 'plasma', vmin: -10, heat: 'Blues' },
 ] as const;
 
-export function dashboard(style: string, cmap: string, vmin: number): Figure {
+export function dashboard(style: string, cmap: string, vmin: number, heat: string): Figure {
   const [fig, ax] = subplots(2, 3, { figsize: [13, 7], style });
   const ticks = [0, 6, 12, 18, 24], tickLabels = ['00:00', '06:00', '12:00', '18:00', '24:00'];
 
@@ -53,30 +54,40 @@ export function dashboard(style: string, cmap: string, vmin: number): Figure {
   req.set_ylim(0, 1900);
   req.set_title('Requests / 2 h');
 
-  const sc = ax[0][2];
-  sc.scatter(D.size, D.dur, { c: D.cache, cmap, vmin, vmax: 100, s: 14, alpha: 0.9 });
-  sc.set_title('Duration vs payload (colour: cache hit %)');
-  sc.set_xscale('log');
-  sc.set_xlabel('payload (kB)');
+  // latency heatmap: requests per (30-min bucket, 20 ms bin), with a themed colorbar
+  const hm = ax[0][2];
+  const im = hm.imshow(D.heat, { cmap: heat, origin: 'lower', aspect: 'auto', interpolation: 'nearest', extent: [0, 24, 0, 320] });
+  hm.set_xticks(ticks); hm.set_xticklabels(tickLabels);
+  hm.set_title('Latency heatmap (ms)');
+  fig.colorbar(im, { ax: hm, label: 'requests' });
 
-  (['api', 'web', 'worker'] as const).forEach((svc, i) => {
+  (['api', 'web'] as const).forEach((svc, i) => {
     const e = ax[1][i];
-    e.fill_between(D.hours, 0, D.errors[svc], { color: `C${i === 2 ? 3 : i}`, alpha: 0.18, linewidth: 0 });
-    e.plot(D.hours, D.errors[svc], { color: `C${i === 2 ? 3 : i}`, linewidth: 1.2 });
+    e.fill_between(D.hours, 0, D.errors[svc], { color: `C${i}`, alpha: 0.18, linewidth: 0 });
+    e.plot(D.hours, D.errors[svc], { color: `C${i}`, linewidth: 1.2 });
     e.axhline(1.5, { color: 'C5', linewidth: 0.8, linestyle: '--' });
     e.set_ylim(0, 2.6);
     e.set_xticks(ticks); e.set_xticklabels(tickLabels);
     e.set_title(`${svc} error rate (%)`);
   });
+
+  const sc = ax[1][2];
+  sc.scatter(D.size, D.dur, { c: D.cache, cmap, vmin, vmax: 100, s: 14, alpha: 0.9 });
+  sc.set_title('Duration vs payload (colour: cache hit %)');
+  sc.set_xscale('log');
+  sc.set_xlabel('payload (kB)');
+
+
   fig.suptitle(`checkout service · last 24 h · ${style}`);
-  fig.tight_layout();
+  // explicit spacing: mpljs's tight_layout does not yet handle a colorbar inside a subplot grid (it warns and skips)
+  fig.subplots_adjust({ left: 0.045, right: 0.975, bottom: 0.07, top: 0.89, wspace: 0.3, hspace: 0.42 });
   return fig;
 }
 
 const OUT = new URL('../out/themes/', import.meta.url);
 mkdirSync(OUT, { recursive: true });
 for (const t of THEMES) {
-  const fig = dashboard(t.name, t.cmap, t.vmin);
+  const fig = dashboard(t.name, t.cmap, t.vmin, t.heat);
   writeFileSync(new URL(`${t.name}.svg`, OUT), fig.toSVG());
   writeFileSync(new URL(`${t.name}.png`, OUT), fig.toPNGSync());
   console.log(`wrote examples/out/themes/${t.name}.{svg,png}`);

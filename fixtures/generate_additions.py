@@ -518,7 +518,7 @@ for st in ["pro-dark", "pro-mono", "pro-ember", "pro-slate"]:
 # the examples/themes/dashboard.ts figures, call for call (test/examples.test.ts checks the example renders these pixels)
 DASH = json.load(open(os.path.join(ROOT, "..", "examples", "themes", "data.json")))
 TICKS, TICKL = [0, 6, 12, 18, 24], ["00:00", "06:00", "12:00", "18:00", "24:00"]
-for st, cmap, vmin in [("pro-dark", "viridis", -20), ("pro-mono", "Blues", -40), ("pro-ember", "inferno", -40), ("pro-slate", "plasma", -10)]:
+for st, cmap, vmin, heat in [("pro-dark", "viridis", -20, "magma"), ("pro-mono", "Blues", -40, "Greys"), ("pro-ember", "inferno", -40, "inferno"), ("pro-slate", "plasma", -10, "Blues")]:
     D = DASH
     calls = [("$subplots", [2, 3], {"figsize": [13, 7]}),
              ("fill_between", [D["hours"], D["p50"], D["p99"]], {"color": "C0", "alpha": 0.12, "linewidth": 0}),
@@ -535,16 +535,20 @@ for st, cmap, vmin in [("pro-dark", "viridis", -20), ("pro-mono", "Blues", -40),
              ("bar", [D["bucket"], D["e5"]], {"bottom": [a + b for a, b in zip(D["ok"], D["e4"])], "color": "C3", "width": 0.72, "label": "5xx"}),
              ("legend", [], {"loc": "upper left", "ncols": 3}), ("set_ylim", [0, 1900]), ("set_title", ["Requests / 2 h"]),
              ("sca", [2]),
-             ("scatter", [D["size"], D["dur"]], {"c": D["cache"], "cmap": cmap, "vmin": vmin, "vmax": 100, "s": 14, "alpha": 0.9}),
-             ("set_title", ["Duration vs payload (colour: cache hit %)"]), ("set_xscale", ["log"]), ("set_xlabel", ["payload (kB)"])]
-    for i, svc in enumerate(["api", "web", "worker"]):
-        col = f"C{3 if i == 2 else i}"
+             ("imshow", [{"$array": D["heat"]}], {"cmap": heat, "origin": "lower", "aspect": "auto", "interpolation": "nearest", "extent": [0, 24, 0, 320]}),
+             ("set_xticks", [TICKS]), ("set_xticklabels", [TICKL]), ("set_title", ["Latency heatmap (ms)"]),
+             ("fig.colorbar", [], {"label": "requests"})]
+    for i, svc in enumerate(["api", "web"]):
+        col = f"C{i}"
         calls += [("sca", [3 + i]),
                   ("fill_between", [D["hours"], 0, D["errors"][svc]], {"color": col, "alpha": 0.18, "linewidth": 0}),
                   ("plot", [D["hours"], D["errors"][svc]], {"color": col, "linewidth": 1.2}),
                   ("axhline", [1.5], {"color": "C5", "linewidth": 0.8, "linestyle": "--"}),
                   ("set_ylim", [0, 2.6]), ("set_xticks", [TICKS]), ("set_xticklabels", [TICKL]), ("set_title", [f"{svc} error rate (%)"])]
-    calls += [("fig.suptitle", [f"checkout service \u00b7 last 24 h \u00b7 {st}"]), ("fig.tight_layout", [])]
+    calls += [("sca", [5]),("scatter", [D["size"], D["dur"]], {"c": D["cache"], "cmap": cmap, "vmin": vmin, "vmax": 100, "s": 14, "alpha": 0.9}),
+             ("set_title", ["Duration vs payload (colour: cache hit %)"]), ("set_xscale", ["log"]), ("set_xlabel", ["payload (kB)"])]
+    calls += [("fig.suptitle", [f"checkout service \u00b7 last 24 h \u00b7 {st}"]),
+              ("fig.subplots_adjust", [], {"left": 0.045, "right": 0.975, "bottom": 0.07, "top": 0.89, "wspace": 0.3, "hspace": 0.42})]
     styled(st, f"theme_{st.replace('-', '_')}_dashboard", *calls)
 # tight_layout with no titles: the top is the axes patch (h·1 + b) and the bottom the x tick labels, both y-up
 styled("pro-mono", "theme_pro_mono_tight_untitled",
