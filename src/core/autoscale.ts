@@ -29,6 +29,22 @@ function scanSpans(start: Float64Array, len: Float64Array, acc: Acc): void {
   }
   acc.lo = lo; acc.hi = hi; acc.minpos = mp; acc.count += 2 * start.length;
 }
+/** Bbox.update_from_path on a line: _path.update_path_extents reads the path through PathNanRemover, so a vertex
+ *  counts only when both of its coordinates are finite (along the data branches `ux` / `uy`). */
+function scanPairs(xs: Float64Array, ys: Float64Array, X: Acc, Y: Acc, ux: boolean, uy: boolean): void {
+  let xlo = X.lo, xhi = X.hi, xmp = X.minpos, ylo = Y.lo, yhi = Y.hi, ymp = Y.minpos, count = 0;
+  const n = Math.min(xs.length, ys.length);
+  for (let i = 0; i < n; i++) {
+    const x = xs[i], y = ys[i];
+    if (!(x - x === 0 && y - y === 0)) continue;   // NaN or ±Infinity in either coordinate
+    if (ux) { if (x < xlo) xlo = x; if (x > xhi) xhi = x; if (x > 0 && x < xmp) xmp = x; }
+    if (uy) { if (y < ylo) ylo = y; if (y > yhi) yhi = y; if (y > 0 && y < ymp) ymp = y; }
+    count++;
+  }
+  X.lo = xlo; X.hi = xhi; X.minpos = xmp; Y.lo = ylo; Y.hi = yhi; Y.minpos = ymp;
+  if (ux) X.count += count;
+  if (uy) Y.count += count;
+}
 const uniqSorted = (v: readonly number[]): readonly number[] => [...new Set(v)].toSorted((p, q) => p - q);
 const emptyAcc = (): Acc => ({ lo: Infinity, hi: -Infinity, minpos: Infinity, count: 0 });
 
@@ -47,8 +63,7 @@ export function dataExtents(artists: readonly Artist[]): { readonly x: Extent; r
       case 'line': {
         // _update_line_limits: the drawn (stepped) path, only along the data-coordinate branches
         const p = stepped(a.x, a.y, a.drawstyle);
-        if (a.coords.x === 'data') scan(p.x, X);
-        if (a.coords.y === 'data') scan(p.y, Y);
+        scanPairs(p.x, p.y, X, Y, a.coords.x === 'data', a.coords.y === 'data');
         break;
       }
       case 'axline':                                 // update_datalim([xy1, xy2])
