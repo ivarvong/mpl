@@ -119,10 +119,16 @@ export type DrawStyle = 'default' | 'steps-pre' | 'steps-mid' | 'steps-post';
 /** Which coordinate system each of a line's coordinates is in: axhline is (axes, data), axvline (data, axes).
  *  Only data coordinates update the data limits. */
 export type LineCoords = { readonly x: 'data' | 'axes'; readonly y: 'data' | 'axes' };
+/**
+ * plot(…, { decimate }), not a matplotlib option: before path cleanup, keep only the first, lowest, highest and last
+ * sample of every device-pixel column (perPx columns per pixel), in their original order. Off by default, so output
+ * stays matplotlib's. Applies to a stroke whose x is non-decreasing; markers and legend placement see every sample.
+ */
+export type Decimate = { readonly kind: 'off' } | { readonly kind: 'minmax'; readonly perPx: number };
 export type LineArtist = {
   readonly kind: 'line'; readonly x: Float64Array; readonly y: Float64Array;
   readonly stroke: LineStroke; readonly markers: LineMarkers; readonly label: Label;
-  readonly clip: boolean; readonly drawstyle: DrawStyle; readonly coords: LineCoords;
+  readonly clip: boolean; readonly drawstyle: DrawStyle; readonly coords: LineCoords; readonly decimate: Decimate;
   /** Artist zorder: 2 for Line2D; errorbar's data line is 2.1 (1.9 with barsabove) */
   readonly zorder: number;
   /** Override lines.solid_capstyle / dash_capstyle; none = theme default (boxplot medians use butt). */

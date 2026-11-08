@@ -218,15 +218,15 @@ Replace this Axes' SubplotSpec (colorbar make_axes_gridspec).
 
 ### `Axes.plot(...args)`
 
-plot(y) | plot(x, y) | plot(x, y, fmt), with an optional trailing kwargs object ({ drawstyle | ds, … }).
+plot(y) | plot(x, y) | plot(x, y, fmt), with an optional trailing kwargs object ({ drawstyle | ds, … }). `decimate` is mpl's own, not matplotlib's (default false): true, or N columns per device pixel, keeps the first, lowest, highest and last sample of each column before path cleanup, for dense time series. Antialiased edges then differ slightly from matplotlib; markers and legend placement still use every sample.
 
-Keyword arguments (unknown keys throw): `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `drawstyle | ds`, `zorder`, `label`, `clip_on | clipon | clip`
+Keyword arguments (unknown keys throw): `decimate`, `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `drawstyle | ds`, `zorder`, `label`, `clip_on | clipon | clip`
 
 ### `Axes.step(...args)`
 
 step(x, y, [fmt], { where: 'pre' | 'post' | 'mid', … }) — plot() with drawstyle 'steps-<where>'.
 
-Keyword arguments (unknown keys throw): `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `drawstyle | ds`, `zorder`, `label`, `clip_on | clipon | clip`
+Keyword arguments (unknown keys throw): `decimate`, `color | c`, `alpha`, `linestyle | ls`, `marker`, `linewidth | lw`, `markersize | ms`, `markeredgewidth | mew`, `markerfacecolor | mfc`, `markeredgecolor | mec`, `drawstyle | ds`, `zorder`, `label`, `clip_on | clipon | clip`
 
 ### `Axes.axhline(y?, kwargs?)`
 

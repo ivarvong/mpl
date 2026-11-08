@@ -28,7 +28,7 @@ import { composeStyles } from './core/style.ts';
 import { parseFontSize, parseLegendLoc, parseTheme, scatterPointsOf } from './core/theme.ts';
 import type {
   Artist, Aspect, AxesMeta, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
-  AxLineArtist, AxLineThrough, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist, StickyArtist,
+  AxLineArtist, AxLineThrough, Decimate, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist, StickyArtist,
   Cap, LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, TightBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, ImageArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
 } from './core/types.ts';
 import { assertNever, err, none, ok, some, unwrap } from './core/types.ts';
@@ -198,6 +198,12 @@ const edgeOf = (p: Paint, lw: number): BarEdge => (p.kind === 'solid' && p.color
 /** A point (x, y), as matplotlib's xy tuples. */
 export type XY = readonly [number, number];
 const DATA_COORDS: LineCoords = { x: 'data', y: 'data' };
+const NO_DECIMATE: Decimate = { kind: 'off' };
+/** plot's `decimate`: false (default), true (one column per device pixel) or columns per pixel (> 0). */
+const parseDecimate = (v: unknown): Result<Decimate> =>
+  v === false ? ok(NO_DECIMATE) : v === true ? ok({ kind: 'minmax', perPx: 1 })
+    : typeof v === 'number' && Number.isFinite(v) && v > 0 ? ok({ kind: 'minmax', perPx: v })
+      : err(`decimate must be false, true or a number of columns per pixel > 0, got ${JSON.stringify(v)}`);
 const NO_FMT: Fmt = { color: none, shape: { kind: 'default' } };
 const alphaOf = (v: unknown): Result<Option<number>> => (typeof v === 'number' && v >= 0 && v <= 1 ? ok(some(v)) : err('alpha must be in [0, 1]'));
 /** set_alpha: replaces the colour's alpha */
@@ -659,7 +665,12 @@ export class Axes {
   }
   private paint = (v: unknown): Result<Paint> => parsePaint(v, this.theme.axes.cycle);
 
-  /** plot(y) | plot(x, y) | plot(x, y, fmt), with an optional trailing kwargs object ({ drawstyle | ds, … }). */
+  /**
+   * plot(y) | plot(x, y) | plot(x, y, fmt), with an optional trailing kwargs object ({ drawstyle | ds, … }).
+   * `decimate` is mpl's own, not matplotlib's (default false): true, or N columns per device pixel, keeps the first,
+   * lowest, highest and last sample of each column before path cleanup, for dense time series. Antialiased edges then
+   * differ slightly from matplotlib; markers and legend placement still use every sample.
+   */
   plot(...args: readonly unknown[]): LineArtist { return this.plotArgs('plot', args); }
 
   /** step(x, y, [fmt], { where: 'pre' | 'post' | 'mid', … }) — plot() with drawstyle 'steps-<where>'. */
@@ -687,9 +698,10 @@ export class Axes {
     const xs: Series = rest.length === 2 ? unwrap(parseSeries(rest[0], 'x')) : { kind: 'numeric', values: Float64Array.from({ length: ys.values.length }, (_, i) => i) };
     if (xs.values.length !== ys.values.length) throw new RangeError(`x and y must have the same length, got ${xs.values.length} and ${ys.values.length}`);
     const p = this.lineProps(kw, fmt, () => ({ kind: 'solid', color: this.next('line') }));
+    const decimate = kw.read(['decimate'], parseDecimate, () => NO_DECIMATE);
     kw.done();
     const line: LineArtist = { kind: 'line', x: this.xaxis.convert(xs), y: this.yaxis.convert(ys), stroke: p.stroke, markers: p.markers, label: p.label,
-                               clip: p.clip, drawstyle: p.drawstyle, coords: DATA_COORDS, zorder: p.zorder, cap: none };
+                               clip: p.clip, drawstyle: p.drawstyle, coords: DATA_COORDS, decimate, zorder: p.zorder, cap: none };
     this.artists.push(line);
     this.xaxis.request(); this.yaxis.request();
     return line;
@@ -767,7 +779,7 @@ export class Axes {
     const line: LineArtist = {
       kind: 'line', x: horiz ? Float64Array.of(f0, f1) : Float64Array.of(v, v), y: horiz ? Float64Array.of(v, v) : Float64Array.of(f0, f1),
       stroke: p.stroke, markers: p.markers, label: p.label, clip: p.clip, drawstyle: p.drawstyle,
-      coords: horiz ? { x: 'axes', y: 'data' } : { x: 'data', y: 'axes' }, zorder: p.zorder, cap: none,
+      coords: horiz ? { x: 'axes', y: 'data' } : { x: 'data', y: 'axes' }, decimate: NO_DECIMATE, zorder: p.zorder, cap: none,
     };
     this.artists.push(line);
     if (v < b0 || v > b1) axis.request();
@@ -880,7 +892,7 @@ export class Axes {
     const alphaRgb = (c: Rgb): Rgb => (lp.alpha.kind === 'some' ? { hex: c.hex, alpha: lp.alpha.value } : c);
     const dataLine: Option<LineArtist> = fmtNone ? none : some({
       kind: 'line', x: xs, y: ys, stroke: lp.stroke, markers: lp.markers, label: { kind: 'none' }, clip: lp.clip,
-      drawstyle: lp.drawstyle, coords: DATA_COORDS, zorder: barsabove ? zorder - 0.1 : zorder + 0.1, cap: none,
+      drawstyle: lp.drawstyle, coords: DATA_COORDS, decimate: NO_DECIMATE, zorder: barsabove ? zorder - 0.1 : zorder + 0.1, cap: none,
     });
     if (dataLine.kind === 'some') this.artists.push(dataLine.value);
     const barWidth = elw.kind === 'some' ? elw.value : lp.lw.kind === 'some' ? lp.lw.value : this.theme.lines.widthPt;
@@ -891,7 +903,7 @@ export class Axes {
     const capFace: Paint = withAlphaOpt(base, lp.alpha);
     const capLine = (x: Float64Array, y: Float64Array, shape: MarkerName): LineArtist => ({
       kind: 'line', x, y, stroke: { kind: 'none' }, markers: { kind: 'on', shape, sizePt: capSizePt, edgeWidthPt: capMew, face: capFace, edge: capEdge },
-      label: { kind: 'none' }, clip: lp.clip, drawstyle: 'default', coords: DATA_COORDS, zorder, cap: none,
+      label: { kind: 'none' }, clip: lp.clip, drawstyle: 'default', coords: DATA_COORDS, decimate: NO_DECIMATE, zorder, cap: none,
     });
     const bars: SegmentsArtist[] = [];
     const caps: LineArtist[] = [];
@@ -1229,7 +1241,7 @@ export class Axes {
       const p = swap(xs, ys);
       const line: LineArtist = {
         kind: 'line', x: p.x, y: p.y, stroke, markers, label: lbl, clip,
-        drawstyle: 'default', coords: DATA_COORDS, zorder: z, cap,
+        drawstyle: 'default', coords: DATA_COORDS, decimate: NO_DECIMATE, zorder: z, cap,
       };
       this.artists.push(line);
       return line;

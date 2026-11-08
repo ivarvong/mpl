@@ -5,7 +5,7 @@ import { tx, ty } from './frame.ts';
 import type { Box } from './legend-index.ts';
 import { lineStroke, markersNode, snapsAuto } from './marks.ts';
 import type { XY } from './path.ts';
-import { cleanupStroke, isRectilinear } from './path.ts';
+import { cleanupStroke, decimateMinMax, isRectilinear } from './path.ts';
 import { inkOf, pathNode, rectNode, snap, snapOffset } from './scene.ts';
 import { MARKERS } from './data/markers.ts';
 import { arrowExtents, yaArrowPath } from './arrow.ts';
@@ -146,7 +146,11 @@ export function drawLine(a: LineArtist, f: Frame, theme: Theme, k: number, clip:
   const drawn = whole ? line : (() => { const p = stepped(ax, ay, a.drawstyle); return transform(p.x, p.y, a.coords, f); })();
   const pts = a.drawstyle === 'default' ? drawn : transform(ax, ay, a.coords, f);
   const nodes: Node[] = [];
-  if (a.stroke.kind === 'on') nodes.push(...strokeNodes(drawn.xs, drawn.ys, lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k, a.cap), theme, f, span));
+  if (a.stroke.kind === 'on') {
+    const d = a.decimate.kind === 'minmax' ? decimateMinMax(drawn.xs, drawn.ys, a.decimate.perPx) : drawn;
+    if (d.xs.length !== drawn.xs.length) span.setAttribute('decimated', d.xs.length);
+    nodes.push(...strokeNodes(d.xs, d.ys, lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k, a.cap), theme, f, span));
+  }
   if (a.markers.kind === 'on') {
     const m = markersNode(a.markers, pts.xs, pts.ys, k);
     if (m.kind === 'some') { nodes.push(m.value); span.setAttribute('markerCount', m.value.kind === 'markers' ? m.value.xs.length : 0); }
