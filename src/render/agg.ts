@@ -204,9 +204,13 @@ function drawNode(x: Ctx, n: Node, clip: IBox): void {
     case 'rect': drawPath(x, flatten(rectSegs(n.x, n.y, n.w, n.h), 0, 0), n.ink, clip); return;
     case 'path': drawPath(x, flatten(n.segs, 0, 0), n.ink, clip, n.antialiased); return;
     case 'polyline': {
-      const sub: Sub = { xs: Array.from(n.xs), ys: Array.from(n.ys), closed: false };
-      if (sub.xs.length > 0) x.tracer.span('raster.polyline', { vertices: sub.xs.length, w: +n.stroke.width.toFixed(3), dash: n.stroke.dash.kind }, (sp) => {
-        const cov = strokeCoverage(x.ras, clip, [sub], n.stroke);
+      const subs: Sub[] = [];
+      for (let m = 0; m < n.moves.length; m++) {
+        const a = n.moves[m], b = m + 1 < n.moves.length ? n.moves[m + 1] : n.xs.length;
+        subs.push({ xs: Array.from(n.xs.subarray(a, b)), ys: Array.from(n.ys.subarray(a, b)), closed: false });
+      }
+      if (subs.length > 0) x.tracer.span('raster.polyline', { vertices: n.xs.length, w: +n.stroke.width.toFixed(3), dash: n.stroke.dash.kind }, (sp) => {
+        const cov = strokeCoverage(x.ras, clip, subs, n.stroke);
         sp.setAttribute('runs', cov.sx.length);
         blendCoverage(x.c, cov, rgba8(n.stroke.color), 0, 0, clip);
       });
