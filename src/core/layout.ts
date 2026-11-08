@@ -109,15 +109,17 @@ function zorder(a: Artist): number {
   }
 }
 
+/** A legend entry and the index of the artist it stands for. */
+type Sourced = { readonly entry: LegendEntry; readonly artist: number };
 /** _get_legend_handles: Axes children in order, then containers (bars). */
-function legendEntries(ax: AxesSpec, drawn: readonly Drawn[]): readonly LegendEntry[] {
-  const children: LegendEntry[] = [], containers: LegendEntry[] = [];
+function legendEntries(ax: AxesSpec, drawn: readonly Drawn[]): readonly Sourced[] {
+  const children: Sourced[] = [], containers: Sourced[] = [];
   ax.artists.forEach((a, i) => {
     if (a.kind === 'text' || a.kind === 'annotation') return;
     if (a.label.kind === 'none') return;
     const h = drawn[i].handle;
     if (h.kind === 'none') return;
-    const e: LegendEntry = { label: a.label.text, handle: h.value };
+    const e: Sourced = { entry: { label: a.label.text, handle: h.value }, artist: i };
     switch (a.kind) {
       // Line2D, patches and collections are Axes children; hist's labelled bar is a child Rectangle
       case 'line': case 'fill': case 'scatter': case 'axline': case 'segments': case 'polygon': children.push(e); break;
@@ -381,7 +383,15 @@ function planAxis(which: 'x' | 'y', leader: AxesSpec, extent: Extent, fig: Figur
  *  no artist enters except through a loc='best' legend's placement, so it draws artists only for that. */
 type LayoutMode = 'scene' | 'tight';
 
-function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, tracer: Tracer): { readonly nodes: readonly Node[]; readonly meta: AxesMeta } {
+/**
+ * What an annotated (interactive) SVG needs from layout, per Axes: how many top-level scene nodes it drew (an
+ * Axes' nodes are contiguous in Scene.nodes), its exact data → px frame, and each legend entry's box (px, y down)
+ * with the index of the artist it stands for.
+ */
+export type AxesAnnot = { readonly nodes: number; readonly frame: Frame; readonly legend: readonly { readonly artist: number; readonly box: PxBox }[] };
+type AxesPart = { readonly nodes: readonly Node[]; readonly meta: AxesMeta; readonly annot: AxesAnnot };
+
+function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, tracer: Tracer): AxesPart {
   const { ax } = inp;
   const theme = fig.theme, dpi = fig.dpi, k = pxPerPt(dpi);
   const W = fig.widthIn * dpi, H = fig.heightIn * dpi;
@@ -419,7 +429,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, tracer: Trac
   const deco = tracer.span('decorations', { role: ax.role.kind }, () =>
     decorations(ax, roles, decTheme, f, k, dpi, xt, yt, { near: xa.nearBoxes, far: xa.farBoxes, nearUp: xa.nearUp }, { near: ya.nearBoxes, far: ya.farBoxes, nearUp: ya.nearUp }));
 
-  const entries = legendEntries(ax, drawn);
+  const sourced = legendEntries(ax, drawn), entries = sourced.map((e) => e.entry);
   const axesUp: Box = { x0: box.x0, x1: box.x1, y0: box.b, y1: box.t };
   const spec = ax.legend;
   const legend = spec.kind === 'on' && entries.length > 0
@@ -439,8 +449,11 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, tracer: Trac
     [3, [...userTexts, ...deco.nodes]], [5, legend.kind === 'some' ? legend.value.out.nodes : []],
   ];
   const nodes = [...background, ...layers.toSorted((a, b) => a[0] - b[0]).flatMap(([, n]) => n)];
+  const legendBoxes = legend.kind === 'some'
+    ? legend.value.out.entries.map((e, j) => ({ artist: sourced[j].artist, box: { x0: e.x0, x1: e.x1, y0: H - e.y1, y1: H - e.y0 } })) : [];
   return {
     nodes,
+    annot: { nodes: nodes.length, frame: f, legend: legendBoxes },
     meta: {
       x: axisMeta(xlim, xt, ax.hiddenLabels.x), y: axisMeta(ylim, yt, ax.hiddenLabels.y),
       frame: { box: { x0: box.x0, x1: box.x1, yTop: box.yTop, yBot: box.yBot }, xlim, ylim, xscale: xs, yscale: ys, H },
@@ -488,7 +501,7 @@ export function supBoxes(fig: FigureSpec): { readonly title: Option<PxBox>; read
   return { title: place(fig.suptitle, false), x: place(fig.supx, false), y: place(fig.supy, true) };
 }
 
-function layoutParts(fig: FigureSpec, mode: LayoutMode, tracer: Tracer): readonly { readonly nodes: readonly Node[]; readonly meta: AxesMeta }[] {
+function layoutParts(fig: FigureSpec, mode: LayoutMode, tracer: Tracer): readonly AxesPart[] {
   const ext = fig.axes.map((ax) => tracer.span('datalimits', { artists: ax.artists.length }, (sp) => {
     const e = dataExtents(ax.artists); sp.setAttribute('values', e.x.count + e.y.count); return e;
   }));
@@ -540,7 +553,7 @@ export function tightBoxes(fig: FigureSpec, tracer: Tracer): readonly TightBox[]
   return layoutParts(fig, 'tight', tracer).map((p) => p.meta.tight);
 }
 
-export function layoutFigure(fig: FigureSpec, tracer: Tracer): { readonly scene: Scene; readonly meta: readonly AxesMeta[] } {
+export function layoutFigure(fig: FigureSpec, tracer: Tracer): { readonly scene: Scene; readonly meta: readonly AxesMeta[]; readonly annot: readonly AxesAnnot[] } {
   const parts = layoutParts(fig, 'scene', tracer);
   const W = fig.widthIn * fig.dpi, H = fig.heightIn * fig.dpi, k = pxPerPt(fig.dpi);
   const figTexts: Node[] = [];
@@ -566,5 +579,6 @@ export function layoutFigure(fig: FigureSpec, tracer: Tracer): { readonly scene:
   return {
     scene: { width: W, height: H, dpi: fig.dpi, background: fig.theme.figure.background, nodes: [...parts.flatMap((p) => p.nodes), ...figTexts] },
     meta: parts.map((p) => p.meta),
+    annot: parts.map((p) => p.annot),
   };
 }

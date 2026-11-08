@@ -82,7 +82,8 @@ export type LegendInput = {
   readonly axesBox: Box; readonly lines: readonly XY[]; readonly points: readonly XY[]; readonly boxes: readonly Box[];
   readonly loc: LegendLoc; readonly ncols: number; readonly frame: boolean; readonly fontSizePt: number; readonly markers: LegendMarkers;
 };
-export type LegendOutput = { readonly box: Box; readonly code: AnchorCode; readonly nodes: readonly Node[] };
+/** `entries[i]`: entry i's handle + label box (display, y up), in input order: what an interactive layer hit-tests. */
+export type LegendOutput = { readonly box: Box; readonly code: AnchorCode; readonly nodes: readonly Node[]; readonly entries: readonly Box[] };
 
 /** Legend._find_best_position over the obstacle index; ties keep the lower code. */
 function bestCode(inp: LegendInput, W: number, Hh: number, pad: number, tracer: Tracer): AnchorCode {
@@ -142,7 +143,7 @@ export function layoutLegend(inp: LegendInput, tracer: Tracer): LegendOutput {
   const box = bb(l, b, l + W, b + Hh);
 
   const tl = (y: number): number => H - y;
-  const nodes: Node[] = [];
+  const nodes: Node[] = [], entries: Box[] = [];
   if (inp.frame) nodes.push(...frameNode(box, fs, theme, k, tl));
   const [hbx, hby] = legendPack.offsets[0];
   colPacks.forEach((cp, ci) => {
@@ -151,11 +152,12 @@ export function layoutLegend(inp: LegendInput, tracer: Tracer): LegendOutput {
       const [ix, iy] = cp.offsets[ii];
       const bx = ox + hbx + cx + ix, by = oy + hby + cy + iy;
       const [hx, hy] = item.offsets[0], [txo, tyo] = item.offsets[1];
+      entries.push(bb(bx + item.bbox.x0, by + item.bbox.y0, bx + item.bbox.x1, by + item.bbox.y1));
       nodes.push(...handleNodes(item.entry.handle, bx + hx, by + hy, { wPt: hWidthPt, hPt: hHeightPt, ydPt: descentPt, fsPt }, inp.markers, theme, k, tl, inp.W, H));
       nodes.push({ kind: 'text', text: item.entry.label, x: bx + txo, y: tl(by + tyo), dy: 0, sizePx: fs, sizePt: fsPt, glyphs: measure(item.entry.label, fsPt, dpi, face).runs[0].glyphs, face: face.id, color: L.labelColor, rotation: 'horizontal' });
     });
   });
-  return { box, code, nodes };
+  return { box, code, nodes, entries };
 }
 
 // FancyBboxPatch, boxstyle "round,pad=0,rounding_size=0.2" (or "square,pad=0"), snap=True

@@ -35,11 +35,19 @@ registerColormapRgba(magma_rgba, viridis_rgba);
 const [fig, ax] = subplots();
 ax.plot([1, 2, 3], [1, 4, 9]);
 export const svg = fig.toSVG(), png = fig.toPNGSync();`;
+const MAIN_ANNOTATE = `import { registerSidecar, subplots } from './index.js';
+import { sidecar } from './annotate.js';
+registerSidecar(sidecar);
+const [fig, ax] = subplots();
+ax.plot([1, 2, 3], [1, 4, 9]);
+export const svg = fig.toSVG({ interactive: true }), png = fig.toPNGSync();`;
 export const ENTRIES: Readonly<Record<string, Scenario>> = {
   main: { what: 'default entry: subplots → plot → toSVG + toPNGSync (DejaVu Sans + viridis built in)', entry: MAIN, external: [] },
   lean: { what: 'mpl/core with no faces or colormaps registered (code + tables only)', entry: LEAN, external: [] },
   'lean+inter+2cmaps': { what: 'mpl/core + Inter×4 + magma + viridis (+ rgba)', entry: LEAN_INTER_2CMAP, external: [] },
   everything: { what: 'every export of mpl plus every face (mpl/fonts/all)', entry: "export * from './index.js';\nexport * from './fonts/all.js';", external: [] },
+  'main+annotate': { what: 'default entry plus the opt-in sidecar writer (mpl/annotate): toSVG({ interactive: true })', entry: MAIN_ANNOTATE, external: [] },
+  interactive: { what: 'mpl/interactive: the annotated-SVG client alone (what a page ships)', entry: "export { attach } from './interactive/client.js';", external: [] },
 };
 
 export type Size = { readonly min: number; readonly gzip: number };

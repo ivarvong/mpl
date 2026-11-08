@@ -138,15 +138,21 @@ Run layout; one trace per run.
 
 ### `Figure.toSVG(kwargs?)`
 
-The figure as an SVG document string, as matplotlib's SVG backend writes it. Optional { precision }, mpl's own: path coordinates (line and path `d`, marker positions) rounded to 0–4 decimals, a repeated command letter written once, and line vertices that round onto the previous one dropped. Omitted, the output is unchanged (4 decimals).
+toSVG({ precision, interactive, idPrefix }) — the figure as an SVG document string, as matplotlib's SVG backend writes it. precision (mpl's own, 0–4): path coordinates (line and path `d`, marker positions) rounded to that many decimals, a repeated command letter written once, and line vertices that round onto the previous one dropped. Omitted, the output is unchanged (4 decimals). interactive: true (default false) also wraps each Axes in <g data-mpl-axes="k"> with a JSON sidecar in <metadata class="mpl-axes"> (axes box, scales, limits, each artist's data and pixel points, legend boxes) for the mpl/interactive client: hover readouts, tooltips, highlighting and legend toggles. Drawing is unchanged. The writer is opt-in code: registerSidecar(sidecar) with `sidecar` from mpl/annotate first, or this throws. idPrefix (default '') prefixes every element id, so several SVGs can be inlined in one HTML page.
+
+Keyword arguments (unknown keys throw): `precision`, `interactive`, `idPrefix`
 
 ### `Figure.svgChunks(kwargs?)`
 
-The SVG as a generator of string chunks. Optional { precision } as in toSVG.
+svgChunks({ precision, interactive, idPrefix }) — the SVG as a generator of string chunks (keywords as in toSVG).
+
+Keyword arguments (unknown keys throw): `precision`, `interactive`, `idPrefix`
 
 ### `Figure.svgStream(kwargs?)`
 
-The SVG as a byte stream (Workers, browsers, Node). Optional { precision } as in toSVG.
+svgStream({ precision, interactive, idPrefix }) — the SVG as a byte stream (Workers, browsers, Node; keywords as in toSVG).
+
+Keyword arguments (unknown keys throw): `precision`, `interactive`, `idPrefix`
 
 ### `Figure.toRGBA(kwargs?)`
 
