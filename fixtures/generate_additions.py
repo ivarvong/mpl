@@ -28,7 +28,7 @@ def date(s): return {"$date": s}
 def decode(a):
     """JSON spec -> matplotlib args. Tags (at any depth):
     {"$dates": [...]} / {"$date": s} → datetime64; {"$float": "nan"|"inf"|"-inf"} → float;
-    {"$uint8rgb": rows} → uint8 ndarray; {"$array": rows} → float ndarray (imshow only —
+    {"$uint8rgb": rows} → uint8 ndarray; {"$arange": [n, step]} → [i * step for i < n] (a dense x axis, stored small); {"$array": rows} → float ndarray (imshow only —
     a bare list-of-lists must stay a list so hist treats rows as datasets, not columns).
     """
     if isinstance(a, dict) and "$dates" in a:
@@ -39,6 +39,9 @@ def decode(a):
         return float(a["$float"])  # "nan", "inf", "-inf"
     if isinstance(a, dict) and "$uint8rgb" in a:
         return np.asarray(a["$uint8rgb"], dtype=np.uint8)
+    if isinstance(a, dict) and "$arange" in a:
+        n, step = a["$arange"]
+        return (np.arange(n, dtype=float) * step).tolist()
     if isinstance(a, dict) and "$array" in a:
         return np.asarray(decode(a["$array"]), dtype=float)
     if isinstance(a, list):
@@ -561,6 +564,44 @@ styled("pro-mono", "theme_pro_mono_tight_untitled",
        ("sca", [2]), ("plot", [TX, [round(0.3 + (i % 7) * 0.2, 3) for i in TX]]),
        ("fig.tight_layout", []))
 
+
+# A dense time series, modelled on the archival-tag chart in the markstream + mpl blog: three channels (light, temperature,
+# depth) of 11,641 samples each at 30 s (34,923 in all), noisy, with dives and one-sample deep spikes. Synthetic and
+# seeded; quantized like the tag (light 1, temperature 0.05 °C, depth 0.5 m) so the spec stays small. Exercises
+# path.simplify (PathSimplifier) on long noisy lines; the depth panel is inverted with set_ylim(hi, lo).
+def tag_series(n=11641, dt_h=30 / 3600):
+    rng = np.random.default_rng(20130618)
+    t = np.arange(n) * dt_h
+    hod = (6.5 + t) % 24
+    depth = 12 + 6 * np.sin(2 * np.pi * t / 5.3) + rng.normal(0, 1.2, n)
+    for _ in range(26):   # dives, clustered around dawn (~08:45) and dusk (~00:15)
+        centre = rng.choice([8.75, 24.25]) + rng.normal(0, 1.2) + 24 * rng.integers(0, 5) - 6.5
+        i0 = int(centre / dt_h)
+        down, bottom, up = (int(v) for v in rng.integers([8, 6, 10], [30, 60, 40]))
+        dmax = rng.uniform(60, 215)
+        prof = np.concatenate([np.linspace(0, 1, down), np.ones(bottom) + rng.normal(0, 0.04, bottom), np.linspace(1, 0, up)])
+        for k, f in enumerate(prof):
+            if 0 <= i0 + k < n:
+                depth[i0 + k] = max(depth[i0 + k], 12 + f * dmax)
+    spikes = rng.choice(n, 40, replace=False)
+    depth[spikes] += rng.uniform(80, 210, 40)
+    depth = np.clip(depth, 1, 240)
+    sun = np.clip(np.sin(np.pi * (hod - 8.75) / 15.5), 0, None) ** 0.7   # sunrise ~08:45, sunset ~00:15
+    cloud = 1 - 0.35 * np.clip(np.sin(t / 3.1) * np.sin(t / 0.7), 0, None)
+    light = 22 + 188 * sun * cloud * np.exp(-depth / 140) + rng.normal(0, 1.5, n)
+    temp_now = 11 + 10 / (1 + np.exp((depth - 70) / 18))
+    temp = np.empty(n); temp[0] = temp_now[0]
+    for i in range(1, n):   # 150 s sensor lag
+        temp[i] = temp[i - 1] + (temp_now[i] - temp[i - 1]) * (30 / 150)
+    temp += rng.normal(0, 0.06, n)
+    q = lambda v, s: [round(float(x), 2) for x in np.round(v / s) * s]
+    return {"$arange": [n, dt_h]}, q(light, 1), q(temp, 0.05), q(depth, 0.5)
+TX, TLIGHT, TTEMP, TDEPTH = tag_series()
+case("dense_timeseries_tag", ("$rc", [], {"figure.figsize": [7.2, 4.8]}), ("$subplots", [3, 1], {"sharex": True}),
+     ("plot", [TX, TLIGHT], {"lw": 0.8, "color": "#63B2EB"}), ("set_ylim", [0, 250]), ("set_ylabel", ["Light"]),
+     ("sca", [1]), ("plot", [TX, TTEMP], {"lw": 0.8, "color": "#3F72A5"}), ("set_ylim", [10, 22]), ("set_ylabel", ["Temp (°C)"]),
+     ("sca", [2]), ("plot", [TX, TDEPTH], {"lw": 0.8, "color": "#050830"}), ("set_ylim", [250, 0]), ("set_ylabel", ["Depth (m)"]),
+     ("set_xlabel", ["hours since 2013-06-18 06:30"]))
 
 def run_case(name, calls):
     style = STYLES.get(name)

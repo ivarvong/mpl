@@ -8,8 +8,20 @@ compares mpl against it and needs no Python.
 The PNG comparison is byte for byte, and matplotlib's text rasterization depends on the FreeType build inside its
 `ft2font` extension and on the text hinting mode. The oracle PNGs in this repository are produced with:
 
-- the stock `matplotlib==3.11.2` wheel (Linux/macOS), which bundles FreeType 2.14.3; and
+- the stock `matplotlib==3.11.2` wheel for **Linux x86-64**, which bundles FreeType 2.14.3; and
 - `matplotlib.rcParams['text.hinting'] = 'none'` (no hinting).
+
+The CPU architecture matters, not only FreeType. On macOS arm64 the stock 3.11.2 wheel (also FreeType 2.14.3) renders
+17 of the 128 `generate_additions.py` cases with ±1 differences (one case up to 227) on a few hundred antialiased edge
+pixels. Under `linux/amd64` all 128 come out pixel-identical to the committed PNGs (checked 2026-11-07). The arm64 build's
+stroker arithmetic rounds differently: clang contracts `a*b + c` into FMA on arm64, and Apple's libm `sin`/`cos`/`atan2`
+(round joins) differ in the last ulp from glibc's. mpl follows the x86-64 arithmetic. On a Mac, generate inside a
+container:
+
+```sh
+docker run --rm --platform linux/amd64 -v "$PWD":/mpl -w /mpl python:3.12-slim \
+  sh -c 'pip install -q -r fixtures/requirements.txt && python fixtures/generate_additions.py'
+```
 
 You can confirm your environment with:
 
@@ -24,7 +36,7 @@ Both `fixtures/generate.py` and `fixtures/generate_additions.py` set `font.famil
 
 ## Regeneration rules
 
-- Only regenerate (and commit) fixtures on an environment matching the above (matplotlib 3.11.2, FreeType 2.14.3, hinting none).
+- Only regenerate (and commit) fixtures on an environment matching the above (matplotlib 3.11.2, FreeType 2.14.3, hinting none, x86-64).
 - When adding cases, generate just the new files and update `_index.json`. State in your PR which FreeType generated them.
 - PNGs produced with a different FreeType or hinting setting are valid for local testing but must not be committed.
 

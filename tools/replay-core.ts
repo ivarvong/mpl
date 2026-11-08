@@ -27,6 +27,11 @@ export const decode = (a: unknown): unknown => {
     if (s === '-inf') return -Infinity;
     return Number(s);
   }
+  // {"$arange": [n, step]} → [i * step for i < n] (numpy: np.arange(n, dtype=float) * step, the same products)
+  if (a && typeof a === 'object' && '$arange' in a) {
+    const [n, step] = (a as { $arange: [number, number] }).$arange;
+    return Array.from({ length: n }, (_, i) => i * step);
+  }
   // {"$array": rows} → nested list (imshow); hist must keep bare list-of-lists as lists
   if (a && typeof a === 'object' && '$array' in a) return decode((a as { $array: unknown }).$array);
   // {"$uint8rgb": rows} passes through for Axes.imshow to build a uint8 buffer
