@@ -6,6 +6,8 @@ import { none, some } from './types.ts';
  *  After the y-up→y-down flip, vertices land on floor(v + 0.5) + off (off = 0.5 for odd stroke px). */
 export const snapOffset = (strokePx: number): number => (Math.round(strokePx) % 2 === 1 ? 0.5 : 0.0);
 export const snap = (v: number, strokePx: number): number => Math.floor(v + 0.5) + snapOffset(strokePx);
+/** snap() on Agg; the value itself where nothing snaps (matplotlib's SVG backend; Frame.snap false). */
+export const snapIf = (on: boolean, v: number, strokePx: number): number => (on ? Math.floor(v + 0.5) + snapOffset(strokePx) : v);
 
 /** What a shape draws; none when it would draw nothing (fully transparent counts as nothing). */
 export function inkOf(fill: Paint, stroke: Option<Stroke>): Option<Ink> {

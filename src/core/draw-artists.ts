@@ -6,7 +6,7 @@ import type { Box } from './legend-index.ts';
 import { lineStroke, markersNode, snapsAuto } from './marks.ts';
 import type { XY } from './path.ts';
 import { cleanupStroke, decimateMinMax, isRectilinear } from './path.ts';
-import { inkOf, pathNode, rectNode, snap, snapOffset } from './scene.ts';
+import { inkOf, pathNode, rectNode, snapIf, snapOffset } from './scene.ts';
 import { MARKERS } from './data/markers.ts';
 import { arrowExtents, yaArrowPath } from './arrow.ts';
 import { lookup } from './std.ts';
@@ -68,7 +68,7 @@ function transform(x: Float64Array, y: Float64Array, coords: LineArtist['coords'
  *  clip, SNAP_AUTO snapping and path.simplify (src/core/path.ts). */
 function strokeNodes(xs: Float64Array, ys: Float64Array, stroke: Stroke, theme: Theme, f: Frame, span: SpanHandle): readonly Node[] {
   if (xs.length === 0 || stroke.color.alpha <= 0) return [];
-  const p = cleanupStroke(xs, ys, f.clipW, f.clipH, stroke.width, theme.simplify);
+  const p = cleanupStroke(xs, ys, f.clipW, f.clipH, stroke.width, theme.simplify, f.snap);
   if (p.xs.length !== xs.length) span.setAttribute('simplified', p.xs.length);
   if (p.xs.length === 0) return [];   // nothing finite on the canvas (matplotlib writes a path without d)
   return [{ kind: 'polyline', xs: p.xs, ys: p.ys, moves: p.moves, stroke }];
@@ -152,7 +152,7 @@ export function drawLine(a: LineArtist, f: Frame, theme: Theme, k: number, clip:
     nodes.push(...strokeNodes(d.xs, d.ys, lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k, a.cap), theme, f, span));
   }
   if (a.markers.kind === 'on') {
-    const m = markersNode(a.markers, pts.xs, pts.ys, k);
+    const m = markersNode(a.markers, pts.xs, pts.ys, k, false, f.snap);
     if (m.kind === 'some') { nodes.push(m.value); span.setAttribute('markerCount', m.value.kind === 'markers' ? m.value.xs.length : 0); }
   }
   return {
@@ -219,7 +219,7 @@ export function drawSegments(a: SegmentsArtist, f: Frame, theme: Theme, k: numbe
     const ys = Float64Array.of(Y0[i] * -f.ay + tyDev, Y1[i] * -f.ay + tyDev);
     if (!xs.every(Number.isFinite) || !ys.every(Number.isFinite)) continue;
     const off = snapOffset(stroke.width);
-    const fix = (v: number): number => (isRectilinear(xs, ys) ? Math.floor(v + 0.5) + off : single ? v + 0.5 : v);
+    const fix = (v: number): number => (!f.snap ? v : isRectilinear(xs, ys) ? Math.floor(v + 0.5) + off : single ? v + 0.5 : v);
     const segs: Seg[] = [['M', fix(xs[0]), fix(ys[0])], ['L', fix(xs[1]), fix(ys[1])]];
     nodes.push(single
       ? { kind: 'markers', shape: segs, xs: Float64Array.of(0), ys: Float64Array.of(f.Hg), ink: { kind: 'stroke', stroke } }
@@ -244,7 +244,7 @@ export function drawPolygon(a: PolygonArtist, f: Frame, k: number, clip: Clip): 
   // Polygon(closed=True) appends the first vertex, which becomes the CLOSEPOLY
   const cx = a.closed ? Float64Array.of(...xs, xs[0]) : xs, cy = a.closed ? Float64Array.of(...ys, ys[0]) : ys;
   const off = stroke.kind === 'some' ? snapOffset(stroke.value.width) : 0;
-  const rect = isRectilinear(cx, cy);
+  const rect = f.snap && isRectilinear(cx, cy);
   const fix = (v: number): number => (rect ? Math.floor(v + 0.5) + off : v);
   const segs: Seg[] = Array.from(xs, (x, i): Seg => [i === 0 ? 'M' : 'L', fix(x), fix(ys[i])]);
   if (a.closed) segs.push(['Z']);
@@ -269,8 +269,8 @@ export function drawBar(a: BarArtist, f: Frame, k: number, clip: Clip, span: Spa
   for (let i = 0; i < a.x.length; i++) {
     const xa = tx(f, a.x[i]), xb = tx(f, a.x[i] + a.w[i]), ya = ty(f, a.y[i]), yb = ty(f, a.y[i] + a.h[i]);
     boxes.push({ x0: Math.min(xa, xb), x1: Math.max(xa, xb), y0: f.Hg - Math.max(ya, yb), y1: f.Hg - Math.min(ya, yb) });
-    const x0 = snap(Math.min(xa, xb), lw), x1 = snap(Math.max(xa, xb), lw);
-    const y0 = snap(Math.min(ya, yb), lw), y1 = snap(Math.max(ya, yb), lw);
+    const x0 = snapIf(f.snap, Math.min(xa, xb), lw), x1 = snapIf(f.snap, Math.max(xa, xb), lw);
+    const y0 = snapIf(f.snap, Math.min(ya, yb), lw), y1 = snapIf(f.snap, Math.max(ya, yb), lw);
     const r: Pending = { x: x0, w: x1 - x0, y: y0, h: y1 - y0, i };
     if (cullable) {
       if (r.w <= 0 || r.h <= 0) continue;
@@ -322,7 +322,7 @@ export function drawFill(a: FillArtist, f: Frame, k: number, clip: Clip): Drawn 
   let rectilinear = ptsX.length + 1 <= 1024;
   for (let i = 1; i < ptsX.length && rectilinear; i++) rectilinear = Math.abs(ptsX[i] - ptsX[i - 1]) < 1e-4 || Math.abs(ptsY[i] - ptsY[i - 1]) < 1e-4;
   const off = a.edge.kind === 'on' ? snapOffset(strokePx(a.edge.widthPt, k)) : 0;
-  const fix = (v: number): number => (rectilinear ? Math.floor(v + 0.5) + off : asMarker ? v + 0.5 : v);
+  const fix = (v: number): number => (!f.snap ? v : rectilinear ? Math.floor(v + 0.5) + off : asMarker ? v + 0.5 : v);
   const segs: Seg[] = ptsX.map((x, i): Seg => [i === 0 ? 'M' : 'L', fix(x), fix(ptsY[i])]);
   segs.push(['Z']);
   const up = new Float64Array(2 * n), xs = new Float64Array(2 * n);
@@ -410,7 +410,7 @@ export function drawScatter(a: ScatterArtist, f: Frame, _theme: Theme, k: number
   const xs = new Float64Array(n), ys = new Float64Array(n);
   for (let i = 0; i < n; i++) { xs[i] = tx(f, a.x[i]); ys[i] = ty(f, a.y[i]); }
   const c = a.collection;
-  const nodes = collectionNodes(a.shape, xs, ys, c.sizesPt2, c.faces, c.edges, a.edgeWidthPt, k, singlePath(a.shape, c, k, f.W, f.H));
+  const nodes = collectionNodes(a.shape, xs, ys, c.sizesPt2, c.faces, c.edges, a.edgeWidthPt, k, singlePath(a.shape, c, k, f.W, f.H), f.snap);
   // Legend._auto_legend_data: a Collection's offsets in display space count toward loc='best' (each point inside the box)
   const up = transform(a.x.subarray(0, n), a.y.subarray(0, n), DATA_COORDS, f);
   const out: readonly Node[] = nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [];
@@ -444,7 +444,7 @@ export function singlePath(shape: MarkerName, c: ScatterCollection, k: number, W
  * their lengths, its path is scaled by sqrt(s) * dpi / 72 and translated to the exact offset, then filled and stroked.
  */
 export function collectionNodes(shape: MarkerName, xs: Float64Array, ys: Float64Array, sizesPt2: Float64Array, faces: readonly Paint[], edges: readonly Paint[],
-                                edgeWidthPt: number, k: number, single: boolean): readonly Node[] {
+                                edgeWidthPt: number, k: number, single: boolean, snapOn: boolean = true): readonly Node[] {
   const n = xs.length;
   if (n === 0 || sizesPt2.length === 0 || faces.length === 0 || edges.length === 0) return [];
   const strokeOf = (edge: Paint): Option<Stroke> =>
@@ -453,7 +453,7 @@ export function collectionNodes(shape: MarkerName, xs: Float64Array, ys: Float64
   if (single) {
     const face = faces[0], edge = edges[0];
     if (inkOf(face, strokeOf(edge)).kind === 'none') return [];
-    const m = markersNode({ kind: 'on', shape, sizePt: Math.sqrt(Math.max(0, sizesPt2[0])), edgeWidthPt, face, edge }, xs, ys, k, true);
+    const m = markersNode({ kind: 'on', shape, sizePt: Math.sqrt(Math.max(0, sizesPt2[0])), edgeWidthPt, face, edge }, xs, ys, k, true, snapOn);
     return m.kind === 'some' ? [m.value] : [];
   }
   for (let i = 0; i < n; i++) {
@@ -471,7 +471,7 @@ export function collectionNodes(shape: MarkerName, xs: Float64Array, ys: Float64
         default: return assertNever(sg);
       }
     });
-    nodes.push(pathNode(snapRectilinear(segs, snapOffset(strokePx(edgeWidthPt, k))), ink.value));
+    nodes.push(pathNode(snapOn ? snapRectilinear(segs, snapOffset(strokePx(edgeWidthPt, k))) : segs, ink.value));
   }
   return nodes;
 }
@@ -493,18 +493,19 @@ export function drawSpan(a: SpanArtist, f: Frame, k: number, clip: Clip): Drawn 
   const ink = inkOf(a.face, stroke);
   if (ink.kind === 'none') return { nodes: [], lines: [], boxes: [], points: [], handle: handleOf(a) };
   const off = stroke.kind === 'some' ? snapOffset(stroke.value.width) : 0;
+  const sn = (v: number): number => (f.snap ? Math.floor(v + 0.5) + off : v);
   if (a.orientation === 'vertical') {
     const x0 = tx(f, a.a0), x1 = tx(f, a.a1);
     const y0 = a.f0 * -f.box.h + (f.Hg - f.box.b), y1 = a.f1 * -f.box.h + (f.Hg - f.box.b);
-    const X0 = Math.floor(Math.min(x0, x1) + 0.5) + off, X1 = Math.floor(Math.max(x0, x1) + 0.5) + off;
-    const Y0 = Math.floor(Math.min(y0, y1) + 0.5) + off, Y1 = Math.floor(Math.max(y0, y1) + 0.5) + off;
+    const X0 = sn(Math.min(x0, x1)), X1 = sn(Math.max(x0, x1));
+    const Y0 = sn(Math.min(y0, y1)), Y1 = sn(Math.max(y0, y1));
     const rect = rectNode(X0, Y0, X1 - X0, Y1 - Y0, ink.value);
     return { nodes: [{ kind: 'group', clip, nodes: [rect], tag: '' }], lines: [], boxes: [], points: [], handle: handleOf(a) };
   } else {
     const y0 = ty(f, a.a0), y1 = ty(f, a.a1);
     const x0 = a.f0 * f.box.w + f.box.x0, x1 = a.f1 * f.box.w + f.box.x0;
-    const X0 = Math.floor(Math.min(x0, x1) + 0.5) + off, X1 = Math.floor(Math.max(x0, x1) + 0.5) + off;
-    const Y0 = Math.floor(Math.min(y0, y1) + 0.5) + off, Y1 = Math.floor(Math.max(y0, y1) + 0.5) + off;
+    const X0 = sn(Math.min(x0, x1)), X1 = sn(Math.max(x0, x1));
+    const Y0 = sn(Math.min(y0, y1)), Y1 = sn(Math.max(y0, y1));
     const rect = rectNode(X0, Y0, X1 - X0, Y1 - Y0, ink.value);
     return { nodes: [{ kind: 'group', clip, nodes: [rect], tag: '' }], lines: [], boxes: [], points: [], handle: handleOf(a) };
   }

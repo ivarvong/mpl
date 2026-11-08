@@ -660,6 +660,20 @@ case("frac_canvas_svg_clip", ("$rc", [], {"figure.figsize": [6.4, 4.805], "figur
      ("plot", [[0, 8], [-50, -50]], {"lw": 1, "color": "#2ca02c"}),
      ("set_ylim", [0, 3]))
 
+# matplotlib's SVG backend never pixel-snaps (Agg's PathSnapper and draw_markers' pixel grid are Agg-only). At 72 dpi
+# its SVG is in px, so test/svg-geometry.test.ts compares mpl's SVG geometry with it: lines, grid, spines, ticks, the
+# axes patch, bars, spans, markers and the legend.
+case("svg_nosnap", ("$rc", [], {"figure.figsize": [6.3, 4.1], "figure.dpi": 72}),
+     ("plot", [[0.3, 1.1, 2.2, 3.7], [1.15, 2.6, 1.9, 3.3]], {"marker": "o", "ms": 7, "color": "#1f77b4", "label": "line"}),
+     ("plot", [[0.2, 3.9], [0.7, 0.7]], {"lw": 1.5, "color": "#9467bd", "label": "flat"}),
+     ("axhline", [2.13], {"color": "#8c564b", "lw": 1}),
+     ("axvline", [2.71], {"color": "#e377c2", "lw": 2}),
+     ("bar", [[0.5, 1.5, 2.5], [0.83, 1.37, 0.61]], {"width": 0.43, "color": "#ff7f0e", "edgecolor": "#000000", "lw": 1, "label": "bars"}),
+     ("axvspan", [3.05, 3.33], {"color": "#bcbd22", "alpha": 0.5}),
+     ("scatter", [[0.71, 1.93, 3.17], [3.07, 3.41, 2.29]], {"marker": "s", "s": 50, "c": "#17becf", "edgecolors": "#000000", "label": "sq"}),
+     ("fill_between", [[1.0, 1.6, 2.0], [0.13, 0.2, 0.3], [0.41, 0.33, 0.47]], {"color": "#7f7f7f", "alpha": 0.4}),
+     ("grid", [True]), ("legend", [], {"loc": "upper left"}))
+
 def run_case(name, calls):
     style = STYLES.get(name)
     rc_layer = {}

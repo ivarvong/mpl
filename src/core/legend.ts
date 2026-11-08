@@ -6,7 +6,7 @@ import { buildObstacleIndex } from './legend-index.ts';
 import { lineStroke, markersNode } from './marks.ts';
 import type { XY } from './path.ts';
 import { MOVE0 } from './path.ts';
-import { inkOf, pathNode, rectNode, snap, snapOffset } from './scene.ts';
+import { inkOf, pathNode, rectNode, snapIf, snapOffset } from './scene.ts';
 import { lpAscent, measure, pxPerPt, strokePx } from './text.ts';
 import { resolveFace } from './fonts.ts';
 import type { AnchorCode, Handle, LegendEntry, LegendLoc, LegendMarkers, LineMarkers, Node, Option, Seg, Stroke, Theme } from './types.ts';
@@ -81,6 +81,8 @@ export type LegendInput = {
   readonly entries: readonly LegendEntry[]; readonly theme: Theme; readonly dpi: number; readonly W: number; readonly H: number;
   /** the geometry flip height (Frame.Hg): the frame and handles flip with it, labels with H */
   readonly Hg: number;
+  /** Agg's pixel snapping (Frame.snap) */
+  readonly snap: boolean;
   readonly axesBox: Box; readonly lines: readonly XY[]; readonly points: readonly XY[]; readonly boxes: readonly Box[];
   readonly loc: LegendLoc; readonly ncols: number; readonly frame: boolean; readonly fontSizePt: number; readonly markers: LegendMarkers;
 };
@@ -146,7 +148,7 @@ export function layoutLegend(inp: LegendInput, tracer: Tracer): LegendOutput {
 
   const tl = (y: number): number => H - y, tlG = (y: number): number => inp.Hg - y;
   const nodes: Node[] = [], entries: Box[] = [];
-  if (inp.frame) nodes.push(...frameNode(box, fs, theme, k, tlG));
+  if (inp.frame) nodes.push(...frameNode(box, fs, theme, k, tlG, inp.snap));
   const [hbx, hby] = legendPack.offsets[0];
   colPacks.forEach((cp, ci) => {
     const [cx, cy] = handlePack.offsets[ci];
@@ -155,7 +157,7 @@ export function layoutLegend(inp: LegendInput, tracer: Tracer): LegendOutput {
       const bx = ox + hbx + cx + ix, by = oy + hby + cy + iy;
       const [hx, hy] = item.offsets[0], [txo, tyo] = item.offsets[1];
       entries.push(bb(bx + item.bbox.x0, by + item.bbox.y0, bx + item.bbox.x1, by + item.bbox.y1));
-      nodes.push(...handleNodes(item.entry.handle, bx + hx, by + hy, { wPt: hWidthPt, hPt: hHeightPt, ydPt: descentPt, fsPt }, inp.markers, theme, k, tlG, inp.W, H, inp.Hg));
+      nodes.push(...handleNodes(item.entry.handle, bx + hx, by + hy, { wPt: hWidthPt, hPt: hHeightPt, ydPt: descentPt, fsPt }, inp.markers, theme, k, tlG, inp.W, H, inp.Hg, inp.snap));
       nodes.push({ kind: 'text', text: item.entry.label, x: bx + txo, y: tl(by + tyo), dy: 0, sizePx: fs, sizePt: fsPt, glyphs: measure(item.entry.label, fsPt, dpi, face).runs[0].glyphs, face: face.id, color: L.labelColor, rotation: 'horizontal' });
     });
   });
@@ -163,8 +165,9 @@ export function layoutLegend(inp: LegendInput, tracer: Tracer): LegendOutput {
 }
 
 // FancyBboxPatch, boxstyle "round,pad=0,rounding_size=0.2" (or "square,pad=0"), snap=True
-function frameNode(box: Box, fs: number, theme: Theme, k: number, tl: (y: number) => number): readonly Node[] {
+function frameNode(box: Box, fs: number, theme: Theme, k: number, tl: (y: number) => number, snapOn: boolean): readonly Node[] {
   const L = theme.legend;
+  const snap = (v: number, w: number): number => snapIf(snapOn, v, w);
   const lw = theme.patch.linewidthPt * k;
   const P = (x: number, y: number): Point => [snap(x, lw), snap(tl(y), lw)];
   const stroke: Stroke = { color: { hex: L.edge.hex, alpha: L.frameAlpha }, width: lw, cap: 'butt', join: 'miter', dash: { kind: 'solid' } };
@@ -195,7 +198,7 @@ function linspace(start: number, stop: number, num: number): Float64Array {
 }
 
 /** HandlerPathCollection (HandlerRegularPolyCollection, HandlerNpointsYoffsets, HandlerNpoints), in display px. */
-function scatterHandle(h: Extract<Handle, { kind: 'scatter' }>, ox: number, oy: number, a: HandleArea, m: LegendMarkers, k: number, tl: (y: number) => number, W: number, Hfig: number): readonly Node[] {
+function scatterHandle(h: Extract<Handle, { kind: 'scatter' }>, ox: number, oy: number, a: HandleArea, m: LegendMarkers, k: number, tl: (y: number) => number, W: number, Hfig: number, snapOn: boolean): readonly Node[] {
   const n = m.scatterPoints;
   // get_sizes: from the collection's own sizes (or [1]), scaled by markerscale ** 2
   const given = h.collection.sizesPt2.length > 0 ? h.collection.sizesPt2 : Float64Array.of(1);
@@ -213,7 +216,7 @@ function scatterHandle(h: Extract<Handle, { kind: 'scatter' }>, ox: number, oy: 
   // offsets through the DrawingArea transform (scale points_to_pixels, then translate); Agg flips y
   const xs = xPt.map((x) => x * k + ox), ys = Float64Array.from(yoff, (f) => tl(a.hPt * f * k + oy));
   const c = { ...h.collection, sizesPt2: sizes };
-  return collectionNodes(h.shape, xs, ys, sizes, c.faces, c.edges, h.edgeWidthPt, k, singlePath(h.shape, c, k, W, Hfig));
+  return collectionNodes(h.shape, xs, ys, sizes, c.faces, c.edges, h.edgeWidthPt, k, singlePath(h.shape, c, k, W, Hfig), snapOn);
 }
 
 /** HandlerLine2D and HandlerErrorbar scale the marker by markerscale (legline_marker.set_markersize). */
@@ -221,10 +224,11 @@ const scaled = (mk: LineMarkers, s: number): LineMarkers => (mk.kind === 'on' &&
 
 // HandlerLine2D / HandlerPatch inside a DrawingArea whose origin is (ox, oy), y up
 function handleNodes(h: Handle, ox: number, oy: number, area: HandleArea, mk: LegendMarkers, theme: Theme, k: number,
-                     tl: (y: number) => number, W: number, H: number, Hg: number): readonly Node[] {
+                     tl: (y: number) => number, W: number, H: number, Hg: number, snapOn: boolean): readonly Node[] {
+  const snap = (v: number, w: number): number => snapIf(snapOn, v, w);
   const wPx = area.wPt * k, hPx = area.hPt * k, ydPx = area.ydPt * k, fsPx = area.fsPt * k;
   switch (h.kind) {
-    case 'scatter': return scatterHandle(h, ox, oy, area, mk, k, tl, W, H);
+    case 'scatter': return scatterHandle(h, ox, oy, area, mk, k, tl, W, H, snapOn);
     case 'patch': {
       const stroke: Option<Stroke> = h.edge.kind === 'on' && h.edge.widthPt > 0
         ? some({ color: h.edge.color, width: strokePx(h.edge.widthPt, k), cap: 'butt', join: 'miter', dash: { kind: 'solid' } })
@@ -257,7 +261,7 @@ function handleNodes(h: Handle, ox: number, oy: number, area: HandleArea, mk: Le
       }
       const markers = scaled(h.markers, mk.markerScale);
       if (markers.kind === 'on') {
-        const m = markersNode(markers, Float64Array.of(ox + wPx / 2), Float64Array.of(y), k);
+        const m = markersNode(markers, Float64Array.of(ox + wPx / 2), Float64Array.of(y), k, false, snapOn);
         if (m.kind === 'some') out.push(m.value);
       }
       return out;
@@ -268,12 +272,12 @@ function handleNodes(h: Handle, ox: number, oy: number, area: HandleArea, mk: Le
       const yUp = oy + (hPx - ydPx) / 2, xm = ox + 0.5 * wPx, err = 0.5 * fsPx;
       const out: Node[] = [];
       const bar = { ...lineStroke(theme, e.bar.color, e.bar.widthPt, e.bar.style, k), cap: 'butt' as const, join: 'round' as const };
-      if (e.hasX) out.push(...segmentNode(xm - err, yUp, xm + err, yUp, bar, e.bar.style === 'solid', Hg));
-      if (e.hasY) out.push(...segmentNode(xm, yUp - err, xm, yUp + err, bar, e.bar.style === 'solid', Hg));
+      if (e.hasX) out.push(...segmentNode(xm - err, yUp, xm + err, yUp, bar, e.bar.style === 'solid', Hg, snapOn));
+      if (e.hasY) out.push(...segmentNode(xm, yUp - err, xm, yUp + err, bar, e.bar.style === 'solid', Hg, snapOn));
       if (e.caps.kind === 'some') {
         const c = e.caps.value;
         const cap = (shape: '|' | '_', x: number, y: number): void => {
-          const m = markersNode({ kind: 'on', shape, sizePt: c.sizePt, edgeWidthPt: c.edgeWidthPt, face: c.face, edge: c.edge }, Float64Array.of(x), Float64Array.of(tl(y)), k);
+          const m = markersNode({ kind: 'on', shape, sizePt: c.sizePt, edgeWidthPt: c.edgeWidthPt, face: c.face, edge: c.edge }, Float64Array.of(x), Float64Array.of(tl(y)), k, false, snapOn);
           if (m.kind === 'some') out.push(m.value);
         };
         if (e.hasX) { cap('|', xm - err, yUp); cap('|', xm + err, yUp); }
@@ -287,7 +291,7 @@ function handleNodes(h: Handle, ox: number, oy: number, area: HandleArea, mk: Le
         }
         const markers = scaled(ln.markers, mk.markerScale);
         if (markers.kind === 'on') {
-          const m = markersNode(markers, Float64Array.of(xm), Float64Array.of(tl(yUp)), k);
+          const m = markersNode(markers, Float64Array.of(xm), Float64Array.of(tl(yUp)), k, false, snapOn);
           if (m.kind === 'some') out.push(m.value);
         }
       }
@@ -299,12 +303,12 @@ function handleNodes(h: Handle, ox: number, oy: number, area: HandleArea, mk: Le
 
 /** One LineCollection segment (display y-up endpoints): a solid one goes through draw_markers at pixel
  *  (0, H), a dashed one through draw_path_collection; axis-aligned segments snap either way. */
-function segmentNode(x0: number, y0: number, x1: number, y1: number, stroke: Stroke, single: boolean, H: number): readonly Node[] {
+function segmentNode(x0: number, y0: number, x1: number, y1: number, stroke: Stroke, single: boolean, H: number, snapOn: boolean): readonly Node[] {
   if (stroke.color.alpha <= 0 || stroke.width <= 0) return [];
   const off = snapOffset(stroke.width);
   const ys = single ? [-y0, -y1] : [H - y0, H - y1];
   const rect = Math.abs(x1 - x0) < 1e-4 || Math.abs(ys[1] - ys[0]) < 1e-4;
-  const fix = (v: number): number => (rect ? Math.floor(v + 0.5) + off : single ? v + 0.5 : v);
+  const fix = (v: number): number => (!snapOn ? v : rect ? Math.floor(v + 0.5) + off : single ? v + 0.5 : v);
   const segs: Seg[] = [['M', fix(x0), fix(ys[0])], ['L', fix(x1), fix(ys[1])]];
   return single
     ? [{ kind: 'markers', shape: segs, xs: Float64Array.of(0), ys: Float64Array.of(H), ink: { kind: 'stroke', stroke } }]

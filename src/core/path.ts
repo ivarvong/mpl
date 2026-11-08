@@ -270,12 +270,12 @@ export function simplifyPath(p: Polyline, thr: number): Polyline {
  * RendererAgg::draw_path for an unfilled, unhatched stroke (clip = simplify-eligible = true): drop non-finite
  * vertices, clip to the canvas (W × H, integers) widened by 1 px, snap when SNAP_AUTO says so, then simplify when
  * Path.should_simplify holds (path.simplify on and at least 128 vertices in the original path).
- * `strokePx` is the stroke width in px (it picks the snap offset).
+ * `strokePx` is the stroke width in px (it picks the snap offset). snapOn false is matplotlib's SVG backend (no PathSnapper).
  */
-export function cleanupStroke(xs: Float64Array, ys: Float64Array, W: number, H: number, strokePx: number, simplify: Simplify): Polyline {
+export function cleanupStroke(xs: Float64Array, ys: Float64Array, W: number, H: number, strokePx: number, simplify: Simplify, snapOn: boolean = true): Polyline {
   const n = Math.min(xs.length, ys.length);
   let p = nanRemoveAndClip(xs.length === n ? xs : xs.subarray(0, n), ys.length === n ? ys : ys.subarray(0, n), -1.0, -1.0, W + 1.0, H + 1.0);
-  if (shouldSnap(p, n)) p = snapAll(p, strokePx);
+  if (snapOn && shouldSnap(p, n)) p = snapAll(p, strokePx);
   if (simplify.kind === 'on' && simplify.thresholdPx > 0 && n >= 128) p = simplifyPath(p, simplify.thresholdPx);
   return p;
 }

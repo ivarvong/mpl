@@ -61,7 +61,7 @@ export type Rotation = 'horizontal' | 'vertical' | { readonly kind: 'angled'; re
 export type Glyph = { readonly gid: number; readonly dx: number };
 export type Clip = { readonly kind: 'none' } | { readonly kind: 'rect'; readonly x: number; readonly y: number; readonly w: number; readonly h: number };
 
-/** Renderer-independent output of layout, in device px, top-left origin, Agg snapping applied. */
+/** Renderer-independent output of layout, in device px, top-left origin, laid out for one device (frame.ts Device: Agg snapping applied for PNG, none for SVG). */
 export type Node =
   | { readonly kind: 'rect'; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly ink: Ink }
   | { readonly kind: 'path'; readonly segs: readonly Seg[]; readonly ink: Ink; readonly antialiased: boolean }

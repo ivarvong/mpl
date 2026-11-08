@@ -16,6 +16,8 @@ export type Frame = {
   readonly Hg: number;
   /** the canvas PathClipper clips line paths to (±1 px): int(W) × int(H) in Agg, W × H in SVG */
   readonly clipW: number; readonly clipH: number;
+  /** Agg's pixel snapping (PathSnapper, draw_markers' pixel grid) applies; matplotlib's SVG backend never snaps */
+  readonly snap: boolean;
   readonly xlim: readonly [number, number]; readonly ylim: readonly [number, number];
   readonly xscale: Scale; readonly yscale: Scale;
   /** transData's affine part, display (y up) = scaled·a + c, with matplotlib's float operations */
@@ -41,7 +43,7 @@ export function frame(box: AxesBox, W: number, H: number, dev: Device, xlim: rea
   const vx0 = forward(xscale, xlim[0]), vx1 = forward(xscale, xlim[1]), vy0 = forward(yscale, ylim[0]), vy1 = forward(yscale, ylim[1]);
   const kx = 1.0 / (vx1 - vx0), ky = 1.0 / (vy1 - vy0);
   const outb = box.b;
-  return { box, W, H, Hg: geomHeight(H, dev), clipW: dev === 'agg' ? Math.trunc(W) : W, clipH: dev === 'agg' ? Math.trunc(H) : H, xlim, ylim, xscale, yscale,
+  return { box, W, H, Hg: geomHeight(H, dev), clipW: dev === 'agg' ? Math.trunc(W) : W, clipH: dev === 'agg' ? Math.trunc(H) : H, snap: dev === 'agg', xlim, ylim, xscale, yscale,
            ax: box.w * kx, cx: box.w * (-vx0 * kx) + box.x0,
            ay: box.h * ky, cy: box.h * (-vy0 * ky) + outb };
 }

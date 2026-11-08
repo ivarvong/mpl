@@ -5,7 +5,7 @@ import { tx, ty, tyText } from './frame.ts';
 import { forward } from './scale.ts';
 import { lineStroke } from './marks.ts';
 import { resolveFace } from './fonts.ts';
-import { pathNode, snap, snapOffset } from './scene.ts';
+import { pathNode, snapIf, snapOffset } from './scene.ts';
 import type { TextBox } from './text.ts';
 import { measureLabel, placeLayout, pxPerPt, strokePx, windowExtent } from './text.ts';
 import type { TickSet } from './ticks.ts';
@@ -76,6 +76,7 @@ export function drawAxis(
   base: { readonly xLeft: number; readonly xRight: number; readonly yBottom: number; readonly yTop: number; readonly yBottomG: number; readonly yTopG: number },
 ): AxisDrawn {
   const k = pxPerPt(dpi);
+  const snap = (v: number, w: number): number => snapIf(f.snap, v, w);
   // all baselines taken from `bases`
   const bases = base;
   const majorSegs: Seg[] = [], minorSegs: Seg[] = [], majorGrid: Seg[] = [], minorGrid: Seg[] = [], labels: Node[] = [];
@@ -95,7 +96,8 @@ export function drawAxis(
       const padPts = (t.minor ? tt.minorPadPt : tt.padPt) + tickPadding(tt.direction, t.minor ? tt.minorSizePt : tt.sizePt);
       const segs = t.minor ? minorSegs : majorSegs;
       // Ticks are markers: Agg snaps the marker path (offsets from the tick origin) and the origin separately.
-      const te = (b0: number, e: number): number => Math.floor(b0 + 0.5) + Math.floor(e + 0.5) + snapOffset(width);
+      // matplotlib's SVG writes the marker at its exact origin with the unsnapped path (f.snap false).
+      const te = (b0: number, e: number): number => (f.snap ? Math.floor(b0 + 0.5) + Math.floor(e + 0.5) + snapOffset(width) : b0 + e);
       // a styled major label (Text.set_fontsize/set_fontweight/set_color on Tick.label1) keeps its own font
       const st = t.minor ? none : lookup(styles, t.index);
       const sizePt = st.kind === 'some' && st.value.sizePt.kind === 'some' ? st.value.sizePt.value : tt.labelSizePt;

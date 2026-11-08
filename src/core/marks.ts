@@ -74,7 +74,7 @@ const autoSnaps = (name: MarkerName, sizePx: number): boolean => snapsAuto(marke
  * PathCollection's single-path draw) the GraphicsContext keeps its defaults instead: round join, butt cap, and
  * SNAP_AUTO, which snaps only an axis-aligned path (a square, not a triangle or diamond).
  */
-export function markersNode(m: Extract<LineMarkers, { kind: 'on' }>, xs: Float64Array, ys: Float64Array, k: number, collection: boolean = false): Option<Node> {
+export function markersNode(m: Extract<LineMarkers, { kind: 'on' }>, xs: Float64Array, ys: Float64Array, k: number, collection: boolean = false, snapOn: boolean = true): Option<Node> {
   const def = MARKERS[m.shape];
   const ew = strokePx(m.edgeWidthPt, k);
   const stroke: Option<Stroke> = m.edge.kind === 'solid' && ew > 0
@@ -89,13 +89,15 @@ export function markersNode(m: Extract<LineMarkers, { kind: 'on' }>, xs: Float64
   const seen = new Set<number>();
   // a snapped marker path lands on PathSnapper's grid: +0.5 for odd edge widths, +0 for even
   // (including no edge); an unsnapped one gets draw_markers' plain +0.5 shift
-  const snapping = collection ? autoSnaps(m.shape, m.sizePt * k) : m.sizePt * k >= def.snapPx;
-  const off = snapping ? snapOffset(ew) : 0.5;
+  // matplotlib's SVG backend (snapOn false) writes each marker at its exact offset with the unsnapped path
+  const snapping = snapOn && (collection ? autoSnaps(m.shape, m.sizePt * k) : m.sizePt * k >= def.snapPx);
+  const off = snapping ? snapOffset(ew) : snapOn ? 0.5 : 0;
   const ox = new Float64Array(xs.length), oy = new Float64Array(xs.length);
   let n = 0;
   for (let i = 0; i < xs.length; i++) {
     const x = xs[i], y = ys[i];
     if (!(Number.isFinite(x) && Number.isFinite(y))) continue;
+    if (!snapOn) { ox[n] = x; oy[n] = y; n++; continue; }
     const px = Math.floor(x + 0.5), py = Math.floor(y + 0.5);
     if (dedupe) { const key = px * 1048576 + py; if (seen.has(key)) continue; seen.add(key); }
     ox[n] = px + off; oy[n] = py + off; n++;
