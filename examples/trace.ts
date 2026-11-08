@@ -21,12 +21,12 @@ export const SPANS = [
 ] as const;
 
 export function trace(style: string): Figure {
-  const [fig, ax] = subplots({ style, rc: { 'figure.figsize': [6.4, 3.8], 'figure.dpi': 200 } });
+  const [fig, ax] = subplots({ style, rc: { 'figure.figsize': [4.4, 3.7], 'figure.dpi': 200 } });
   const rows = SPANS.map((_, i) => i);
-  ax.barh(rows, SPANS.map(([, s, e]) => e - s), { left: SPANS.map(([, s]) => s), color: SPANS.map(([, , , c]) => c), height: 0.38 });
+  ax.barh(rows, SPANS.map(([, s, e]) => e - s), { left: SPANS.map(([, s]) => s), color: SPANS.map(([, , , c]) => c), height: 0.34 });
   SPANS.forEach(([name, s, e], i) => {
     const late = s > 80;   // spans near the right edge: label right-aligned to the bar's end
-    ax.text(late ? e : s, i - 0.27, `${name}  ${e - s} ms`, { ha: late ? 'right' : 'left', va: 'bottom', fontsize: 8.5, fontweight: i === 0 ? 'semibold' : 'normal' });
+    ax.text(late ? e : s, i - 0.25, `${name}  ${e - s} ms`, { ha: late ? 'right' : 'left', va: 'bottom', fontsize: 9.5, fontweight: i === 0 ? 'semibold' : 'normal' });
   });
   ax.set_yticks([]);
   ax.set_ylim(SPANS.length - 0.5, -0.85);

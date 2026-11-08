@@ -569,11 +569,11 @@ WATERFALL = [("GET /api/checkout", 0, 120, "C0"), ("auth.verify", 2, 14, "C1"), 
              ("pool.acquire", 15, 19, "C2"), ("inventory.reserve", 56, 92, "C4"), ("render.json", 93, 118, "C3")]
 for st in ["pro-slate", "pro-dark"]:
     styled(st, f"example_trace_{st.replace('-', '_')}",
-           ("$rc", [], {"figure.figsize": [6.4, 3.8], "figure.dpi": 200}),
+           ("$rc", [], {"figure.figsize": [4.4, 3.7], "figure.dpi": 200}),
            ("barh", [list(range(len(WATERFALL))), [e - s for _, s, e, _ in WATERFALL]],
-            {"left": [s for _, s, _, _ in WATERFALL], "color": [c for *_, c in WATERFALL], "height": 0.38}),
-           *[("text", [e if s > 80 else s, i - 0.27, f"{n}  {e - s} ms"],
-              {"ha": "right" if s > 80 else "left", "va": "bottom", "fontsize": 8.5, "fontweight": "semibold" if i == 0 else "normal"})
+            {"left": [s for _, s, _, _ in WATERFALL], "color": [c for *_, c in WATERFALL], "height": 0.34}),
+           *[("text", [e if s > 80 else s, i - 0.25, f"{n}  {e - s} ms"],
+              {"ha": "right" if s > 80 else "left", "va": "bottom", "fontsize": 9.5, "fontweight": "semibold" if i == 0 else "normal"})
              for i, (n, s, e, _) in enumerate(WATERFALL)],
            ("set_yticks", [[]]), ("set_ylim", [len(WATERFALL) - 0.5, -0.85]), ("set_xlim", [0, 122]),
            ("grid", [False], {"axis": "y"}), ("grid", [True], {"axis": "x"}),

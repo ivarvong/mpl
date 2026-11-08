@@ -23,7 +23,7 @@ rendering — its layout, tickers, text and its Agg rasterizer — that runs in 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="fixtures/ref/example_trace_pro_dark.png">
   <source media="(prefers-color-scheme: light)" srcset="fixtures/ref/example_trace_pro_slate.png">
-  <img src="fixtures/ref/example_trace_pro_slate.png" width="640" alt="A request trace drawn as a waterfall by matplotlib 3.11.2: six spans as horizontal bars, each labelled with its name and duration">
+  <img src="fixtures/ref/example_trace_pro_slate.png" width="560" alt="A request trace drawn as a waterfall by matplotlib 3.11.2: six spans as horizontal bars, each labelled with its name and duration">
 </picture>
 
 **mpljs**, TypeScript:
@@ -31,10 +31,10 @@ rendering — its layout, tickers, text and its Agg rasterizer — that runs in 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/trace-pro-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/images/readme/trace-pro-slate.png">
-  <img src="docs/images/readme/trace-pro-slate.png" width="640" alt="The same request trace drawn by mpljs, identical">
+  <img src="docs/images/readme/trace-pro-slate.png" width="560" alt="The same request trace drawn by mpljs, identical">
 </picture>
 
-All 972,800 pixels are identical, in both themes. The first image is matplotlib's own `savefig` output, committed
+All 651,200 pixels are identical, in both themes. The first image is matplotlib's own `savefig` output, committed
 as an oracle fixture ([`fixtures/ref/example_trace_pro_slate.png`](fixtures/ref/example_trace_pro_slate.png),
 [`…_pro_dark.png`](fixtures/ref/example_trace_pro_dark.png)). The second is
 [`examples/trace.ts`](examples/trace.ts), and [`test/examples.test.ts`](test/examples.test.ts) checks it against
@@ -47,7 +47,7 @@ The Python below, run with matplotlib 3.11.2 on Linux x86-64, writes the first P
 import matplotlib.pyplot as plt
 
 plt.style.use("styles/pro-slate.mplstyle")   # ships with mpljs; matplotlib reads it as is
-plt.rcParams.update({"figure.figsize": (6.4, 3.8), "figure.dpi": 200,
+plt.rcParams.update({"figure.figsize": (4.4, 3.7), "figure.dpi": 200,
                      "text.hinting": "none"})   # mpljs draws unhinted text
 
 spans = [
@@ -62,11 +62,11 @@ names, starts, ends, colors = zip(*spans)
 
 fig, ax = plt.subplots()
 ax.barh(range(len(spans)), [e - s for s, e in zip(starts, ends)],
-        left=starts, color=colors, height=0.38)
+        left=starts, color=colors, height=0.34)
 for i, (name, s, e, _) in enumerate(spans):
     late = s > 80   # near the right edge: end the label at the bar's end
-    ax.text(e if late else s, i - 0.27, f"{name}  {e - s} ms",
-            ha="right" if late else "left", va="bottom", fontsize=8.5,
+    ax.text(e if late else s, i - 0.25, f"{name}  {e - s} ms",
+            ha="right" if late else "left", va="bottom", fontsize=9.5,
             fontweight="semibold" if i == 0 else "normal")
 ax.set_yticks([])
 ax.set_ylim(len(spans) - 0.5, -0.85)
@@ -98,17 +98,17 @@ const spans = [
 
 const [fig, ax] = subplots({
   style: 'pro-slate',
-  rc: { 'figure.figsize': [6.4, 3.8], 'figure.dpi': 200 },
+  rc: { 'figure.figsize': [4.4, 3.7], 'figure.dpi': 200 },
 });
 ax.barh(spans.map((_, i) => i), spans.map(([, s, e]) => e - s), {
   left: spans.map(([, s]) => s),
   color: spans.map(([, , , c]) => c),
-  height: 0.38,
+  height: 0.34,
 });
 spans.forEach(([name, s, e], i) => {
   const late = s > 80;   // near the right edge: end the label at the bar's end
-  ax.text(late ? e : s, i - 0.27, `${name}  ${e - s} ms`, {
-    ha: late ? 'right' : 'left', va: 'bottom', fontsize: 8.5,
+  ax.text(late ? e : s, i - 0.25, `${name}  ${e - s} ms`, {
+    ha: late ? 'right' : 'left', va: 'bottom', fontsize: 9.5,
     fontweight: i === 0 ? 'semibold' : 'normal',
   });
 });
