@@ -189,7 +189,11 @@ export function autoscaleExtent(e: Extent, spec: AxisSpec, s: Scale, margin: num
 export function viewLimits(spec: AxisSpec, s: Scale, e: Extent, margin: number): readonly [number, number] {
   switch (spec.limits.kind) {
     case 'fixed': case 'view': return [spec.limits.lo, spec.limits.hi];
-    case 'auto': return autoscaleExtent(e, spec, s, margin);
+    case 'auto': {
+      // handle_single_axis ends in set_bound, which keeps an inverted axis inverted
+      const [lo, hi] = autoscaleExtent(e, spec, s, margin);
+      return spec.limits.inverted ? [hi, lo] : [lo, hi];
+    }
     default: return assertNever(spec.limits);
   }
 }

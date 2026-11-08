@@ -673,6 +673,15 @@ case("svg_nosnap", ("$rc", [], {"figure.figsize": [6.3, 4.1], "figure.dpi": 72})
      ("scatter", [[0.71, 1.93, 3.17], [3.07, 3.41, 2.29]], {"marker": "s", "s": 50, "c": "#17becf", "edgecolors": "#000000", "label": "sq"}),
      ("fill_between", [[1.0, 1.6, 2.0], [0.13, 0.2, 0.3], [0.41, 0.33, 0.47]], {"color": "#7f7f7f", "alpha": 0.4}),
      ("grid", [True]), ("legend", [], {"loc": "upper left"}))
+# invert_xaxis / invert_yaxis (Axis.set_inverted: _set_lim(sorted, reverse=inverted), auto=None): an autoscaled axis
+# stays autoscaled and keeps its inversion through later autoscaling (set_bound), set limits are swapped in place.
+case("invert_yaxis_auto", ("plot", [[0, 1, 2, 3], [1.5, 3.2, 2.1, 4.7]], {"marker": "o"}), ("invert_yaxis", []))
+case("invert_before_plot", ("invert_yaxis", []), ("plot", [[0, 1, 2], [3, 1, 2]]), ("invert_xaxis", []),
+     ("plot", [[0.5, 4], [0, 5]], {"ls": "--"}), ("scatter", [[1, 3], [6, -1]]))
+case("invert_barh_categories", ("barh", [["alpha", "beta", "gamma", "delta"], [3, 7, 2, 5]]), ("invert_yaxis", []),
+     ("invert_xaxis", []), ("set_title", ["top-down categories, right to left"]))
+case("invert_fixed_toggle", ("plot", [[0, 10], [0, 10]]), ("set_ylim", [2, 8]), ("invert_yaxis", []), ("invert_xaxis", []),
+     ("invert_xaxis", []), ("set_xlim", [1, 9]))
 
 def run_case(name, calls):
     style = STYLES.get(name)

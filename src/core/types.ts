@@ -282,7 +282,8 @@ export type Scale = { readonly kind: 'linear' } | { readonly kind: 'log'; readon
  * no request since the view was last computed (matplotlib's viewLim when not stale), e.g. (0, 1) on an Axes
  * nothing has asked to autoscale, or the limits axhline read before adding a line inside them.
  */
-export type Limits = { readonly kind: 'auto' } | { readonly kind: 'fixed'; readonly lo: number; readonly hi: number } | { readonly kind: 'view'; readonly lo: number; readonly hi: number };
+/** auto: autoscaled from the data; `inverted` keeps an inverted axis inverted (set_bound sorts high to low). */
+export type Limits = { readonly kind: 'auto'; readonly inverted: boolean } | { readonly kind: 'fixed'; readonly lo: number; readonly hi: number } | { readonly kind: 'view'; readonly lo: number; readonly hi: number };
 export type TickSpec = { readonly kind: 'auto' } | { readonly kind: 'fixed'; readonly locs: readonly number[] };
 export type LabelSpec = { readonly kind: 'auto' } | { readonly kind: 'fixed'; readonly labels: readonly string[] };
 /** 'auto' ticks/labels mean "what matplotlib's converter picks for this kind of axis". */

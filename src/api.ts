@@ -541,7 +541,15 @@ export class Axis {
   /** get_inverted: the view limits run high to low */
   inverted(): boolean { return (this.limits.kind === 'fixed' || this.limits.kind === 'view') && this.limits.lo > this.limits.hi; }
   /** _request_autoscale_view: a no-op once set_*lim turned autoscaling off */
-  request(): void { if (this.limits.kind === 'view') this.limits = { kind: 'auto' }; }
+  request(): void { if (this.limits.kind === 'view') this.limits = { kind: 'auto', inverted: this.limits.lo > this.limits.hi }; }
+  /** Axis.set_inverted on a settled view interval: _set_lim(*sorted((a, b), reverse=inverted), auto=None), so an
+   *  autoscaled axis stays autoscaled (and inverted) and set limits stay set. */
+  setInverted(inverted: boolean): void {
+    const l = this.limits;
+    if (l.kind === 'auto') { this.limits = { kind: 'auto', inverted }; return; }
+    const a = Math.min(l.lo, l.hi), b = Math.max(l.lo, l.hi);
+    this.limits = { kind: l.kind, lo: inverted ? b : a, hi: inverted ? a : b };
+  }
   setLimits(args: readonly unknown[], fn: string): void {
     const pair: readonly unknown[] = args.length === 1 && Array.isArray(args[0]) ? args[0] : args;
     if (pair.length !== 2) throw new TypeError(`${fn}() takes (lo, hi) or ([lo, hi])`);
@@ -1756,6 +1764,20 @@ export class Axes {
   set_xlim(...args: readonly unknown[]): this { this.xaxis.setLimits(args, 'set_xlim'); return this; }
   /** set_ylim(lo, hi) or set_ylim([lo, hi]); lo > hi inverts the axis (top-down Gantt rows). */
   set_ylim(...args: readonly unknown[]): this { this.yaxis.setLimits(args, 'set_ylim'); return this; }
+  /** invert_xaxis(): Axis.set_inverted(!get_inverted()). Swaps the view limits; an autoscaled axis stays autoscaled and inverted. */
+  invert_xaxis(): this { return this.set_xinverted(!this.get_xinverted()); }
+  /** invert_yaxis(): Axis.set_inverted(!get_inverted()), e.g. top-down rows. An autoscaled axis stays autoscaled and inverted. */
+  invert_yaxis(): this { return this.set_yinverted(!this.get_yinverted()); }
+  /** set_xinverted(inverted): the x view limits sorted high to low (true) or low to high (false). */
+  set_xinverted(inverted: unknown): this { this.settle(); this.xaxis.setInverted(unwrap(bool('inverted')(inverted))); return this; }
+  /** set_yinverted(inverted): the y view limits sorted high to low (true) or low to high (false). */
+  set_yinverted(inverted: unknown): this { this.settle(); this.yaxis.setInverted(unwrap(bool('inverted')(inverted))); return this; }
+  /** get_xinverted() / xaxis_inverted(): whether the x view limits run high to low. */
+  get_xinverted(): boolean { this.settle(); return this.xaxis.inverted(); }
+  /** get_yinverted() / yaxis_inverted(): whether the y view limits run high to low. */
+  get_yinverted(): boolean { this.settle(); return this.yaxis.inverted(); }
+  xaxis_inverted(): boolean { return this.get_xinverted(); }
+  yaxis_inverted(): boolean { return this.get_yinverted(); }
   /** set_xticks(locs) — fixed major tick locations. */
   set_xticks(t: unknown): this { this.xaxis.ticks = fixedTicks(t); return this; }
   /** set_yticks(locs) — fixed major tick locations. */
