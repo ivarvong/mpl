@@ -376,6 +376,38 @@ set_xlim(lo, hi) or set_xlim([lo, hi]); lo > hi inverts the axis.
 
 set_ylim(lo, hi) or set_ylim([lo, hi]); lo > hi inverts the axis (top-down Gantt rows).
 
+### `Axes.invert_xaxis()`
+
+invert_xaxis(): Axis.set_inverted(!get_inverted()). Swaps the view limits; an autoscaled axis stays autoscaled and inverted.
+
+### `Axes.invert_yaxis()`
+
+invert_yaxis(): Axis.set_inverted(!get_inverted()), e.g. top-down rows. An autoscaled axis stays autoscaled and inverted.
+
+### `Axes.set_xinverted(inverted)`
+
+set_xinverted(inverted): the x view limits sorted high to low (true) or low to high (false).
+
+### `Axes.set_yinverted(inverted)`
+
+set_yinverted(inverted): the y view limits sorted high to low (true) or low to high (false).
+
+### `Axes.get_xinverted()`
+
+get_xinverted() / xaxis_inverted(): whether the x view limits run high to low.
+
+### `Axes.get_yinverted()`
+
+get_yinverted() / yaxis_inverted(): whether the y view limits run high to low.
+
+### `Axes.xaxis_inverted()`
+
+_No description._
+
+### `Axes.yaxis_inverted()`
+
+_No description._
+
 ### `Axes.set_xticks(t)`
 
 set_xticks(locs) — fixed major tick locations.
