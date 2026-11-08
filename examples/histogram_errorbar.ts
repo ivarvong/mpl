@@ -3,7 +3,7 @@
 // asymmetric error bars. ALL DATA HERE IS ILLUSTRATIVE: synthetic gamma-distributed samples rounded to
 // whole milliseconds, not measurements. The same calls are an oracle case
 // (fixtures/ref/example_histogram_errorbar), checked pixel for pixel against matplotlib.
-// Writes examples/out/histogram_errorbar.{svg,png}; docs/images/histogram_errorbar.svg is this SVG.
+// Writes examples/out/histogram_errorbar.{svg,png}; docs/images/histogram_errorbar.png is this PNG.
 import { subplots } from '../src/index.ts';
 import { save } from './_save.ts';
 

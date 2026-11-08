@@ -3,6 +3,7 @@
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { compare, readPNG } from './png-oracle.ts';
+import { readmeImages } from '../scripts/readme_images.ts';
 
 const ROOT = new URL('../', import.meta.url);
 const examples = readdirSync(new URL('examples/', ROOT)).filter((f) => /^[a-z].*\.ts$/.test(f));
@@ -10,14 +11,19 @@ for (const f of examples) execFileSync(process.execPath, [`examples/${f}`], { cw
 execFileSync(process.execPath, ['examples/themes/dashboard.ts'], { cwd: ROOT, stdio: 'pipe' });
 
 let bad = 0;
-for (const name of ['quickstart', 'twinx_theme', 'scatter_cmap']) {
+// docs/images/*.png are shown in the README and docs exactly as the examples write them (fig.toPNGSync()); PNG, not SVG,
+// because GitHub renders an SVG's <text> in whatever fonts the viewer has, not DejaVu Sans
+for (const name of ['quickstart', 'twinx_theme', 'scatter_cmap', 'gantt', 'small_multiples', 'histogram_errorbar']) {
   const made = readFileSync(new URL(`examples/out/${name}.png`, ROOT)), shown = readFileSync(new URL(`docs/images/${name}.png`, ROOT));
   if (!made.equals(shown)) { bad++; console.log(`docs/images/${name}.png differs from examples/${name}.ts output; refresh it`); }
 }
-// docs/images/{gantt,small_multiples,histogram_errorbar}.svg are shown in the README exactly as the examples write them (fig.toSVG())
-for (const name of ['gantt', 'small_multiples', 'histogram_errorbar']) {
-  if (!readFileSync(new URL(`examples/out/${name}.svg`, ROOT)).equals(readFileSync(new URL(`docs/images/${name}.svg`, ROOT)))) {
-    bad++; console.log(`docs/images/${name}.svg differs from examples/${name}.ts output; refresh it`);
+// the README's proof: examples/gantt.ts and matplotlib's own render of the same calls are the same pixels
+const gantt = compare(readPNG(readFileSync(new URL('fixtures/ref/example_gantt_trace.png', ROOT))), readPNG(readFileSync(new URL('examples/out/gantt.png', ROOT))));
+if (gantt.diff > 0) { bad++; console.log(`examples/gantt.ts: ${gantt.diff} px differ from fixtures/ref/example_gantt_trace.png (the README's side-by-side)`); }
+// the README hero, scripts/readme_images.ts
+for (const [name, png] of readmeImages()) {
+  if (!Buffer.from(png).equals(readFileSync(new URL(`docs/images/readme/${name}`, ROOT)))) {
+    bad++; console.log(`docs/images/readme/${name} is stale; run node scripts/readme_images.ts`);
   }
 }
 // the pro theme dashboards: README files are the example's output, and its pixels are matplotlib's (the oracle case)
