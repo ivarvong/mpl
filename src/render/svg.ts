@@ -133,8 +133,11 @@ function nodeIO(n: Node, ids: Ids): IOList {
     case 'polyline': {
       const chunks: string[] = [];
       let buf = '';
+      let mi = 0;
       for (let i = 0; i < n.xs.length; i++) {
-        buf += `${i === 0 ? 'M' : 'L'}${f(n.xs[i])} ${f(n.ys[i])}`;
+        const mv = mi < n.moves.length && n.moves[mi] === i;
+        if (mv) mi++;
+        buf += `${mv ? 'M' : 'L'}${f(n.xs[i])} ${f(n.ys[i])}`;
         if (buf.length > 16384) { chunks.push(buf); buf = ''; }
       }
       chunks.push(buf);

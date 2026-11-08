@@ -359,7 +359,7 @@ src/core/layout.ts         FigureSpec -> Scene, composing the stages below (pure
   autoscale.ts             one fused pass for data extents + sticky edges; margins; view limits
   ticks.ts                 AxisSpec -> tick locations/labels (exhaustive over axis kind x ticks x labels)
   ticker.ts                MaxNLocator / ScalarFormatter / nonsingular: line-for-line, made pure
-  draw-artists.ts          lines (transform -> snap | simplify -> polyline, markers) and bars (snap, exact culling)
+  draw-artists.ts          lines (subslice -> transform -> path.ts cleanup -> polyline, markers) and bars (snap, exact culling)
   draw-axis.ts             grid, ticks, tick labels
   legend.ts, legend-index.ts  offsetbox packing; loc='best' over a grid index
   text.ts, marks.ts, path.ts, scene.ts, frame.ts
@@ -453,7 +453,7 @@ That is a plan/apply split — one typed-array pass for data limits, then a stre
 
 Measured log-log slopes after: layout 0.4–0.6 (sub-linear once the pixel bound kicks in), render ≈ 0 for points/markers/bars.
 Mechanisms, each exact with respect to the Agg oracle (77/77 fixtures unchanged):
-- matplotlib's own `path.simplify` (threshold 1/9 px, only for ≥128 vertices like `Path.should_simplify`) — a 1M-point sine becomes 141 vertices;
+- matplotlib's own line pipeline, ported from `path_converters.h` (NaN breaks → canvas clip → snap → `PathSimplifier`, threshold 1/9 px, only for ≥128 vertices like `Path.should_simplify`) plus `Line2D`'s subslice to the view: a 1M-point sine becomes 142 vertices, the same vertices matplotlib emits;
 - a `Markers` node instanced via `<use>`, with opaque duplicates at the same snapped pixel dropped;
 - zero-area and same-column-nested opaque bars culled;
 - `legend(best)` answered from a grid index (prefix sums for interior cells, exact tests only on boundary cells) built once per layout;
