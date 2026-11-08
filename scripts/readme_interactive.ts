@@ -14,7 +14,7 @@ const browser = await chromium.launch(typeof executablePath === 'string' && exec
 try {
   const page = await (await browser.newContext({ viewport: { width: 760, height: 700 }, deviceScaleFactor: 2, colorScheme: 'light' })).newPage();
   await page.setContent(html, { waitUntil: 'load' });
-  await page.waitForFunction(() => document.querySelectorAll('.mpl-overlay').length === 4);
+  await page.waitForFunction(() => document.querySelectorAll('.mpl-overlay').length === 5);
   // hover the sin line's 13th point (x = 2), as a reader would
   const p = await page.evaluate(() => {
     const svg = document.querySelector<SVGSVGElement>('#lines');

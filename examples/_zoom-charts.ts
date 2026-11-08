@@ -91,13 +91,44 @@ export function scatter(n = 2000): Figure {
   return fig;
 }
 
+const spike = (i: number): number => (i >= 88 && i <= 95 ? 1 : 0);
+/** An incident dashboard: four panels over the same day on date axes (not sharex; one with a twin y axis), a histogram
+ *  of milliseconds and horizontal bars by endpoint. The first group zooms and hovers together; the last two stay out. */
+export function dashboard(): Figure {
+  const r = rng(11), t0 = Date.UTC(2026, 10, 5), ts = Array.from({ length: 144 }, (_, i) => new Date(t0 + i * 6e5));
+  const [fig, axs] = subplots(3, 2, { figsize: [9.6, 7.2], rc, squeeze: false });
+  const [[lat, budget], [tput, hist], [cpu, ends]] = axs;
+  const p50 = ts.map((_, i) => 40 + 6 * r() + 30 * spike(i));
+  lat.plot(ts, p50, { label: 'p50' });
+  lat.plot(ts, p50.map((v, i) => v * 2.4 + 8 * r() + 200 * spike(i)), { label: 'p95' });
+  lat.plot(ts, p50.map((v, i) => v * 4.6 + 14 * r() + 500 * spike(i)), { label: 'p99' });
+  lat.set_yscale('log'); lat.set_ylabel('ms'); lat.set_title('API latency'); lat.legend({ loc: 'upper left' });
+  budget.plot(ts, ts.map((_, i) => 62 - 0.03 * i - (i > 88 ? 6 : 0)));
+  budget.set_ylabel('% left'); budget.set_title('Error budget remaining');
+  tput.plot(ts, ts.map((_, i) => 1900 + 700 * Math.sin(i / 23) + 60 * r()), { label: 'requests' });
+  tput.set_ylabel('requests / s'); tput.set_title('Throughput and 5xx');
+  const tw = tput.twinx();
+  tw.step(ts, ts.map((_, i) => 0.1 + 0.1 * r() + 2.8 * spike(i)), { color: 'C3', label: '5xx' });
+  tw.set_ylabel('5xx (%)');
+  hist.hist(Array.from({ length: 2000 }, () => 40 + 260 * r() * r()), { bins: 40, histtype: 'stepfilled', label: 'baseline' });
+  hist.set_xlabel('ms'); hist.set_title('Latency distribution');
+  cpu.plot(ts, ts.map((_, i) => 44 + 12 * Math.sin(i / 19) + 4 * r() + 34 * spike(i)), { label: 'median' });
+  cpu.set_ylabel('%'); cpu.set_title('CPU'); cpu.set_ylim(0, 105);
+  ends.barh(['/healthz', '/catalog', '/auth', '/cart', '/checkout', '/search'], [4, 88, 96, 252, 388, 413], { color: 'C0' });
+  ends.set_title('p99 by endpoint (ms)');
+  for (const a of [lat, budget, tput, cpu]) a.xaxis.set_major_formatter(new ConciseDateFormatter(new AutoDateLocator()));
+  fig.tight_layout();
+  return fig;
+}
+
 /** The demo's charts by id (the page's element ids and idPrefixes). */
-export const CHARTS: Readonly<Record<string, () => Figure>> = { lines, logy, dates, shared, dense: () => scatter(2000) };
+export const CHARTS: Readonly<Record<string, () => Figure>> = { lines, logy, dates, shared, dense: () => scatter(2000), dashboard };
 
 /** A chart by id; `scatter-N` is an N-point scatter (the bench's threshold sweep). */
 export function build(id: string): Figure {
   const m = /^scatter-(\d+)$/.exec(id);
   if (m !== null) return scatter(Number(m[1]));
+  if (id === 'dashboard2') return dashboard();   // a second copy, for sync across figures
   if (!Object.hasOwn(CHARTS, id)) throw new Error(`no chart ${id}`);
   return CHARTS[id]();
 }

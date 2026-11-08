@@ -47,13 +47,13 @@ const nodeRGBA = (id: string, view: readonly AxView[], scale: number): string =>
 const xLabels = (id: string, view: readonly AxView[], k = 0): string => figWith(id, view).axes[k].get_xticklabels().map((t) => t.get_text()).join('|');
 
 // ------------------------------------------------------------------ page helpers
-async function open(browser: Browser, width: number, opts: { readonly touch: boolean; readonly config: Readonly<Record<string, unknown>> }): Promise<{ page: Page; errors: string[] }> {
+async function open(browser: Browser, width: number, opts: { readonly touch: boolean; readonly config: Readonly<Record<string, unknown>> }, body = html, charts = Object.keys(CHARTS).length): Promise<{ page: Page; errors: string[] }> {
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: opts.touch, timezoneId: 'Pacific/Kiritimati', locale: 'de-DE' });
   const page = await ctx.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.route(URL0, (r) => r.fulfill({ body: html, contentType: 'text/html' }));
+  await page.route(URL0, (r) => r.fulfill({ body, contentType: 'text/html' }));
   await page.addInitScript((config) => {
     const w = window as unknown as Record<string, unknown>;
     w['mplZoomConfig'] = config;
@@ -91,7 +91,7 @@ async function open(browser: Browser, width: number, opts: { readonly touch: boo
     };
   }, opts.config);
   await page.goto(URL0, { waitUntil: 'load' });
-  await page.waitForFunction(() => document.querySelectorAll('.mpl-overlay').length === 5 && typeof (window as unknown as { mplZoom: unknown }).mplZoom === 'object');
+  await page.waitForFunction((n) => document.querySelectorAll('.mpl-overlay').length === n && typeof (window as unknown as { mplZoom: unknown }).mplZoom === 'object', charts);
   return { page, errors };
 }
 
@@ -178,7 +178,7 @@ try {
     await page.route(URL0, (r) => r.fulfill({ body: html, contentType: 'text/html' }));
     await page.goto(URL0);
     const n = await page.evaluate(() => Array.from(document.querySelectorAll('svg[data-chart]')).filter((s) => s.getBoundingClientRect().height > 100 && s.querySelectorAll('path').length > 20).length);
-    check(n === 5, 'no JS: every chart is drawn', `${n} of 5`);
+    check(n === Object.keys(CHARTS).length, 'no JS: every chart is drawn', `${n} of ${Object.keys(CHARTS).length}`);
     await ctx.close();
   }
 
@@ -438,6 +438,72 @@ try {
     check(n.svg >= 5 && (JSON.stringify(config).includes('canvas') ? n.canvas >= 5 : n.canvas >= 1), `${at} frames compared`, `${n.svg} svg, ${n.canvas} canvas`);
     check(errors.length === 0, `${at} no page errors`, errors.join('; '));
     await page.close();
+  }
+
+  // ---- sync: x zooms together on the panels that show the same x; the histogram and the bars by endpoint do not
+  {
+    const SYNCED = [0, 1, 2, 4, 6], APART = [3, 5];
+    const { page, errors } = await open(browser, 1280, { touch: false, config: { renderer: 'svg' } });
+    await scrollTo(page, 'dashboard');
+    const orig = await view(page, 'dashboard');
+    const m = await boxPoint(page, 'dashboard', 0, 0.5, 0.5);
+    await page.mouse.move(m.x, m.y);
+    await page.evaluate(() => { (window as unknown as { zoomFrames: unknown[] }).zoomFrames.length = 0; });
+    for (let i = 0; i < 5; i++) { await page.mouse.wheel(0, -120); await page.waitForTimeout(16); }
+    await idle(page, 'dashboard');
+    let v = await view(page, 'dashboard');
+    check(SYNCED.every((k) => v[k].x[0] === v[0].x[0] && v[k].x[1] === v[0].x[1] && v[k].set.x) && span(v[0].x) < span(orig[0].x), 'sync: a wheel zoom gives every date panel the same x-limits', JSON.stringify(v.map((a) => a.x)));
+    check(APART.every((k) => JSON.stringify(v[k].x) === JSON.stringify(orig[k].x) && !v[k].set.x), 'sync: the histogram and the categorical panel do not move');
+    check([1, 2, 4, 6].every((k) => JSON.stringify(v[k].y) === JSON.stringify(orig[k].y) && !v[k].set.y) && v[0].set.y, 'sync: y stays each panel\'s own (only the hovered panel zooms y; the rest keep their limits)');
+    const fr = await page.evaluate(() => (window as unknown as { zoomFrames: { id: string; tick: number }[] }).zoomFrames.filter((f) => f.id === 'dashboard').map((f) => f.tick));
+    check(fr.length > 0 && new Set(fr).size === fr.length, 'sync: one figure render per animation frame', JSON.stringify(fr));
+    // a drag in another panel moves the group the same way
+    const c = await boxPoint(page, 'dashboard', 4, 0.5, 0.5), w0 = v;
+    await page.mouse.move(c.x, c.y);
+    await page.mouse.down();
+    await page.mouse.move(c.x - 40, c.y, { steps: 3 });
+    await page.mouse.up();
+    await idle(page, 'dashboard');
+    v = await view(page, 'dashboard');
+    check(v[0].x[0] > w0[0].x[0] && SYNCED.every((k) => v[k].x[0] === v[4].x[0]), 'sync: a pan in the CPU panel moves all of them', JSON.stringify(v[0].x));
+    const n = await pixelExact(page, 'sync');
+    total.svg += n.svg; total.canvas += n.canvas;
+    // a hover in the zoomed view still reads the shared x
+    await page.evaluate(() => (window as unknown as { mplZoom: Record<string, { reset: () => void }> }).mplZoom['dashboard'].reset());
+    await idle(page, 'dashboard');
+    check(JSON.stringify(await view(page, 'dashboard')) === JSON.stringify(orig), 'sync: reset resets every panel');
+    check(errors.length === 0, 'sync: no page errors', errors.join('; '));
+    await page.close();
+
+    const off = await open(browser, 1280, { touch: false, config: { renderer: 'svg', sync: false } });
+    await scrollTo(off.page, 'dashboard');
+    const o0 = await view(off.page, 'dashboard'), b = await boxPoint(off.page, 'dashboard', 0, 0.5, 0.5);
+    await off.page.mouse.move(b.x, b.y);
+    await off.page.mouse.wheel(0, -200);
+    await idle(off.page, 'dashboard');
+    const o1 = await view(off.page, 'dashboard');
+    check(span(o1[0].x) < span(o0[0].x) && JSON.stringify(o1[1].x) === JSON.stringify(o0[1].x), 'sync: false zooms one panel');
+    await off.page.close();
+
+    // two figures with one name: the same limits in both, each its own render
+    const two = join(ROOT, 'examples/out/zoom-two.html');
+    execFileSync(process.execPath, [join(ROOT, 'examples/zoom.ts'), two, 'dashboard', 'dashboard2'], { stdio: 'pipe' });
+    const pair = await open(browser, 1280, { touch: false, config: { renderer: 'svg', sync: 'ops' } }, readFileSync(two, 'utf8'), 2);
+    await scrollTo(pair.page, 'dashboard');
+    const p0 = await view(pair.page, 'dashboard2'), q = await boxPoint(pair.page, 'dashboard', 0, 0.5, 0.5);
+    await pair.page.mouse.move(q.x, q.y);
+    await pair.page.mouse.wheel(0, -200);
+    await idle(pair.page, 'dashboard');
+    await idle(pair.page, 'dashboard2');
+    const a1 = await view(pair.page, 'dashboard'), a2 = await view(pair.page, 'dashboard2');
+    check(a2[1].x[0] === a1[0].x[0] && a2[1].x[1] === a1[0].x[1] && span(a2[1].x) < span(p0[1].x) && JSON.stringify(a2[3].x) === JSON.stringify(p0[3].x), "sync: 'ops' zooms the other figure's date panels, and not its histogram", JSON.stringify([a1[0].x, a2[1].x]));
+    const n2 = await pixelExact(pair.page, 'sync across figures');
+    total.svg += n2.svg; total.canvas += n2.canvas;
+    await pair.page.evaluate(() => (window as unknown as { mplZoom: Record<string, { reset: () => void }> }).mplZoom['dashboard'].reset());
+    await idle(pair.page, 'dashboard2');
+    check(JSON.stringify(await view(pair.page, 'dashboard2')) === JSON.stringify(p0), 'sync: reset reaches the other figure');
+    check(pair.errors.length === 0, 'sync across figures: no page errors', pair.errors.join('; '));
+    await pair.page.close();
   }
 
   // ---- touch: two-finger pinch zooms about the midpoint; one finger pans x

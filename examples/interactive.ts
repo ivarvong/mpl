@@ -6,6 +6,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import type { Figure } from '../src/index.ts';
 import { AutoDateLocator, ConciseDateFormatter, registerSidecar, subplots } from '../src/index.ts';
 import { sidecar } from '../src/annotate.ts';
+import { dashboard } from './_zoom-charts.ts';
 
 registerSidecar(sidecar);   // the sidecar writer is opt-in (mpl/annotate), so default bundles do not carry it
 
@@ -73,6 +74,7 @@ ${inline(f1, 'lines')}
 ${inline(f2, 'dates')}
 ${inline(f3, 'logtwin')}
 ${inline(f4, 'grid')}
+${inline(dashboard(), 'dash')}
 </main>
 <script type="module">
 ${client}
