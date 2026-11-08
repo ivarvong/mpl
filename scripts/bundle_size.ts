@@ -48,6 +48,7 @@ export const ENTRIES: Readonly<Record<string, Scenario>> = {
   everything: { what: 'every export of mpl plus every face (mpl/fonts/all)', entry: "export * from './index.js';\nexport * from './fonts/all.js';", external: [] },
   'main+annotate': { what: 'default entry plus the opt-in sidecar writer (mpl/annotate): toSVG({ interactive: true })', entry: MAIN_ANNOTATE, external: [] },
   interactive: { what: 'mpl/interactive: the annotated-SVG client alone (what a page ships)', entry: "export { attach } from './interactive/client.js';", external: [] },
+  zoom: { what: 'mpl/zoom + mpl/interactive: what a zoomable page ships up front (mpljs itself loads on the first gesture)', entry: "export { attach } from './interactive/client.js';\nexport { zoom } from './interactive/zoom.js';", external: [] },
 };
 
 export type Size = { readonly min: number; readonly gzip: number };

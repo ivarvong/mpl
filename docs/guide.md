@@ -14,6 +14,7 @@ verified is in [internals.md](internals.md).
 - [Themes](#themes)
 - [Style sheets and rc](#style-sheets-and-rc)
 - [Interactive SVG (annotated)](#interactive-svg-annotated)
+- [Zoom and pan (mpl/zoom)](#zoom-and-pan-mplzoom)
 - [Tracing](#tracing)
 - [Runtimes and bundle size](#runtimes-and-bundle-size)
 
@@ -386,10 +387,86 @@ Limits: an artist keeps at most 2,000 points in the sidecar (ordered series keep
 every k-th point), and points outside the axes box are left out. Only line, step, bar/barh, hist bars and scatter
 carry points; fills, spans, reference lines (`axhline`/`axvline`/`axline`), segments, polygons, images and text are
 listed (kind, label, colour) so they can be highlighted and toggled, but are not hit-tested. Colorbars are Axes like
-any other and get a sidecar, but no readout of the colormap value. Nothing is zoomable: the client never re-renders. With
+any other and get a sidecar, but no readout of the colormap value. The client never re-renders; for zoom and pan see
+[`mpl/zoom`](#zoom-and-pan-mplzoom), which re-renders and tells this client to re-read the new sidecars. With
 `toSVG({ precision, interactive: true })` the sidecar's pixel points round like the path data (exactly on the drawn
 line vertices at precision 0–2, within 0.005 px above); markers sit at their exact positions, as matplotlib's SVG
 backend writes them.
+
+## Zoom and pan (mpl/zoom)
+
+Every frame is a real mpljs render. The page keeps its server-rendered annotated SVG as the first paint (no JS needed,
+nothing changes). The first gesture lazily loads a figure factory that the page supplies, because mpljs cannot rebuild a
+figure from SVG. From then on each frame calls `set_xlim`/`set_ylim` on that live Figure, then `toSVG({ interactive: true })`.
+Dense charts instead get `toRGBA()` on a canvas while the gesture runs, then one SVG frame when it settles. After each
+SVG frame, `mpl/interactive` re-reads the new sidecars, so tooltips, the crosshair and legend toggles work on the
+zoomed view; legend toggles and keyboard focus carry over.
+
+```ts
+import { attach } from 'mpl/interactive';
+import { zoom } from 'mpl/zoom';           // with mpl/interactive: 21.7 KiB min, 8.6 KiB gzip; mpljs loads on demand
+attach(document);
+const ctl = zoom(document.getElementById('c1'), {
+  idPrefix: 'c1-',                         // as the server passed to toSVG
+  load: async () => (await import('./chart.js')).build(),   // the same figure the server drew (registerSidecar there too)
+});
+ctl.view();                                // [{ x: [lo, hi], y: [lo, hi], set: { x, y } }] per Axes
+```
+
+- **Gestures.**
+  - Wheel or trackpad pinch zooms about the pointer, and a sideways scroll pans x.
+  - Drag pans. Shift+drag zooms to a box; as in matplotlib's zoom tool, a box under 5 px on one side zooms only the other axis.
+  - Over an axis' tick strip, just outside the plot box, only that axis moves.
+  - Double-click or Escape resets. Reset restores the server's first-paint DOM and the figure's original limits.
+  - Touch: two fingers pinch and pan. One finger pans horizontally while the page keeps vertical scrolling
+    (`touchAction: 'pan-y'`; pass `'none'` to give the chart every touch).
+  - Keyboard, on a focused chart: `+`/`-` zoom, the arrow keys pan (Shift+arrows on a plot the hover client focused,
+    where plain arrows step through points), `0`/Escape reset.
+- **Scales.** Log axes zoom in log space. Date and category axes are linear in their numbers.
+- **Linked axes.** Axes that share an axis (`sharex`/`sharey`, `twinx`) move together. The sidecar now carries each
+  axis' share group `g`. A colorbar's Axes (`cb`) never zooms.
+- **Scheduling.** Input only updates the wanted view. One `requestAnimationFrame` renders the latest one, so there is at
+  most one render per frame, and a frame that overruns drops the states in between.
+- **Renderer.** `renderer: 'auto'` (the default) renders SVG frames.
+  - It switches gesture frames to canvas when the chart has more than `threshold` SVG elements (default 1200), or once
+    an SVG frame takes longer than `budgetMs` (default 12 ms).
+  - The canvas is drawn at an integer scale of about devicePixelRatio × its CSS size, from 1× to 3×, so text stays crisp.
+  - The settled frame is always SVG.
+  - The threshold comes from the measurements below: SVG frame cost is dominated by the browser's DOM work and grows
+    with element count, while canvas cost depends mostly on pixel count.
+- **Other options.**
+  - `wheel: 'always' | 'modifier' | 'off'`: `'modifier'` zooms only with Ctrl/⌘ or pinch, so the page scrolls.
+  - `preload: 'hover'` loads on pointer-enter instead of the first gesture.
+  - `svgText(s)` applies the same rewrite to each frame that the page applied to its server SVG, such as theme colour
+    variables.
+  - `onFrame(info)` reports each frame: kind, scale, render and DOM ms, the SVG text, and the view.
+  - The controller has `view()`, `setView(k, x, y)`, `reset()`, `idle()`, `last()` and `destroy()`.
+
+`View.set` says which limits zoom has set on the figure. The same Figure with those `set_xlim`/`set_ylim` calls renders the
+same frame in Node. `npm run test:zoom` proves that frame by frame. It drives
+[`examples/zoom.ts`](../examples/zoom.ts)'s page in headless Chromium with real wheel, drag, Shift+drag, double-click,
+keys and two-finger touch. Every SVG frame must equal Node's `toSVG` text for its view, and the DOM must equal parsing it.
+Every canvas frame must hold Node's `toRGBA` bytes at its scale.
+
+Measured in headless Chrome (Playwright's chromium-headless-shell) on an M3 Max, bench run `zoom-2026-11-08c` (this branch at
+97f4f9c), scripted zoom + pan, 119 warm frames per load, 3 loads. Times are ms per frame (mpl render + DOM update; paint not
+included), p50 / p99, the median over loads:
+
+| chart | SVG elements | SVG frame | canvas 1× | canvas 2× (DPR 2) |
+|---|---|---|---|---|
+| lines, log y, dates, sharex + twinx (the demo) | 172–265 | 1.5–2.2 / 2.2–4.2 | 1.7–2.3 / 2.4–3.9 | 3.6–5.3 / 4.7–6.6 |
+| scatter, 250 points | 692 | 4.7 / 6.8 | 2.5 / 4.7 | 4.3 / 6.6 |
+| scatter, 1,000 points | 1,426 | 10.6 / 14.4 | 5.3 / 5.8 | 8.5 / 9.6 |
+| scatter, 2,000 points + colorbar | 2,428 | 19.2 / 27.8 | 9.7 / 13.0 | 14.7 / 17.7 |
+| scatter, 4,000 points | 4,437 | 33.0 / 43.3 | 16.7 / 17.7 | 26.4 / 28.0 |
+
+SVG frames cost about 7–8 µs per element, more than half of it in the browser's DOM work. Canvas frames cost by pixels,
+plus about 4 µs per marker. Under about 1,200 elements, SVG frames stay under 11 ms p50 and keep vector text, hover and
+selection during the gesture, so that is the default `threshold`.
+
+The first frame after the first gesture took 32–36 ms on a light chart: chunk import, the figure build, first-use font
+decode and the render. The first chart on the page took 79–92 ms, because that one also parses and evaluates the 514 KB
+lazy chunk. No run drew two frames of a chart in one animation frame.
 
 ## Tracing
 
@@ -428,7 +505,8 @@ Bundle size: esbuild minified + gzip -9, printed by `npm run size` and checked a
 | default entry: `subplots`, `plot`, `toSVG`, `toPNGSync` (DejaVu Sans + viridis built in) | 505 KiB | 179 KiB |
 | `mpl/core` + Inter ×4 + magma + viridis (+ rgba) | 684 KiB | 194 KiB |
 | everything (every export and all 8 faces) | 1228 KiB | 387 KiB |
-| `mpl/interactive`, the annotated-SVG client alone | 9.1 KiB | 4.0 KiB |
+| `mpl/interactive`, the annotated-SVG client alone | 9.7 KiB | 4.2 KiB |
+| `mpl/zoom` + `mpl/interactive` (what a zoomable page ships before mpljs loads) | 21.7 KiB | 8.6 KiB |
 
 Each further face adds 16–17 KiB gzipped (an Inter weight) or 43–55 KiB (a DejaVu face), measured as a
 standalone minified module. Glyph data is packed losslessly (delta-coded integers as base64 VLQ), 36% smaller

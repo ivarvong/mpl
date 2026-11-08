@@ -45,6 +45,10 @@
       "types": "./dist/browser/interactive/client.d.ts",
       "default": "./dist/browser/interactive/client.js"
     },
+    "./zoom": {
+      "types": "./dist/browser/interactive/zoom.d.ts",
+      "default": "./dist/browser/interactive/zoom.js"
+    },
     "./colormaps/*": {
       "types": "./dist/browser/colormaps/*.d.ts",
       "default": "./dist/browser/colormaps/*.js"
@@ -81,6 +85,7 @@
     "bench:tiers": "node bench/tiers.ts",
     "test:browser": "node test/browser.test.ts",
     "test:interactive": "node test/interactive.test.ts",
+    "test:zoom": "node test/zoom.test.ts",
     "test:workers": "node test/workers.test.ts",
     "test:size": "node test/size.test.ts",
     "size": "node scripts/bundle_size.ts",
