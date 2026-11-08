@@ -61,10 +61,11 @@ export type Rotation = 'horizontal' | 'vertical' | { readonly kind: 'angled'; re
 export type Glyph = { readonly gid: number; readonly dx: number };
 export type Clip = { readonly kind: 'none' } | { readonly kind: 'rect'; readonly x: number; readonly y: number; readonly w: number; readonly h: number };
 
+export type PathNode = { readonly kind: 'path'; readonly segs: readonly Seg[]; readonly ink: Ink; readonly antialiased: boolean };
 /** Renderer-independent output of layout, in device px, top-left origin, laid out for one device (frame.ts Device: Agg snapping applied for PNG, none for SVG). */
 export type Node =
   | { readonly kind: 'rect'; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly ink: Ink }
-  | { readonly kind: 'path'; readonly segs: readonly Seg[]; readonly ink: Ink; readonly antialiased: boolean }
+  | PathNode
   /** MOVETO at the indices in `moves` (ascending), LINETO elsewhere (a NaN or clip break starts a new subpath). */
   | { readonly kind: 'polyline'; readonly xs: Float64Array; readonly ys: Float64Array; readonly moves: Uint32Array; readonly stroke: Stroke }
   | { readonly kind: 'markers'; readonly shape: readonly Seg[]; readonly xs: Float64Array; readonly ys: Float64Array; readonly ink: Ink }
@@ -72,6 +73,14 @@ export type Node =
       readonly glyphs: readonly Glyph[]; readonly face: string; readonly color: Rgb; readonly rotation: Rotation }
   /** RGBA8 blit (imshow): top-left origin, straight alpha, size w×h. */
   | { readonly kind: 'image'; readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly rgba: Uint8Array }
+  /**
+   * A PathCollection of one marker path (scatter). `nodes` are its members drawn one by one
+   * (_draw_path_collection_generic: one path per drawn point, snapped on the Agg device). The rest is the collection as matplotlib's SVG
+   * backend writes it (draw_path_collection): `paths` holds one raw path per size, relative to its offset, and member
+   * i is paths[refs[i]] at (xs[i], ys[i]) with nodes[i].ink. usesPerPath is _iter_collection_uses_per_path.
+   */
+  | { readonly kind: 'collection'; readonly nodes: readonly PathNode[]; readonly paths: readonly (readonly Seg[])[]; readonly refs: Uint32Array;
+      readonly xs: Float64Array; readonly ys: Float64Array; readonly usesPerPath: number }
   /** tag: provenance ('artist/<index>/<kind>' for an Axes artist's marks, '' otherwise) for interactive renderers */
   | { readonly kind: 'group'; readonly clip: Clip; readonly nodes: readonly Node[]; readonly tag: string };
 

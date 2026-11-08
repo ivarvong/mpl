@@ -189,6 +189,7 @@ function nodeIO(n: Node, ids: Ids): IOList {
       if (buf.length > 0) chunks.push(buf + NL);
       return chunks;
     }
+    case 'collection': return collectionIO(n, ids);
     case 'text': {
       if (ids.text === 'glyphs') return glyphText(n, ids);
       const rot = n.rotation === 'vertical' ? ` transform="rotate(-90 ${f(n.x)} ${f(n.y)})"`
@@ -213,6 +214,30 @@ function nodeIO(n: Node, ids: Ids): IOList {
     }
     default: return assertNever(n);
   }
+}
+
+/** Path vertices as matplotlib counts them (len(path.vertices)): a CLOSEPOLY has one too. */
+const vertexCount = (segs: readonly Seg[]): number => segs.reduce((a, sg) => a + (sg[0] === 'Q' ? 2 : sg[0] === 'C' ? 3 : 1), 0);
+
+/**
+ * RendererSVG.draw_path_collection: when its own cost estimate says a definition plus <use> per member is smaller than
+ * inline paths, each raw path goes once in <defs> and every member is a <use> at its offset carrying its own fill and
+ * stroke (2000 scatter points: 2000 short <use> instead of 2000 full <path>). Otherwise the members inline, as the
+ * generic RendererBase.draw_path_collection does. One clip group holds the members, where matplotlib repeats it per <use>.
+ */
+function collectionIO(n: Extract<Node, { kind: 'collection' }>, ids: Ids): IOList {
+  const len = n.paths.length > 0 ? vertexCount(n.paths[0]) : 0, u = n.usesPerPath;
+  if (!(len + 9 * u + 3 < (len + 5) * u)) return n.nodes.map((c) => nodeIO(c, ids));
+  const base = `${ids.prefix}C${(ids.next++).toString(16)}_`;
+  const chunks: string[] = [`<defs>${n.paths.map((p, i) => `<path id="${base}${i.toString(16)}" d="${pathD(p, ids.pd)}"/>`).join('')}</defs>` + NL];
+  const dp = ids.pd.kind === 'compact' ? ids.pd.decimals : 4;
+  let buf = '';
+  for (let i = 0; i < n.nodes.length; i++) {
+    buf += `<use href="#${base}${n.refs[i].toString(16)}" x="${fdp(n.xs[i], dp)}" y="${fdp(n.ys[i], dp)}"${inkAttrs(n.nodes[i].ink)}/>`;
+    if (buf.length > 8192) { chunks.push(buf + NL); buf = ''; }
+  }
+  if (buf.length > 0) chunks.push(buf + NL);
+  return chunks;
 }
 
 /**
@@ -264,6 +289,7 @@ export function leafCount(n: Node): number {
     case 'rect': case 'path': case 'text': return 1;
     case 'polyline': return n.xs.length;
     case 'markers': return n.xs.length;
+    case 'collection': return n.nodes.length;
     case 'image': return 1;
     case 'group': return n.nodes.reduce((a, c) => a + leafCount(c), 0);
     default: return assertNever(n);
@@ -274,7 +300,7 @@ function hasImage(n: Node): boolean {
   switch (n.kind) {
     case 'image': return true;
     case 'group': return n.nodes.some(hasImage);
-    case 'rect': case 'path': case 'text': case 'polyline': case 'markers': return false;
+    case 'rect': case 'path': case 'text': case 'polyline': case 'markers': case 'collection': return false;
     default: return assertNever(n);
   }
 }

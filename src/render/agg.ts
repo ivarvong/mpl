@@ -222,6 +222,7 @@ function drawNode(x: Ctx, n: Node, clip: IBox): void {
       x.tracer.span('raster.image', { w: n.w, h: n.h }, () => blitImage(x.c, n.x, n.y, n.w, n.h, n.rgba, clip));
       return;
     }
+    case 'collection': for (const ch of n.nodes) drawNode(x, ch, clip); return;
     case 'group': { const inner = clipBox(n.clip, clip); for (const ch of n.nodes) drawNode(x, ch, inner); return; }
     default: assertNever(n);
   }
