@@ -27,5 +27,16 @@ try {
   const svg = fig.toSVG();
   assert.ok(svg.includes('<text '), '<text> elements present for svg.fonttype=none');
 }
+// svgChunks() and svgStream() write the same document as toSVG(), svg.fonttype included
+for (const fonttype of ['path', 'none'] as const) {
+  const [fig, ax] = subplots({ rc: { 'svg.fonttype': fonttype } });
+  ax.plot([0, 1, 2], [1, 3, 2]);
+  ax.set_title('Hello');
+  const whole = fig.toSVG();
+  assert.equal([...fig.svgChunks()].join(''), whole, `svgChunks() equals toSVG() with svg.fonttype=${fonttype}`);
+  const reader = fig.svgStream().getReader(), parts: Uint8Array[] = [];
+  for (let r = await reader.read(); !r.done; r = await reader.read()) parts.push(r.value);
+  assert.equal(new TextDecoder().decode(Buffer.concat(parts)), whole, `svgStream() equals toSVG() with svg.fonttype=${fonttype}`);
+}
 console.log('rc/svg.fonttype: ok');
 
