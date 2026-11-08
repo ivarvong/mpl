@@ -156,9 +156,9 @@ Keyword arguments (unknown keys throw): `precision`, `interactive`, `idPrefix`
 
 ### `Figure.toRGBA(kwargs?)`
 
-RGBA8 pixels (straight alpha), rasterized like matplotlib's Agg backend. Optional { dpi | scale }.
+toRGBA({ dpi | scale, out }) — RGBA8 pixels (straight alpha), rasterized like matplotlib's Agg backend. out: a canvas from an earlier toRGBA that the caller no longer needs (e.g. the previous frame's, after putImageData). When it has this render's size it is cleared and drawn into, and the result shares its buffers; otherwise a new canvas is returned. Without out, every call returns a new canvas that nothing else touches.
 
-Keyword arguments (unknown keys throw): `dpi`, `scale`
+Keyword arguments (unknown keys throw): `out`, `dpi`, `scale`
 
 ### `Figure.toPNG(kwargs?)`
 
