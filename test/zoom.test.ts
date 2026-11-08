@@ -215,7 +215,18 @@ try {
     p = await screenOf(page, 'lines', 0, pt.x, pt.y);
     await page.mouse.move(p.x, p.y - 1);
     let t = await tipText(page);
-    check(t.startsWith(`damped sin x ${Number(pt.x.toPrecision(7))} y ${Number(pt.y.toPrecision(7))}`), `${at} tooltip reads the zoomed sidecar`, t);
+    // series name, value, then the position under it, read from the new sidecar to the zoomed axes' resolution
+    const shown = /^damped sin (-?[\d.]+) (-?[\d.]+)/.exec(t);
+    check(shown !== null && Math.abs(Number(shown[1]) - pt.y) <= span(v[0].y) / 50 && Math.abs(Number(shown[2]) - pt.x) <= span(v[0].x) / 50, `${at} tooltip reads the zoomed sidecar`, `${t} (${pt.x}, ${pt.y})`);
+    // and stays inside the chart in the zoomed view, at a corner
+    const corner = await boxPoint(page, 'lines', 0, 0.99, 0.02);
+    await page.mouse.move(corner.x, corner.y);
+    await tipText(page);
+    const inChart = await page.evaluate(() => {
+      const r = document.querySelector('.mpl-tip')?.getBoundingClientRect(), b = document.querySelector('#lines')?.getBoundingClientRect();
+      return !!r && !!b && r.right <= b.right && r.left >= b.left && r.top >= b.top && r.bottom <= b.bottom;
+    });
+    check(inChart, `${at} zoomed: the tooltip stays in the chart at a corner`);
 
     // ---- legend toggle survives re-renders
     const lg = async (): Promise<{ x: number; y: number }> => page.evaluate(() => {
@@ -309,7 +320,7 @@ try {
     await page.focus('#lines .mpl-kb');
     await page.keyboard.press('ArrowRight');
     t = await tipText(page);
-    check(t.startsWith('damped sin x 0 '), `${at} arrows on a focused plot still step points`, t);
+    check(/^damped sin -?[\d.]+ 0( |$)/.test(t), `${at} arrows on a focused plot still step points`, t);
     await page.keyboard.press('Shift+ArrowLeft');
     await idle(page, 'lines');
     v = await view(page, 'lines');
@@ -452,6 +463,30 @@ try {
     await idle(page, 'lines');
     v = await view(page, 'lines');
     check(v[0].x[0] > w0[0].x[0] && near(span(v[0].x), span(w0[0].x), span(v[0].x)), 'touch: one finger dragged left pans x right', JSON.stringify(v[0].x));
+    // a tap on a zoomable chart: no pan, and the value shows on lift, and stays (#49 hid it under the press)
+    const v1 = await view(page, 'lines');
+    await page.touchscreen.tap(m.x, m.y);
+    await idle(page, 'lines');
+    await page.waitForTimeout(150);
+    let tapped = await tipText(page);
+    check(tapped !== '(hidden)', 'touch: a tap on a zoomable chart shows the value', tapped);
+    check(JSON.stringify(await view(page, 'lines')) === JSON.stringify(v1), 'touch: a tap does not move the view');
+    check(await page.evaluate(() => {
+      const r = document.querySelector('.mpl-tip')?.getBoundingClientRect(), b = document.querySelector('#lines')?.getBoundingClientRect();
+      return !!r && !!b && r.right <= b.right && r.left >= b.left && r.top >= b.top && r.bottom <= b.bottom;
+    }), 'touch: the tapped value stays inside the zoomed chart');
+    // panning takes it away; a second tap brings it back
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [tp(0, 0, 4)] });
+    for (let s = 1; s <= 3; s++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [tp(-12 * s, 0, 4)] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await idle(page, 'lines');
+    check(await tipText(page) === '(hidden)', 'touch: a pan clears the readout and does not leave one');
+    await page.touchscreen.tap(m.x + 8, m.y);
+    await idle(page, 'lines');
+    tapped = await tipText(page);
+    check(tapped !== '(hidden)', 'touch: the next tap shows it again', tapped);
+    await page.keyboard.press('Escape');
+    await idle(page, 'lines');
     const n = await pixelExact(page, 'touch');
     total.svg += n.svg; total.canvas += n.canvas;
     check(errors.length === 0, 'touch: no page errors', errors.join('; '));
