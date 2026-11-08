@@ -17,11 +17,13 @@
 // and pans. Over an axis' tick strip (just outside the plot box) only that axis moves. Keys on a focused chart: + and -
 // zoom, arrows (Shift+arrows on a plot the hover client has focused) pan, 0 or Escape reset. Log axes zoom in log space;
 // date and category axes are linear in their numbers. Axes that share an axis (sharex/sharey, twinx; the sidecar's `g`)
-// move together.
+// move together, and by default so do Axes of a figure that show the same x (mpl/interactive's sync rule): x-limits are
+// set on all of them in the one render of the frame, y stays each Axes' own, as it was. `sync: 'name'` extends that to
+// every figure zoomed with that name; `sync: false` keeps only the shared axes.
 import type { Figure } from '../api.ts';
 import type { Canvas } from '../render/agg.ts';
-import type { AxesInfo, AxisInfo } from './client.ts';
-import { parseSidecar } from './client.ts';
+import type { AxesInfo, AxisInfo, HubZoom } from './client.ts';
+import { groupOf, hubFor, parseSidecar } from './client.ts';
 
 /** 'auto' renders SVG frames, or canvas frames during a gesture for a chart above `threshold` SVG elements or whose SVG
  *  frames run over `budgetMs`; 'canvas' always uses canvas during gestures; 'svg' never does. The settled frame is SVG. */
@@ -63,6 +65,8 @@ export type ZoomOptions = {
   readonly svgText: (svg: string) => string;
   /** Called after every frame (telemetry, tests). */
   readonly onFrame: (f: FrameInfo) => void;
+  /** Zoom x together across Axes showing the same x: true (default) within the figure, a name across figures, false not at all. */
+  readonly sync: boolean | string;
 };
 export type ZoomController = {
   /** The view the chart is showing or about to show. */
@@ -143,7 +147,17 @@ export function zoom(svg: SVGSVGElement, options: Partial<ZoomOptions> & Pick<Zo
   });
   const axisOf = (a: Ax, w: Which): AxisInfo => (w === 'x' ? a.info.x : a.info.y);
   /** A share group's key: 'x' or 'y' and the index of the Axes leading it (its own index when the sidecar has no `g`). */
-  const key = (a: Ax, w: Which): string => { const g = axisOf(a, w).g; return `${w}${g >= 0 ? g : a.k}`; };
+  const hub = hubFor(o.sync === false || typeof o.sync === 'string' ? o.sync : true, svg);
+  const gids = new Map<number, number>();
+  const key = (a: Ax, w: Which): string => {
+    const g = axisOf(a, w).g;
+    if (w === 'x' && hub.length > 0) {
+      let id = gids.get(a.k);
+      if (typeof id !== 'number') { id = groupOf(hub[0], svg, a.k, a.info); gids.set(a.k, id); }
+      return `x${id}`;
+    }
+    return `${w}${g >= 0 ? g : a.k}`;
+  };
   const orig = new Map<string, U>(), want = new Map<string, U>(), dirty = new Set<string>();
   const learn = (): void => {
     for (const a of axes) for (const w of ['x', 'y'] as const) {
@@ -156,15 +170,19 @@ export function zoom(svg: SVGSVGElement, options: Partial<ZoomOptions> & Pick<Zo
   learn();
   const limOf = (k: string): U => want.get(k) || orig.get(k) || [0, 1];
   const view = (): View => axes.map((a) => {
-    const kx = key(a, 'x'), ky = key(a, 'y'), x = limOf(kx), y = limOf(ky);
+    const kx = key(a, 'x'), ky = key(a, 'y'), y = limOf(ky);
+    // an Axes zoom has not moved keeps its own limits (its sync group may be a little different)
+    const x: U = dirty.has(kx) ? limOf(kx) : [fwd(a.info.x, a.info.x.lim[0]), fwd(a.info.x, a.info.x.lim[1])];
     return { x: [inv(a.info.x, x[0]), inv(a.info.x, x[1])], y: [inv(a.info.y, y[0]), inv(a.info.y, y[1])], set: { x: dirty.has(kx), y: dirty.has(ky) } };
   });
   /** Set a group's limits, kept to a sane zoom range: 1e-9 to 1e4 times the original span. */
-  const put = (k: string, u: U): void => {
+  const put = (k: string, u: U, tell = true): void => {
     const o0 = orig.get(k) || u, span0 = Math.abs(o0[1] - o0[0]) || 1, span = Math.abs(u[1] - u[0]);
     if (!Number.isFinite(u[0]) || !Number.isFinite(u[1]) || span < span0 * 1e-9 || span > span0 * 1e4) return;
     want.set(k, u);
     dirty.add(k);
+    // the same x-limits in every figure of the group; each renders in its own requestAnimationFrame callback of this frame
+    if (tell && k[0] === 'x') for (const h of hub) for (const z of h.zooms) if (z !== self) z.setX(k, u);
   };
 
   // ------------------------------------------------------------ pointer geometry
@@ -284,10 +302,14 @@ export function zoom(svg: SVGSVGElement, options: Partial<ZoomOptions> & Pick<Zo
     for (const k of dirty) {
       const u = want.get(k), a = applied.get(k);
       if (!u || (a && a[0] === u[0] && a[1] === u[1])) continue;
-      const g = Number(k.slice(1)), ax = axes.find((x) => key(x, k[0] === 'x' ? 'x' : 'y') === k);
-      if (!ax || g >= f.axes.length) continue;
-      const info = axisOf(ax, k[0] === 'x' ? 'x' : 'y'), lo = inv(info, u[0]), hi = inv(info, u[1]);
-      if (k[0] === 'x') f.axes[g].set_xlim(lo, hi); else f.axes[g].set_ylim(lo, hi);
+      const w: Which = k[0] === 'x' ? 'x' : 'y', members = axes.filter((x) => key(x, w) === k);
+      if (members.length === 0) continue;
+      const info = axisOf(members[0], w), lo = inv(info, u[0]), hi = inv(info, u[1]);
+      // each share group's leader takes the limits (a sharex or twin follows it); all of them in this one render
+      for (const g of new Set(members.map((m) => { const s = axisOf(m, w).g; return s >= 0 ? s : m.k; }))) {
+        if (g >= f.axes.length) continue;
+        if (w === 'x') f.axes[g].set_xlim(lo, hi); else f.axes[g].set_ylim(lo, hi);
+      }
       applied.set(k, u);
     }
   };
@@ -356,7 +378,7 @@ export function zoom(svg: SVGSVGElement, options: Partial<ZoomOptions> & Pick<Zo
   /** Canvas frames are up: check back after the quiet time, when the settled SVG frame replaces them. */
   function armSettle(): void { if (shown === 'canvas' && timer === 0) timer = window.setTimeout(() => { timer = 0; schedule(); }, settleMs); }
 
-  const reset = (): void => {
+  const reset0 = (): void => {
     dirty.clear();
     for (const [k, u] of orig) want.set(k, u);
     if (fig.length > 0) restoreLimits(fig[0]);
@@ -367,6 +389,13 @@ export function zoom(svg: SVGSVGElement, options: Partial<ZoomOptions> & Pick<Zo
     report(lastFrame);
     flush();
   };
+  const reset = (): void => { reset0(); for (const h of hub) for (const z of h.zooms) if (z !== self) z.reset(); };
+  const self: HubZoom = {
+    svg,
+    setX: (k, u) => { if (!orig.has(k)) return; put(k, u, false); input(); },
+    reset: reset0,
+  };
+  for (const h of hub) h.zooms.add(self);
 
   // ------------------------------------------------------------ input
   type Drag = { readonly id: number; readonly start: readonly number[]; readonly base: ReadonlyMap<string, U>; readonly t: { readonly axes: readonly Ax[]; readonly mode: Mode }; readonly box: boolean };
@@ -541,6 +570,7 @@ export function zoom(svg: SVGSVGElement, options: Partial<ZoomOptions> & Pick<Zo
       raf = 0; timer = 0;
       overlay.remove();
       svg.removeAttribute('data-mpl-zoom');
+      for (const h of hub) h.zooms.delete(self);
       if (!hadTabindex) svg.removeAttribute('tabindex');
       flush();
     },

@@ -179,8 +179,9 @@ const NS = 'http://www.w3.org/2000/svg';
 const CSS = `[data-mpl-axes] [data-artist]{transition:none}
 @media (prefers-reduced-motion:no-preference){[data-mpl-axes] [data-artist]{transition:opacity .12s}}
 .mpl-dim{opacity:var(--mpl-dim-opacity,.5)}.mpl-off{display:none}
-.mpl-cross line{stroke:var(--mpl-crosshair,currentColor);stroke-opacity:var(--mpl-crosshair-opacity,.45);stroke-dasharray:3 3}
-.mpl-cross line,.mpl-dot,.mpl-lg,.mpl-kb{vector-effect:non-scaling-stroke}
+.mpl-cross line,.mpl-ghost line{stroke:var(--mpl-crosshair,currentColor);stroke-opacity:var(--mpl-crosshair-opacity,.45);stroke-dasharray:3 3}
+.mpl-cross line,.mpl-ghost *,.mpl-dot,.mpl-lg,.mpl-kb{vector-effect:non-scaling-stroke}
+.mpl-ghost circle{fill:var(--mpl-dot-fill,Canvas);stroke-width:1.5}
 .mpl-dot{fill:var(--mpl-dot-fill,Canvas);stroke:var(--mpl-dot,currentColor);stroke-width:2}
 .mpl-lg,.mpl-kb{fill:transparent;outline:none}.mpl-lg{cursor:pointer}
 .mpl-lg.mpl-lg-off{fill:var(--mpl-legend-off,Canvas);fill-opacity:var(--mpl-legend-off-opacity,.7)}
@@ -206,11 +207,53 @@ const KEYS: Readonly<Record<string, number>> = { ArrowRight: 1, ArrowLeft: -1, A
 
 const inside = (b: AxesInfo['box'], x: number, y: number): boolean => x >= b[0] - 1 && x <= b[2] + 1 && y >= b[1] - 1 && y <= b[3] + 1;
 
+// ---------------------------------------------------------------- sync: which Axes read and move together
+/** Whether two Axes show the same x: the same kind of scale (never categories), x-limits at least 80% the same
+ *  (intersection over union), and each holding data along x (a series with points on a date axis; on a linear or log axis
+ *  a series ordered along x, so scatter plots and horizontal bars, whose x is a value and not a position, stay apart). */
+function sameX(a: AxesInfo, b: AxesInfo): boolean {
+  if (a.x.s !== b.x.s || a.x.s === 'cat' || a.cb || b.cb) return false;
+  const along = (q: AxesInfo): boolean => q.a.some((s) => s.p.length > 0 && (q.x.s === 'date' || s.s === 'x'));
+  if (!along(a) || !along(b)) return false;
+  const lo1 = Math.min(fwd(a.x, a.x.lim[0]), fwd(a.x, a.x.lim[1])), hi1 = Math.max(fwd(a.x, a.x.lim[0]), fwd(a.x, a.x.lim[1]));
+  const lo2 = Math.min(fwd(b.x, b.x.lim[0]), fwd(b.x, b.x.lim[1])), hi2 = Math.max(fwd(b.x, b.x.lim[0]), fwd(b.x, b.x.lim[1]));
+  const union = Math.max(hi1, hi2) - Math.min(lo1, lo2);
+  return union > 0 && (Math.min(hi1, hi2) - Math.max(lo1, lo2)) / union >= 0.8;
+}
+type Entry = { readonly svg: SVGSVGElement; readonly k: number; readonly info: AxesInfo; readonly gid: number; readonly lead: boolean };
+type Painter = { readonly paint: (gid: number, v: number, skip: readonly number[], svg: SVGSVGElement, hit: readonly ArtistInfo[]) => void; readonly clear: () => void };
+/** The Axes that sync with each other: one per figure by default, one per name across figures. */
+export type Hub = { readonly entries: Entry[]; readonly painters: Set<Painter>; readonly zooms: Set<HubZoom>; last: readonly number[] };
+/** A zoom controller as its hub sees it: another figure's x-limits arriving, and a reset. */
+export type HubZoom = { readonly svg: SVGSVGElement; readonly setX: (key: string, u: readonly [number, number]) => void; readonly reset: () => void };
+const named = new Map<string, Hub>(), bySvg = new WeakMap<SVGSVGElement, Hub>();
+const newHub = (): Hub => ({ entries: [], painters: new Set(), zooms: new Set(), last: [] });
+/** The hub of `svg` for a `sync` option: true its own figure, a name shared across figures, false none (an empty list). */
+export function hubFor(sync: boolean | string, svg: SVGSVGElement): readonly Hub[] {
+  if (sync === false) return [];
+  const m = typeof sync === 'string' ? named.get(sync) : bySvg.get(svg);
+  if (m) return [m];
+  const h = newHub();
+  if (typeof sync === 'string') named.set(sync, h); else bySvg.set(svg, h);
+  return [h];
+}
+/** The sync group of Axes `k` of `svg`, fixed by its first-paint limits (a zoomed view must not change who it syncs with).
+ *  Axes sharing an x axis (sharex, twinx) are one group; otherwise an Axes joins the first group whose leader it matches. */
+export function groupOf(h: Hub, svg: SVGSVGElement, k: number, info: AxesInfo): number {
+  const known = h.entries.find((e) => e.svg === svg && e.k === k);
+  if (known) return known.gid;
+  const twin = h.entries.find((e) => e.svg === svg && info.x.g >= 0 && e.info.x.g === info.x.g && !info.cb);
+  const lead = twin ? [] : h.entries.filter((e) => e.lead && sameX(e.info, info));
+  const gid = twin ? twin.gid : lead.length > 0 ? lead[0].gid : h.entries.reduce((m, e) => Math.max(m, e.gid + 1), 0);
+  h.entries.push({ svg, k, info, gid, lead: !twin && lead.length === 0 });
+  return gid;
+}
+
 type Live = { readonly k: number; readonly info: AxesInfo; readonly groups: ReadonlyMap<number, readonly Element[]>; readonly off: Set<number> };
 /** The SVG currently showing the readout: what another SVG, a tap outside, Escape or a scroll asks of it. */
 type Owner = { readonly svg: SVGSVGElement; readonly hide: () => void; readonly place: () => void };
 /** The tooltip one attach() shares among its SVGs, its settings, and which SVG holds it (at most one). */
-type Tip = { readonly el: HTMLDivElement; readonly format: Format; readonly compact: number; readonly gap: number; readonly touchGap: number; readonly margin: number; readonly above: boolean; readonly cursor: boolean; on: readonly Owner[] };
+type Tip = { readonly el: HTMLDivElement; readonly format: Format; readonly compact: number; readonly gap: number; readonly touchGap: number; readonly margin: number; readonly above: boolean; readonly cursor: boolean; readonly sync: boolean | string; on: readonly Owner[] };
 
 /** The part of `svg` the reader can see, as client [left, top, right, bottom]: its box cut by the viewport and any
  *  ancestor that clips (a sideways-scrolling figure). Empty (right <= left) when it is out of view. */
@@ -236,7 +279,10 @@ function wire(svg: SVGSVGElement, tip: Tip): () => void {
   // the readout stays up when it was (a wheel zoom under a resting pointer, a tapped value); whoever replaced the content keeps focus
   const rerender = (): void => { const shown = tip.on.some((o) => o.svg === svg); undo(); undo = wireContent(svg, tip, offs, at, shown); };
   svg.addEventListener('mpl:render', rerender);
-  return () => { svg.removeEventListener('mpl:render', rerender); undo(); };
+  return () => {
+    svg.removeEventListener('mpl:render', rerender); undo();
+    for (const h of hubFor(tip.sync, svg)) for (let i = h.entries.length - 1; i >= 0; i--) if (h.entries[i].svg === svg) h.entries.splice(i, 1);
+  };
 }
 
 function wireContent(svg: SVGSVGElement, tip: Tip, offs: Map<number, Set<number>>, at: number[], shown: boolean): () => void {
@@ -267,8 +313,42 @@ function wireContent(svg: SVGSVGElement, tip: Tip, offs: Map<number, Set<number>
   const dims: Element[] = [];
   const undim = (): void => { for (const e of dims.splice(0)) e.classList.remove('mpl-dim'); };
   let lx = 0, ly = 0, touch = false;   // where the readout is anchored (SVG user units), and whether a finger put it there
+  // the other panels' crosshairs: a line and a dot per series on every synced Axes, moved without re-rendering
+  const hub = hubFor(tip.sync, svg);
+  const ghosts = hub.length === 0 ? [] : axes.map((a) => {
+    const g = el('g', { class: 'mpl-ghost' }), line = el('line', { y1: a.info.box[1], y2: a.info.box[3] }), series = a.info.a.filter((s) => s.s === 'x' && s.p.length > 0);
+    const dots = series.map((s) => { const c = el('circle', { r: 2.5 }); c.style.stroke = s.c; return c; });
+    g.append(line, ...dots);
+    g.style.display = 'none';
+    layer.prepend(g);
+    return { a, g, line, series, dots, gid: groupOf(hub[0], svg, a.k, a.info), gap: Math.max(8, ...series.map((s) => 1.5 * Math.abs(s.p[s.p.length - 2] - s.p[0]) / Math.max(1, s.p.length / 2 - 1))) };
+  });
+  const painter: Painter = {
+    paint: (gid, v, skip, from, hit) => {
+      for (const g of ghosts) {
+        const b = g.a.info.box, x = dataToPixel(g.a.info, 'x', v), within = g.gid === gid && x >= b[0] - 1 && x <= b[2] + 1;
+        g.g.style.display = within ? '' : 'none';
+        if (!within) continue;
+        const own = from === svg && skip.includes(g.a.k);    // under the pointer: its crosshair is already there
+        g.line.style.display = own ? 'none' : '';
+        if (!own) { g.line.setAttribute('x1', String(x)); g.line.setAttribute('x2', String(x)); }
+        g.series.forEach((s, i) => {
+          const h = hit.includes(s) || g.a.off.has(s.i) ? [] : nearest([s], x, 0), near = h.length > 0 && Math.abs(s.p[2 * h[0].j] - x) <= g.gap;
+          g.dots[i].style.display = near ? '' : 'none';
+          if (near) { g.dots[i].setAttribute('cx', String(s.p[2 * h[0].j])); g.dots[i].setAttribute('cy', String(s.p[2 * h[0].j + 1])); }
+        });
+      }
+    },
+    clear: () => { for (const g of ghosts) g.g.style.display = 'none'; },
+  };
+  for (const h of hub) { h.painters.add(painter); if (h.last.length === 2) painter.paint(h.last[0], h.last[1], [], svg, []); }
+  /** Whether this group spans more than one plot box (a twin alone has nothing to sync with). */
+  const spread = (h: Hub, gid: number, a: Live): boolean => h.entries.some((e) => e.gid === gid && (e.svg !== svg || e.info.box[0] !== a.info.box[0] || e.info.box[1] !== a.info.box[1]));
+  const unpaint = (): void => { for (const h of hub) { h.last = []; for (const p of h.painters) p.clear(); } };
+
   const hide = (): void => {
     cross.style.display = 'none'; undim();
+    if (tip.on.some((o) => o === me)) unpaint();
     if (tip.on.some((o) => o === me)) { tip.el.hidden = true; tip.on = []; }
   };
   const dismiss = (): void => { at.splice(0); hide(); };
@@ -332,6 +412,13 @@ function wireContent(svg: SVGSVGElement, tip: Tip, offs: Map<number, Set<number>
         if ((a !== owner || i !== art.i) && kind && kind.p.length > 0) for (const e of es) { e.classList.add('mpl-dim'); dims.push(e); }
       }
     } else dot.style.display = 'none';
+    for (const h of hub) {
+      const gid = groupOf(h, svg, here[0].k, here[0].info);
+      unpaint();
+      if (!spread(h, gid, here[0])) continue;
+      h.last = [gid, pixelToData(here[0].info, 'x', x)];
+      for (const p of h.painters) p.paint(gid, h.last[1], here.map((a) => a.k), svg, hit.map((v) => v.art));
+    }
     if (tip.cursor) rows.push(html('small', [format(pixelToData(here[0].info, 'x', x), here[0].info.x, 'x', false, svg),
       ...here.map((a) => format(pixelToData(a.info, 'y', y), a.info.y, 'y', false, svg))].join(' · ')));
     tip.el.replaceChildren(...rows);
@@ -440,6 +527,7 @@ function wireContent(svg: SVGSVGElement, tip: Tip, offs: Map<number, Set<number>
     svg.removeEventListener('pointercancel', lift); svg.removeEventListener('pointerleave', leave);
     if (frame !== 0) cancelAnimationFrame(frame);
     hide(); layer.remove();
+    for (const h of hub) h.painters.delete(painter);
     for (const a of axes) for (const es of a.groups.values()) for (const e of es) e.classList.remove('mpl-off');
   };
 }
@@ -460,6 +548,9 @@ export type AttachOptions = {
   readonly placement: 'auto' | 'above';
   /** Also list the cursor's own data coordinates under the point. Default false. */
   readonly cursor: boolean;
+  /** The crosshair follows along in Axes that show the same x. true (default): within each figure; a name: also across
+   *  every figure attached with that name; false: off. See sameX for the rule. mpl/zoom has the same option. */
+  readonly sync: boolean | string;
 };
 
 /**
@@ -480,7 +571,7 @@ export function attach(root: ParentNode = document, options: Format | Partial<At
   document.body.append(el0);
   const tip: Tip = {
     el: el0, format: typeof o.format === 'function' ? o.format : formatValue, compact: num(o.compact, 480), gap: num(o.gap, 14), touchGap: num(o.touchGap, 32),
-    margin: num(o.margin, 4), above: o.placement === 'above', cursor: o.cursor === true, on: [],
+    margin: num(o.margin, 4), above: o.placement === 'above', cursor: o.cursor === true, sync: typeof o.sync === 'string' || o.sync === false ? o.sync : true, on: [],
   };
   const svgs = Array.from(root.querySelectorAll('svg')).filter((s) => s.querySelectorAll('g[data-mpl-axes]').length > 0);
   if (root instanceof SVGSVGElement) svgs.push(root);

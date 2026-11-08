@@ -1,4 +1,4 @@
-// Zoom and pan: five charts rendered on the server (annotated SVG), made zoomable in the browser by mpl/zoom, with the
+// Zoom and pan: six charts rendered on the server (annotated SVG), made zoomable in the browser by mpl/zoom, with the
 // mpl/interactive hover client on top. Nothing loads until the first gesture: then the page imports its chart chunk
 // (mpljs + examples/_zoom-charts.ts, bundled), builds the same figure, and renders every frame for real with set_xlim /
 // set_ylim. The page is self-contained (the chunk is inlined and imported from a blob: URL). examples/out/zoom.html
@@ -58,7 +58,7 @@ for (const svg of document.querySelectorAll('svg[data-chart]')) {
 
 const [pageJs, chunkJs] = await Promise.all([bundle(PAGE, 'zoom-page.ts'), bundle("export { build } from './_zoom-charts.ts';", 'zoom-chunk.ts')]);
 const titles: Readonly<Record<string, string>> = {
-  lines: 'Linear axes, a legend to toggle', logy: 'Log y', dates: 'Date x', shared: 'sharex and twinx', dense: '2000 points and a colorbar',
+  lines: 'Linear axes, a legend to toggle', logy: 'Log y', dates: 'Date x', shared: 'sharex and twinx', dense: '2000 points and a colorbar', dashboard: 'An incident dashboard: x zooms together',
 };
 const charts = ids.map((id) => `<section>
 <h2>${Object.hasOwn(titles, id) ? titles[id] : id}</h2>

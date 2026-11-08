@@ -369,7 +369,7 @@ import { registerSidecar } from 'mpl';
 import { sidecar } from 'mpl/annotate';
 registerSidecar(sidecar);
 const svg = fig.toSVG({ interactive: true, idPrefix: 'c1-' });   // idPrefix: several SVGs in one page
-// browser: 14.3 KiB minified, 6.2 KiB gzipped, no dependencies
+// browser: 17.3 KiB minified, 7.2 KiB gzipped, no dependencies
 import { attach } from 'mpl/interactive';
 const detach = attach(document);              // every annotated SVG under the root
 ```
@@ -408,6 +408,17 @@ attach(document, {
 });
 ```
 
+Panels that show the same x read together: hovering one draws the vertical crosshair at that x in the others, with a
+dot on each series at its nearest point (a finger's value does the same, and persists with it). The tooltip and the
+horizontal line stay on the hovered panel. Two Axes sync when they share an x axis (`sharex`, `twinx`), or when all of
+these hold: the same kind of x scale, never categories; x-limits at least 80% the same (intersection over union, at
+first paint, so zooming does not change who syncs); and both hold data along x (a series with points on a date axis; on
+linear and log axes a series ordered along x, so scatter plots and horizontal bars stay apart). On a dashboard of
+latency, throughput and CPU over one day plus a histogram of milliseconds and bars by endpoint, the first group syncs
+and the other two do not. `sync` chooses the scope: `true` (default) within each figure, a name links every figure
+attached with it (`attach(root, { sync: 'ops' })`, `idPrefix` or not), `false` turns it off. Moving the crosshair
+re-renders nothing.
+
 Theming is CSS only: `--mpl-dim-opacity`, `--mpl-crosshair`, `--mpl-crosshair-opacity`, `--mpl-dot`, `--mpl-dot-fill`,
 `--mpl-legend-off`, `--mpl-legend-off-opacity`, `--mpl-focus`, `--mpl-tip-font`, `--mpl-tip-bg`, `--mpl-tip-fg`,
 `--mpl-tip-border`, `--mpl-tip-radius`, `--mpl-tip-padding`, `--mpl-tip-shadow`, `--mpl-tip-small-size`, `--mpl-tip-max-width`,
@@ -435,6 +446,11 @@ figure from SVG. From then on each frame calls `set_xlim`/`set_ylim` on that liv
 Dense charts instead get `toRGBA()` on a canvas while the gesture runs, then one SVG frame when it settles. After each
 SVG frame, `mpl/interactive` re-reads the new sidecars, so tooltips, the crosshair and legend toggles work on the
 zoomed view; legend toggles and keyboard focus carry over.
+
+Panels synced for the crosshair zoom together too: a zoom or pan of x in one applies the same x-limits to the others, in
+the one figure render of that frame, and reset resets all of them. y stays each panel's own: only the panel under the
+gesture zooms y, and the others keep the limits they had (nothing re-autoscales, as for any zoom). `zoom(svg, { sync })`
+takes the same `true` / name / `false`; with a name, each figure renders its own frame.
 
 ```ts
 import { attach } from 'mpl/interactive';

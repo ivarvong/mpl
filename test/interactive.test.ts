@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Page } from 'playwright';
+import { dashboard } from '../examples/_zoom-charts.ts';
 
 const ROOT = new URL('../', import.meta.url).pathname;
 execFileSync(process.execPath, [join(ROOT, 'examples/interactive.ts')], { stdio: 'pipe' });
@@ -64,6 +65,20 @@ const inAxes = (page: Page, id: string, fx: number, fy: number): Promise<{ x: nu
   const q = new DOMPoint(box[0] + (box[2] - box[0]) * Number(a), box[1] + (box[3] - box[1]) * Number(b)).matrixTransform(svg.getScreenCTM() ?? new DOMMatrix());
   return { x: q.x, y: q.y };
 }, [id, fx, fy] as const);
+type Sync = { line: boolean; dots: number; x: number };
+const synced = (page: Page, id: string, k: number): Promise<Sync> => page.evaluate(async ([sid, ax]) => {
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const svg = document.querySelector(`#${String(sid)}`), order = Array.from(svg?.querySelectorAll('g[data-mpl-axes]') ?? []).map((g) => Number(g.getAttribute('data-mpl-axes')));
+  const gs = Array.from(svg?.querySelectorAll<SVGGElement>('.mpl-ghost') ?? []).toReversed();   // prepended: last Axes first
+  const g = gs[order.indexOf(Number(ax))];
+  const shown = !!g && g.style.display === '', line = g?.querySelector<SVGLineElement>('line');
+  return { line: shown && !!line && line.style.display === '', dots: shown ? Array.from(g.querySelectorAll<SVGElement>('circle')).filter((c) => c.style.display === '').length : 0, x: Number(line?.getAttribute('x1') ?? 0) };
+}, [id, k] as const);
+const dataX = (page: Page, id: string, k: number, px: number): Promise<number> => page.evaluate(([sid, ax, p]) => {
+  const j = JSON.parse(document.querySelector(`#${String(sid)} g[data-mpl-axes="${ax}"] > metadata`)?.textContent ?? '{}');
+  return j.x.lim[0] + ((Number(p) - j.box[0]) / (j.box[2] - j.box[0])) * (j.x.lim[1] - j.x.lim[0]);
+}, [id, k, px] as const);
+const two = (id: string): string => dashboard().toSVG({ interactive: true, idPrefix: `${id}-` }).replace(/^<svg([^>]*) width="[^"]*" height="[^"]*"/, `<svg$1 id="${id}"`);
 
 try {
   for (const width of [1280, 420]) {
@@ -71,7 +86,7 @@ try {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await page.setContent(html, { waitUntil: 'load' });
-    await page.waitForFunction(() => document.querySelectorAll('.mpl-overlay').length === 4);
+    await page.waitForFunction(() => document.querySelectorAll('.mpl-overlay').length === 5);
     const at = `@${width}px`;
 
     // several SVGs in one page: no id is defined twice
@@ -160,7 +175,7 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     await page.evaluate(([c, f]) => { const w = window as unknown as Record<string, unknown>; w['mplAttach'] = c; w['mplFormat'] = f; }, [config, format] as const);   // setContent keeps this window
     await page.setContent(html, { waitUntil: 'load' });
-    await page.waitForFunction(() => document.querySelectorAll('.mpl-overlay').length === 4);
+    await page.waitForFunction(() => document.querySelectorAll('.mpl-overlay').length === 5);
     return { page, errors };
   };
   const within = (t: Box, c: Box, m = 4): boolean => t.left >= c.left + m - 1 && t.right <= c.right - m + 1 && t.top >= c.top + m - 1 && t.bottom <= c.bottom - m + 1;
@@ -287,6 +302,64 @@ try {
     check(errors.length === 0, 'options: no page errors', errors.join('; '));
     await page.close();
   }
+  // ------------------------------------------------------------------ sync across panels
+  for (const width of [1280, 390]) {
+    const touch = width === 390, { page, errors } = await open(width, touch), at = `sync @${width}px${touch ? ' touch' : ''}`;
+    await (await page.$('#dash'))?.scrollIntoViewIfNeeded();
+    const pt = await pointAt(page, 'dash', 0, 2, 60);
+    if (touch) await page.touchscreen.tap(pt.x, pt.y); else await page.mouse.move(pt.x, pt.y);
+    await settle(page);
+    const t = await tipText(page), dated = await dataX(page, 'dash', 0, (await page.evaluate(([x, y]) => new DOMPoint(Number(x), Number(y)).matrixTransform(document.querySelector<SVGSVGElement>('#dash')?.getScreenCTM()?.inverse() ?? new DOMMatrix()).x, [pt.x, pt.y] as const)));
+    check(t.startsWith('p99 '), `${at} the hovered panel has the tooltip`, t);
+    for (const [k, name, dots] of [[1, 'budget', 1], [2, 'throughput', 1], [4, 'cpu', 1]] as const) {
+      const s = await synced(page, 'dash', k), x = await dataX(page, 'dash', k, s.x);
+      check(s.line && s.dots === dots && Math.abs(x - dated) < 1e-6, `${at} ${name}: crosshair at the same x, a dot per series`, JSON.stringify(s));
+    }
+    const twin = await synced(page, 'dash', 6);
+    check(twin.dots === 1, `${at} the twin's series gets its dot too`, JSON.stringify(twin));
+    for (const [k, name] of [[3, 'histogram'], [5, 'categorical bars']] as const) {
+      const s = await synced(page, 'dash', k);
+      check(!s.line && s.dots === 0, `${at} ${name} stays out of sync`, JSON.stringify(s));
+    }
+    const own = await synced(page, 'dash', 0);
+    check(!own.line && own.dots === 2, `${at} the hovered panel: no second line, a dot on its other series`, JSON.stringify(own));
+    check(await page.evaluate(() => document.querySelectorAll('.mpl-tip:not([hidden])').length === 1 && document.querySelectorAll('#dash .mpl-cross line[y1]').length >= 2), `${at} one tooltip`);
+    check(await page.evaluate(() => Array.from(document.querySelectorAll('#dash [data-mpl-axes]')).filter((g) => g.getAttribute('data-mpl-axes') !== '0').every((g) => g.querySelectorAll('.mpl-dim').length === 0)), `${at} other panels not dimmed`);
+    if (touch) {
+      await page.waitForTimeout(200);
+      check((await synced(page, 'dash', 1)).line, `${at} a tapped value's crosshairs stay`);
+      const h1 = await rectOf(page, 'h1');
+      await page.touchscreen.tap(h1.left + 20, h1.top + h1.height / 2);
+      await settle(page);
+      check(!(await synced(page, 'dash', 1)).line, `${at} and go with it`);
+    } else {
+      await page.mouse.move(2, 2);
+      await settle(page);
+      check(!(await synced(page, 'dash', 1)).line, `${at} leaving clears the other panels`);
+    }
+    check(errors.length === 0, `${at} no page errors`, errors.join('; '));
+    await page.close();
+  }
+  // opt out; and a name links separate figures (with idPrefix)
+  {
+    const { page } = await open(1280, false, { sync: false });
+    await (await page.$('#dash'))?.scrollIntoViewIfNeeded();
+    await hover(page, 'dash', 0, 2, 60);
+    check(!(await synced(page, 'dash', 1)).line, 'sync: false turns it off');
+    await page.close();
+  }
+  {
+    const client = html.slice(html.indexOf('<script type="module">') + 22, html.lastIndexOf('</script>'));
+    const page = await (await browser.newContext({ viewport: { width: 1000, height: 800 } })).newPage();
+    await page.evaluate(() => { (window as unknown as Record<string, unknown>)['mplAttach'] = { sync: 'ops' }; });
+    await page.setContent(`<!doctype html><style>svg{display:block;width:900px;height:auto}</style>${two('one')}${two('two')}<script type="module">${client}</script>`, { waitUntil: 'load' });
+    await page.waitForFunction(() => document.querySelectorAll('.mpl-overlay').length === 2);
+    await hover(page, 'one', 0, 2, 60);
+    const a = await synced(page, 'two', 0), b = await synced(page, 'two', 3);
+    check(a.line && a.dots === 3 && !b.line, "sync: 'ops' links two figures by the same rule, across idPrefixes", JSON.stringify([a, b]));
+    await page.close();
+  }
+
   // attach(root, format) still takes a bare formatter, whose text is used as is
   {
     const { page } = await open(1280, false, {}, true);
