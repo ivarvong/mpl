@@ -136,7 +136,7 @@ case("api_gantt_waterfall",
      ("spine", ["top", "set_visible", False]), ("spine", ["right", "set_visible", False]),
      ("fig.tight_layout", []))
 
-# examples/gantt.ts, call for call (docs/images/gantt.png)
+# examples/gantt.ts, call for call (no longer shown in the docs; examples/trace.ts is)
 TRACE = [("GET /api/checkout", 0, 120, "C0"), ("├─ auth.verify", 2, 14, "C1"), ("├─ db.query orders", 15, 55, "C2"),
          ("└─ pool.acquire", 15, 19, "C2"), ("├─ inventory.reserve", 56, 92, "C4"), ("└─ render.json", 93, 118, "C1")]
 case("example_gantt_trace", ("$rc", [], {"axes.axisbelow": True}),
@@ -563,6 +563,22 @@ styled("pro-mono", "theme_pro_mono_tight_untitled",
        ("$subplots", [1, 3], {"figsize": [9, 2.8], "sharey": True}),
        ("sca", [2]), ("plot", [TX, [round(0.3 + (i % 7) * 0.2, 3) for i in TX]]),
        ("fig.tight_layout", []))
+
+# examples/trace.ts, call for call: the README's side-by-side (docs/images/readme/trace-*.png), at 200 dpi
+WATERFALL = [("GET /api/checkout", 0, 120, "C0"), ("auth.verify", 2, 14, "C1"), ("db.query orders", 15, 55, "C2"),
+             ("pool.acquire", 15, 19, "C2"), ("inventory.reserve", 56, 92, "C4"), ("render.json", 93, 118, "C3")]
+for st in ["pro-slate", "pro-dark"]:
+    styled(st, f"example_trace_{st.replace('-', '_')}",
+           ("$rc", [], {"figure.figsize": [6.4, 3.8], "figure.dpi": 200}),
+           ("barh", [list(range(len(WATERFALL))), [e - s for _, s, e, _ in WATERFALL]],
+            {"left": [s for _, s, _, _ in WATERFALL], "color": [c for *_, c in WATERFALL], "height": 0.38}),
+           *[("text", [e if s > 80 else s, i - 0.27, f"{n}  {e - s} ms"],
+              {"ha": "right" if s > 80 else "left", "va": "bottom", "fontsize": 8.5, "fontweight": "semibold" if i == 0 else "normal"})
+             for i, (n, s, e, _) in enumerate(WATERFALL)],
+           ("set_yticks", [[]]), ("set_ylim", [len(WATERFALL) - 0.5, -0.85]), ("set_xlim", [0, 122]),
+           ("grid", [False], {"axis": "y"}), ("grid", [True], {"axis": "x"}),
+           ("set_xlabel", ["ms since request start"]), ("set_title", ["Checkout request trace"]),
+           ("fig.tight_layout", []))
 
 
 # A dense time series, modelled on the archival-tag chart in the markstream + mpl blog: three channels (light, temperature,

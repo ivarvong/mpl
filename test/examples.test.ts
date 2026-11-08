@@ -13,13 +13,20 @@ execFileSync(process.execPath, ['examples/themes/dashboard.ts'], { cwd: ROOT, st
 let bad = 0;
 // docs/images/*.png are shown in the README and docs exactly as the examples write them (fig.toPNGSync()); PNG, not SVG,
 // because GitHub renders an SVG's <text> in whatever fonts the viewer has, not DejaVu Sans
-for (const name of ['quickstart', 'twinx_theme', 'scatter_cmap', 'gantt', 'small_multiples', 'histogram_errorbar']) {
+for (const name of ['quickstart', 'twinx_theme', 'scatter_cmap', 'small_multiples', 'histogram_errorbar']) {
   const made = readFileSync(new URL(`examples/out/${name}.png`, ROOT)), shown = readFileSync(new URL(`docs/images/${name}.png`, ROOT));
   if (!made.equals(shown)) { bad++; console.log(`docs/images/${name}.png differs from examples/${name}.ts output; refresh it`); }
 }
-// the README's proof: examples/gantt.ts and matplotlib's own render of the same calls are the same pixels
-const gantt = compare(readPNG(readFileSync(new URL('fixtures/ref/example_gantt_trace.png', ROOT))), readPNG(readFileSync(new URL('examples/out/gantt.png', ROOT))));
-if (gantt.diff > 0) { bad++; console.log(`examples/gantt.ts: ${gantt.diff} px differ from fixtures/ref/example_gantt_trace.png (the README's side-by-side)`); }
+// the README's proof: examples/trace.ts and matplotlib's own render of the same calls (the oracle case) are the same
+// pixels, at the 200 dpi the README shows; the README's mpljs images are the example's output
+for (const style of ['pro-slate', 'pro-dark']) {
+  const made = readFileSync(new URL(`examples/out/trace-${style}.png`, ROOT));
+  const px = compare(readPNG(readFileSync(new URL(`fixtures/ref/example_trace_${style.replace('-', '_')}.png`, ROOT))), readPNG(made));
+  if (px.diff > 0) { bad++; console.log(`examples/trace.ts ${style}: ${px.diff} px differ from matplotlib's render (the README's side-by-side)`); }
+  if (!made.equals(readFileSync(new URL(`docs/images/readme/trace-${style}.png`, ROOT)))) {
+    bad++; console.log(`docs/images/readme/trace-${style}.png differs from examples/trace.ts output; refresh it`);
+  }
+}
 // the README hero, scripts/readme_images.ts
 for (const [name, png] of readmeImages()) {
   if (!Buffer.from(png).equals(readFileSync(new URL(`docs/images/readme/${name}`, ROOT)))) {
