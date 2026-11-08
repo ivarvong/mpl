@@ -686,243 +686,254 @@ function alongMatch(iv: Intervals, px: Uint8Array, W: number, pb: number, xb: nu
   return l;
 }
 
-/**
- * Canvas-aware LZ77 → dynamic-Huffman zlib as pull-driven IDAT payloads.
- * Each pull after the header yields at most one IDAT whose zlib payload is ≤ PNG_IDAT_PAYLOAD_MAX.
- * Token scratch stays 2·TOK_BLOCK; bit writer is compacted after every IDAT.
- */
-type ZlibEnc = {
-  pullIdat(): Option<Uint8Array>;  // framed IDAT chunk; none when finished
-  retainedHigh(): number;
-};
+// No closures: one encode's state lives in a ZlibEnc and every step is a module-level function, so V8 keeps one
+// feedback vector and one optimized code object per function across encodes. Closures made per encode each had
+// their own feedback (zlibEncoder was not hot enough to share it), and optimized code that embedded the previous
+// encode's closures deopted with "wrong call target": a cold isolate paid 2–4 slow encodes before it tiered up.
+// The token loop keeps its cursor and token block in locals (cheapest in the baseline tier) and writes them back
+// before it returns or calls out.
+const PH_ROWS = 0, PH_FLUSH = 1, PH_ADLER = 2, PH_DONE = 3;
+const FK_HOLD = 0, FK_TAIL = 1, FK_EMPTY = 2;
+
+class ZlibEnc {
+  readonly W: number; readonly H: number; readonly px: Uint8Array; readonly RB: number; readonly S: number;
+  readonly nb: number; readonly mix: Uint8Array; readonly u: Int32Array; readonly blk: Int32Array;
+  readonly upOk: boolean; readonly epoch: number;
+  /** The block being filled, and a full block held back so BFINAL lands on the right one. */
+  tok: Int32Array = TOK_A; nTok = 0; held: Int32Array = TOK_B; hasHeld = false;
+  y = 0; xb = 0; rowStarted = false;
+  /** Adler-32 halves. */
+  a = 1; b = 0;
+  phase = PH_ROWS; flushKind = FK_HOLD; high = 0;
+  constructor(c: Canvas, epoch: number) {
+    this.W = c.w; this.H = c.h; this.px = c.px; this.RB = c.w * 4; this.S = this.RB + 1;
+    this.nb = c.nb; this.mix = c.mix; this.u = c.i32; this.blk = c.blkI32;
+    this.upOk = this.S <= 32768; this.epoch = epoch;
+  }
+  retainedHigh(): number { return Math.max(this.high, BITS.retainedHigh); }
+}
 
 function zlibEncoder(c: Canvas): ZlibEnc {
-  const W = c.w, H = c.h, px = c.px, RB = W * 4, S = RB + 1, nb = c.nb, mix = c.mix;
-  const u = c.i32, blk = c.blkI32;
-  const head = TOK_HEAD, prev = TOK_PREV, age = TOK_AGE;
   let epoch = TOK_EPOCH + 1;
-  if (epoch > 0x7fffffff) { age.fill(0); epoch = 1; }
+  if (epoch > 0x7fffffff) { TOK_AGE.fill(0); epoch = 1; }
   TOK_EPOCH = epoch;
-  let tok = TOK_A, nTok = 0;
-  const hold: { cur: Option<Int32Array> } = { cur: none };
-  const L = TOK_L, U = TOK_U; L.ensure(W); U.ensure(W);
+  TOK_L.ensure(c.w); TOK_U.ensure(c.w);
   const bw = BITS; bw.reset();
   bw.put(0x78, 8); bw.put(0x9c, 8);
+  return new ZlibEnc(c, epoch);
+}
 
-  let y = 0, xb = 0, rowStarted = false;
-  let a = 1, b = 0, pending = 0;
-  let phase: 'rows' | 'flush' | 'adler' | 'done' = 'rows';
-  let flushKind: 'hold' | 'tail' | 'empty' = 'hold';
-  const upOk = S <= 32768;
-  let high = 0;
+/** Called when e.tok is full: Huffman-codes the held block if there is one (true: take an IDAT), holds this one. */
+function rotateTok(e: ZlibEnc): boolean {
+  const full = e.tok;
+  let coded = false;
+  if (e.hasHeld) { writeBlock(BITS, e.held, 0, TOK_BLOCK, false); coded = true; }
+  e.held = full; e.hasHeld = true;
+  e.tok = full === TOK_A ? TOK_B : TOK_A; e.nTok = 0;
+  return coded;
+}
 
-  const emitFull = (buf: Int32Array, last: boolean): void => { writeBlock(bw, buf, 0, TOK_BLOCK, last); };
-  const push = (v: number): boolean => {
-    // returns true if a full held block was Huffman-coded (caller should takeBytes)
-    tok[nTok++] = v;
-    if (nTok === TOK_BLOCK) {
-      if (hold.cur.kind === 'some') {
-        emitFull(hold.cur.value, false);
-        hold.cur = some(tok);
-        tok = tok === TOK_A ? TOK_B : TOK_A;
-        nTok = 0;
-        return true;
+/** Row y's left and up intervals, and its bytes added to the Adler-32 halves. */
+function startRow(e: ZlibEnc, y: number): void {
+  const W = e.W, nb = e.nb, mix = e.mix, blk = e.blk, u = e.u, px = e.px;
+  const row = y * W, brow = y * nb;
+  const L = TOK_L, U = TOK_U, le = L.e, ue = U.e;
+  let ln = 0, lo = -1, un = 0, uo = -1, last = u[row];
+  for (let j = 0; j < nb; j++) {
+    const bs = j << BLOCK_SHIFT, be = Math.min(bs + BLOCK, W), bi = brow + j;
+    if (mix[bi] === 0) {
+      const col = blk[bi];
+      if (bs > 0 && col === last) { if (lo < 0) lo = bs; }
+      else { if (lo >= 0) { le[ln++] = lo; le[ln++] = bs; } lo = be - bs > 1 ? bs + 1 : -1; }
+      last = col;
+    } else {
+      for (let x = bs; x < be; x++) {
+        const v = u[row + x];
+        if (x > 0 && v === last) { if (lo < 0) lo = x; }
+        else if (lo >= 0) { le[ln++] = lo; le[ln++] = x; lo = -1; }
+        last = v;
       }
-      hold.cur = some(tok);
-      tok = tok === TOK_A ? TOK_B : TOK_A;
-      nTok = 0;
     }
-    return false;
-  };
-
-  const startRow = (): boolean => {
-    const row = y * W, brow = y * nb;
-    const le = L.e, ue = U.e;
-    let ln = 0, lo = -1, un = 0, uo = -1, last = u[row];
-    for (let j = 0; j < nb; j++) {
-      const bs = j << BLOCK_SHIFT, be = Math.min(bs + BLOCK, W), bi = brow + j;
-      if (mix[bi] === 0) {
-        const col = blk[bi];
-        if (bs > 0 && col === last) { if (lo < 0) lo = bs; }
-        else { if (lo >= 0) { le[ln++] = lo; le[ln++] = bs; } lo = be - bs > 1 ? bs + 1 : -1; }
-        last = col;
+    if (y > 0) {
+      if (mix[bi] === 0 && mix[bi - nb] === 0) {
+        if (blk[bi] === blk[bi - nb]) { if (uo < 0) uo = bs; }
+        else if (uo >= 0) { ue[un++] = uo; ue[un++] = bs; uo = -1; }
       } else {
         for (let x = bs; x < be; x++) {
-          const v = u[row + x];
-          if (x > 0 && v === last) { if (lo < 0) lo = x; }
-          else if (lo >= 0) { le[ln++] = lo; le[ln++] = x; lo = -1; }
-          last = v;
-        }
-      }
-      if (y > 0) {
-        if (mix[bi] === 0 && mix[bi - nb] === 0) {
-          if (blk[bi] === blk[bi - nb]) { if (uo < 0) uo = bs; }
-          else if (uo >= 0) { ue[un++] = uo; ue[un++] = bs; uo = -1; }
-        } else {
-          for (let x = bs; x < be; x++) {
-            if (u[row + x] === u[row + x - W]) { if (uo < 0) uo = x; }
-            else if (uo >= 0) { ue[un++] = uo; ue[un++] = x; uo = -1; }
-          }
+          if (u[row + x] === u[row + x - W]) { if (uo < 0) uo = x; }
+          else if (uo >= 0) { ue[un++] = uo; ue[un++] = x; uo = -1; }
         }
       }
     }
-    if (lo >= 0) { le[ln++] = lo; le[ln++] = W; }
-    if (uo >= 0) { ue[un++] = uo; ue[un++] = W; }
-    L.n = ln; L.k = 0; U.n = un; U.k = 0;
-    a = modA(a); b = modA(b + a); pending = 0;
-    for (let k = 0, x = 0; x < W;) {
-      const s0 = k < L.n ? L.e[k] - 1 : W;
-      const end = x < s0 ? s0 : L.e[k + 1];
-      const len = x < s0 ? 1 : end - x;
-      const q = (row + x) * 4, x0 = px[q], x1 = px[q + 1], x2 = px[q + 2], x3 = px[q + 3];
-      const sum = x0 + x1 + x2 + x3, tsum = 4 * x0 + 3 * x1 + 2 * x2 + x3;
-      if (len === 1) {
-        b += 4 * a + tsum; a += sum;
-        if (++pending === ADLER_SINGLES) { a = modA(a); b = modA(b); pending = 0; }
-        x++;
-      } else {
-        b = modA(b + 4 * a * len + len * tsum + 2 * sum * len * (len - 1));
-        a = modA(a + len * sum);
-        pending = 0; x = end; k += 2;
-      }
+  }
+  if (lo >= 0) { le[ln++] = lo; le[ln++] = W; }
+  if (uo >= 0) { ue[un++] = uo; ue[un++] = W; }
+  L.n = ln; L.k = 0; U.n = un; U.k = 0;
+  let a = modA(e.a), b = modA(e.b + a), pending = 0;
+  for (let k = 0, x = 0; x < W;) {
+    const s0 = k < ln ? le[k] - 1 : W;
+    const end = x < s0 ? s0 : le[k + 1];
+    const len = x < s0 ? 1 : end - x;
+    const q = (row + x) * 4, x0 = px[q], x1 = px[q + 1], x2 = px[q + 2], x3 = px[q + 3];
+    const sum = x0 + x1 + x2 + x3, tsum = 4 * x0 + 3 * x1 + 2 * x2 + x3;
+    if (len === 1) {
+      b += 4 * a + tsum; a += sum;
+      if (++pending === ADLER_SINGLES) { a = modA(a); b = modA(b); pending = 0; }
+      x++;
+    } else {
+      b = modA(b + 4 * a * len + len * tsum + 2 * sum * len * (len - 1));
+      a = modA(a + len * sum);
+      pending = 0; x = end; k += 2;
     }
-    const coded = push(0);
-    xb = 0;
-    rowStarted = true;
-    return coded;
-  };
+  }
+  e.a = a; e.b = b;
+}
 
-  const take = (): Uint8Array => {
-    // Single allocation: IDAT frame built from Bits buf (no intermediate payload copy).
-    const out = bw.takeIdatChunk();
-    if (bw.retainedHigh > high) high = bw.retainedHigh;
-    // retained encoded bytes ≤ zlib payload (= chunk length − 12)
-    if (out.length - 12 > high) high = out.length - 12;
-    return out;
-  };
-
-  const pullIdat = (): Option<Uint8Array> => {
-    for (;;) {
-      if (phase === 'done') return none;
-      if (phase === 'adler') {
-        a = modA(a); b = modA(b);
-        const adler = ((b << 16) | a) >>> 0;
-        const tail = bw.flush(); // complete bytes; writer empty
-        // One IDAT: zlib tail ‖ Adler-32 (single alloc, no double copy via chunk()).
-        const n = tail.length + 4;
-        const out = new Uint8Array(12 + n);
-        out[0] = (n >>> 24) & 255; out[1] = (n >>> 16) & 255; out[2] = (n >>> 8) & 255; out[3] = n & 255;
-        out[4] = 73; out[5] = 68; out[6] = 65; out[7] = 84;
-        out.set(tail, 8);
-        out[8 + tail.length] = (adler >>> 24) & 255;
-        out[9 + tail.length] = (adler >>> 16) & 255;
-        out[10 + tail.length] = (adler >>> 8) & 255;
-        out[11 + tail.length] = adler & 255;
-        const crc = crc32([out.subarray(4, 8 + n)]);
-        out[8 + n] = (crc >>> 24) & 255; out[9 + n] = (crc >>> 16) & 255;
-        out[10 + n] = (crc >>> 8) & 255; out[11 + n] = crc & 255;
-        if (n > high) high = n;
-        phase = 'done';
-        return some(out);
-      }
-      if (phase === 'flush') {
-        if (flushKind === 'hold' && hold.cur.kind === 'some' && nTok > 0) {
-          emitFull(hold.cur.value, false); hold.cur = none;
-          flushKind = 'tail';
-          return some(take());
-        }
-        if (flushKind === 'hold' && hold.cur.kind === 'some') {
-          emitFull(hold.cur.value, true); hold.cur = none;
-          phase = 'adler';
-          return some(take());
-        }
-        if (flushKind === 'tail' || nTok > 0) {
-          writeBlock(bw, tok, 0, nTok, true); nTok = 0;
-          phase = 'adler';
-          return some(take());
-        }
-        bw.put(1, 1); bw.put(1, 2); bw.put(0, 7);
-        phase = 'adler';
-        return some(take());
-      }
-      // phase === 'rows'
-      if (y >= H) {
-        phase = 'flush';
-        flushKind = hold.cur.kind === 'some' || nTok > 0 ? 'hold' : 'empty';
-        continue;
-      }
-      if (!rowStarted) {
-        if (startRow()) return some(take());
-      }
-      const row = y * W, rowB = row * 4;
-      while (xb < RB) {
-        const pb = rowB + xb, max = Math.min(258, RB - xb);
-        let best = 0, dist = 0;
-        if (max >= 3) {
-          if (xb >= 4) { best = alongMatch(L, px, W, pb, xb, 4, max); dist = 4; }
-          if (y > 0 && upOk && best < max) { const l = alongMatch(U, px, W, pb, xb, RB, max); if (l > best) { best = l; dist = S; } }
-          if (best < 32 && (xb & 3) === 0) {
-            const p = pb >> 2;
-            const hh = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
-            let j = age[hh] === epoch ? head[hh] : -1, chain = CHAIN;
-            while (j >= 0 && chain-- > 0 && p - j <= RM) {
-              const qy = (j / W) | 0, qxb = (j - qy * W) * 4, bd = (y - qy) * S + xb - qxb;
-              if (bd > 32768) break;
-              const mlen = Math.min(max, RB - qxb);
-              if (best < mlen && px[j * 4 + best] === px[pb + best]) {
-                const l = runBytes(px, u, pb, j * 4, mlen);
-                if (l > best) { best = l; dist = bd; }
-              }
-              const pj = prev[j & RM];
-              if (pj >= j) break;
-              j = pj;
+/** LZ77 over the rows from (e.y, e.xb). true: a Huffman block was coded (take an IDAT); false: past the last row. */
+function encodeRows(e: ZlibEnc): boolean {
+  const W = e.W, H = e.H, px = e.px, u = e.u, RB = e.RB, S = e.S, upOk = e.upOk, epoch = e.epoch;
+  const head = TOK_HEAD, prev = TOK_PREV, age = TOK_AGE, L = TOK_L, U = TOK_U;
+  let y = e.y, xb = e.xb, rowStarted = e.rowStarted, tok = e.tok, nTok = e.nTok;
+  let coded = false;
+  for (; y < H; y++, rowStarted = false) {
+    if (!rowStarted) {
+      startRow(e, y);
+      rowStarted = true; xb = 0;
+      tok[nTok++] = 0;
+      if (nTok === TOK_BLOCK) { e.tok = tok; coded = rotateTok(e); tok = e.tok; nTok = 0; if (coded) break; }
+    }
+    const rowB = y * RB;
+    while (xb < RB) {
+      const pb = rowB + xb, max = Math.min(258, RB - xb);
+      let best = 0, dist = 0;
+      if (max >= 3) {
+        if (xb >= 4) { best = alongMatch(L, px, W, pb, xb, 4, max); dist = 4; }
+        if (y > 0 && upOk && best < max) { const l = alongMatch(U, px, W, pb, xb, RB, max); if (l > best) { best = l; dist = S; } }
+        if (best < 32 && (xb & 3) === 0) {
+          const p = pb >> 2;
+          const hh = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
+          let j = age[hh] === epoch ? head[hh] : -1, chain = CHAIN;
+          while (j >= 0 && chain-- > 0 && p - j <= RM) {
+            const qy = (j / W) | 0, qxb = (j - qy * W) * 4, bd = (y - qy) * S + xb - qxb;
+            if (bd > 32768) break;
+            const mlen = Math.min(max, RB - qxb);
+            if (best < mlen && px[j * 4 + best] === px[pb + best]) {
+              const l = runBytes(px, u, pb, j * 4, mlen);
+              if (l > best) { best = l; dist = bd; }
             }
+            const pj = prev[j & RM];
+            if (pj >= j) break;
+            j = pj;
           }
         }
-        let coded = false;
-        if (best >= 3) {
-          if (dist === 4 && best === 258 && (xb & 3) === 0) {
-            for (;;) {
-              coded = push(256 + ((258 << 16) | 4)) || coded;
-              const p1 = (rowB + xb + 258) >> 2;
-              for (let p = p1 - 2; p < p1; p++) {
-                const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
-                prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
-              }
-              xb += 258;
-              if (xb + 258 > RB) break;
-              const more = L.from(xb >> 2);
-              if (more < 64) break;
-              if (more < 65) break;
-              if (coded) break;
-            }
-          } else {
-            coded = push(256 + ((best << 16) | dist));
-            const p0 = (rowB + ((xb + 3) & ~3)) >> 2, p1 = (pb + best) >> 2;
-            for (let p = best <= 32 ? p0 : Math.max(p0, p1 - 2); p < p1; p++) {
+      }
+      if (best >= 3) {
+        if (dist === 4 && best === 258 && (xb & 3) === 0) {
+          for (;;) {
+            tok[nTok++] = 256 + ((258 << 16) | 4);
+            if (nTok === TOK_BLOCK) { e.tok = tok; coded = rotateTok(e) || coded; tok = e.tok; nTok = 0; }
+            const p1 = (rowB + xb + 258) >> 2;
+            for (let p = p1 - 2; p < p1; p++) {
               const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
               prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
             }
-            xb += best;
+            xb += 258;
+            if (xb + 258 > RB) break;
+            if (L.from(xb >> 2) < 65) break;
+            if (coded) break;
           }
         } else {
-          coded = push(px[pb]);
-          if ((xb & 3) === 0) {
-            const p = pb >> 2, h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
+          tok[nTok++] = 256 + ((best << 16) | dist);
+          if (nTok === TOK_BLOCK) { e.tok = tok; coded = rotateTok(e); tok = e.tok; nTok = 0; }
+          const p0 = (rowB + ((xb + 3) & ~3)) >> 2, p1 = (pb + best) >> 2;
+          for (let p = best <= 32 ? p0 : Math.max(p0, p1 - 2); p < p1; p++) {
+            const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
             prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
           }
-          xb++;
+          xb += best;
         }
-        if (coded) return some(take());
+      } else {
+        tok[nTok++] = px[pb];
+        if (nTok === TOK_BLOCK) { e.tok = tok; coded = rotateTok(e); tok = e.tok; nTok = 0; }
+        if ((xb & 3) === 0) {
+          const p = pb >> 2, h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
+          prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
+        }
+        xb++;
       }
-      y++; rowStarted = false;
+      if (coded) break;
     }
-  };
+    if (coded) break;
+  }
+  e.y = y; e.xb = xb; e.rowStarted = rowStarted; e.tok = tok; e.nTok = nTok;
+  return coded;
+}
 
-  return {
-    retainedHigh: (): number => Math.max(high, bw.retainedHigh),
-    pullIdat,
-  };
+/** The coded bytes as one IDAT chunk (single allocation, no intermediate payload copy). */
+function takeIdat(e: ZlibEnc): Uint8Array {
+  const out = BITS.takeIdatChunk();
+  if (BITS.retainedHigh > e.high) e.high = BITS.retainedHigh;
+  // retained encoded bytes ≤ zlib payload (= chunk length − 12)
+  if (out.length - 12 > e.high) e.high = out.length - 12;
+  return out;
+}
+
+/** The final IDAT: zlib tail ‖ Adler-32 (single allocation). */
+function adlerIdat(e: ZlibEnc): Uint8Array {
+  const a = modA(e.a), b = modA(e.b);
+  const adler = ((b << 16) | a) >>> 0;
+  const tail = BITS.flush(); // complete bytes; writer empty
+  const n = tail.length + 4;
+  const out = new Uint8Array(12 + n);
+  out[0] = (n >>> 24) & 255; out[1] = (n >>> 16) & 255; out[2] = (n >>> 8) & 255; out[3] = n & 255;
+  out[4] = 73; out[5] = 68; out[6] = 65; out[7] = 84;
+  out.set(tail, 8);
+  out[8 + tail.length] = (adler >>> 24) & 255;
+  out[9 + tail.length] = (adler >>> 16) & 255;
+  out[10 + tail.length] = (adler >>> 8) & 255;
+  out[11 + tail.length] = adler & 255;
+  const crc = crc32([out.subarray(4, 8 + n)]);
+  out[8 + n] = (crc >>> 24) & 255; out[9 + n] = (crc >>> 16) & 255;
+  out[10 + n] = (crc >>> 8) & 255; out[11 + n] = crc & 255;
+  if (n > e.high) e.high = n;
+  return out;
+}
+
+/**
+ * Canvas-aware LZ77 → dynamic-Huffman zlib as pull-driven IDAT payloads.
+ * Each pull after the header yields at most one IDAT whose zlib payload is ≤ PNG_IDAT_PAYLOAD_MAX
+ * (framed IDAT chunk; none when finished). Token scratch stays 2·TOK_BLOCK; the bit writer is compacted after every IDAT.
+ */
+function pullIdat(e: ZlibEnc): Option<Uint8Array> {
+  for (;;) {
+    switch (e.phase) {
+      case PH_DONE: return none;
+      case PH_ADLER: e.phase = PH_DONE; return some(adlerIdat(e));
+      case PH_FLUSH:
+        if (e.flushKind === FK_HOLD && e.hasHeld && e.nTok > 0) {
+          writeBlock(BITS, e.held, 0, TOK_BLOCK, false); e.hasHeld = false;
+          e.flushKind = FK_TAIL;
+          return some(takeIdat(e));
+        }
+        if (e.flushKind === FK_HOLD && e.hasHeld) {
+          writeBlock(BITS, e.held, 0, TOK_BLOCK, true); e.hasHeld = false;
+          e.phase = PH_ADLER;
+          return some(takeIdat(e));
+        }
+        if (e.flushKind === FK_TAIL || e.nTok > 0) {
+          writeBlock(BITS, e.tok, 0, e.nTok, true); e.nTok = 0;
+          e.phase = PH_ADLER;
+          return some(takeIdat(e));
+        }
+        BITS.put(1, 1); BITS.put(1, 2); BITS.put(0, 7);
+        e.phase = PH_ADLER;
+        return some(takeIdat(e));
+      default:
+        if (encodeRows(e)) return some(takeIdat(e));
+        e.phase = PH_FLUSH;
+        e.flushKind = e.hasHeld || e.nTok > 0 ? FK_HOLD : FK_EMPTY;
+    }
+  }
 }
 
 
@@ -942,7 +953,7 @@ export function encodePNGSync(c: Canvas, opts: PngSyncOptions = RGBA): Uint8Arra
     let zBytes = 0, nPull = 0;
     for (;;) {
       const p = tracer.span('png.idat', { i: nPull }, (isp) => {
-        const r = enc.pullIdat();
+        const r = pullIdat(enc);
         if (r.kind === 'some') isp.setAttribute('zBytes', r.value.length - 12).setAttribute('retained', enc.retainedHigh());
         return r;
       });
@@ -986,7 +997,7 @@ export function pngStreamSync(c: Canvas, opts: PngSyncOptions = RGBA): ReadableS
           return tracer.span('png.stream.idat', { i: nIdat }, (sp) => {
             if (enc.kind !== 'some') throw new Error('pngStreamSync: encoder missing');
             const z = enc.value;
-            const p = z.pullIdat();
+            const p = pullIdat(z);
             if (p.kind === 'some') {
               sp.setAttribute('zBytes', p.value.length - 12).setAttribute('retained', z.retainedHigh());
               nIdat++;
