@@ -133,17 +133,43 @@ function legendEntries(ax: AxesSpec, drawn: readonly Drawn[]): readonly Sourced[
   return [...children, ...containers];
 }
 
+type Side = 'left' | 'right' | 'top' | 'bottom';
+/**
+ * Where a spine's line is (Spine.get_spine_transform): x px for left/right; for bottom/top the y px down, flipped with
+ * the text height H (`at`, for tick labels) and with the geometry height Hg (`atG`, for the line and tick marks).
+ * 'outward' offsets the axes edge (y down arithmetic, as before); 'axes' is transAxes (w·a + x0, h·a + b); 'data' is
+ * transData, where the right/top spine's path sits at 1 and the transform translates by amount − 1.
+ */
+function spineAt(ax: AxesSpec, side: Side, f: Frame, k: number): { readonly at: number; readonly atG: number; readonly up: Option<number> } {
+  const b = f.box, p = ax.spines[side].position;
+  const vertical = side === 'left' || side === 'right';
+  const fromUp = (up: number): { readonly at: number; readonly atG: number; readonly up: Option<number> } => ({ at: f.H - up, atG: f.Hg - up, up: some(up) });
+  if (p.kind === 'none' || p.value.kind === 'outward') {
+    const off = p.kind === 'some' && p.value.kind === 'outward' ? p.value.pts * k : 0;
+    switch (side) {
+      case 'left': return { at: b.x0 - off, atG: b.x0 - off, up: none };
+      case 'right': return { at: b.x1 + off, atG: b.x1 + off, up: none };
+      case 'bottom': return { at: b.yBot + off, atG: b.yBotG + off, up: none };
+      case 'top': return { at: b.yTop - off, atG: b.yTopG - off, up: none };
+      default: return assertNever(side);
+    }
+  }
+  const pos = p.value;
+  if (pos.kind === 'axes') {
+    if (vertical) { const x = b.w * pos.at + b.x0; return { at: x, atG: x, up: none }; }
+    return fromUp(b.h * pos.at + b.b);
+  }
+  const v = side === 'right' || side === 'top' ? 1 + (pos.at - 1) : pos.at;
+  if (vertical) { const x = forward(f.xscale, v) * f.ax + f.cx; return { at: x, atG: x, up: none }; }
+  return fromUp(forward(f.yscale, v) * f.ay + f.cy);
+}
+
 function spinesForAxes(ax: AxesSpec, theme: Theme, f: Frame, k: number): readonly Node[] {
   const baseW = theme.axes.linewidthPt * k, b = f.box;
   const snap = (v: number, w: number): number => snapIf(f.snap, v, w);
   const sides: Array<{ side: 'left' | 'right' | 'top' | 'bottom'; x0: number; y0: number; x1: number; y1: number }> = [];
   const ov = ax.spines;
-  const has = theme.axes.spines;
-  const sideOn = (side: 'left' | 'right' | 'top' | 'bottom'): boolean => (has[side] && ov[side].visible);
-  const outwardPx = (side: 'left' | 'right' | 'top' | 'bottom'): number => {
-    const p = ov[side].position;
-    return p.kind === 'some' && p.value.kind === 'outward' ? p.value.pts * k : 0;
-  };
+  const sideOn = (side: 'left' | 'right' | 'top' | 'bottom'): boolean => ov[side].visible;
   const wOf = (side: 'left' | 'right' | 'top' | 'bottom'): number => {
     const wPt = ov[side].widthPt.kind === 'some' ? ov[side].widthPt.value : theme.axes.linewidthPt;
     return wPt * k;
@@ -151,23 +177,23 @@ function spinesForAxes(ax: AxesSpec, theme: Theme, f: Frame, k: number): readonl
   const colorOf = (side: 'left' | 'right' | 'top' | 'bottom'): Rgb => (ov[side].color.kind === 'some' ? ov[side].color.value : theme.axes.edge);
   // Compute snapped positions per side, with optional outward offsets
   if (sideOn('left')) {
-    const w = wOf('left'); const off = outwardPx('left');
-    const x = snap(b.x0 - off, w), y0 = snap(b.yBotG, w), y1 = snap(b.yTopG, w);
+    const w = wOf('left');
+    const x = snap(spineAt(ax, 'left', f, k).atG, w), y0 = snap(b.yBotG, w), y1 = snap(b.yTopG, w);
     sides.push({ side: 'left', x0: x, y0, x1: x, y1 });
   }
   if (sideOn('right')) {
-    const w = wOf('right'); const off = outwardPx('right');
-    const x = snap(b.x1 + off, w), y0 = snap(b.yBotG, w), y1 = snap(b.yTopG, w);
+    const w = wOf('right');
+    const x = snap(spineAt(ax, 'right', f, k).atG, w), y0 = snap(b.yBotG, w), y1 = snap(b.yTopG, w);
     sides.push({ side: 'right', x0: x, y0, x1: x, y1 });
   }
   if (sideOn('bottom')) {
-    const w = wOf('bottom'); const off = outwardPx('bottom');
-    const y = snap(b.yBotG + off, w), x0 = snap(b.x0, w), x1 = snap(b.x1, w);
+    const w = wOf('bottom');
+    const y = snap(spineAt(ax, 'bottom', f, k).atG, w), x0 = snap(b.x0, w), x1 = snap(b.x1, w);
     sides.push({ side: 'bottom', x0, y0: y, x1, y1: y });
   }
   if (sideOn('top')) {
-    const w = wOf('top'); const off = outwardPx('top');
-    const y = snap(b.yTopG - off, w), x0 = snap(b.x0, w), x1 = snap(b.x1, w);
+    const w = wOf('top');
+    const y = snap(spineAt(ax, 'top', f, k).atG, w), x0 = snap(b.x0, w), x1 = snap(b.x1, w);
     sides.push({ side: 'top', x0, y0: y, x1, y1: y });
   }
   const nodes: Node[] = [];
@@ -189,7 +215,8 @@ type DecoBoxes = {
   /** display y-up bottoms of the x offset text and xlabel (as `x`), and the title's top, in matplotlib's arithmetic */
   readonly xUp: readonly UpEdges[]; readonly titleUp: Option<UpEdges>;
 };
-type Decorated = { readonly nodes: readonly Node[]; readonly boxes: DecoBoxes };
+/** x and y: each Axis' offset text and label, drawn with that Axis (its zorder, after its ticks); title: the Axes title (zorder 3). */
+type Decorated = { readonly x: readonly Node[]; readonly y: readonly Node[]; readonly title: readonly Node[]; readonly boxes: DecoBoxes };
 /** for_layout_only: an x label keeps 1 px of its width, a y label 1 px of its height (centred) */
 const collapseX = (b: PxBox): PxBox => (b.x1 > b.x0 ? { ...b, x0: (b.x0 + b.x1) / 2 - 0.5, x1: (b.x0 + b.x1) / 2 + 0.5 } : b);
 const collapseY = (b: PxBox): PxBox => (b.y1 > b.y0 ? { ...b, y0: (b.y0 + b.y1) / 2 - 0.5, y1: (b.y0 + b.y1) / 2 + 0.5 } : b);
@@ -209,8 +236,9 @@ function tightOf(parts: readonly TightPart[]): TightBox {
 }
 
 /** Offset texts, axis labels, title (Axis._update_label_position / _update_offset_text_position). */
-function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: number, dpi: number, xt: TickSet, yt: TickSet, xb: AxisOut, yb: AxisOut): Decorated {
-  const b = f.box, A = theme.axes, out: Node[] = [];
+function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: number, dpi: number, sp: { readonly xLeft: number; readonly xRight: number; readonly yBottom: number }, xt: TickSet, yt: TickSet, xb: AxisOut, yb: AxisOut): Decorated {
+  const b = f.box, A = theme.axes, xOut: Node[] = [], yOut: Node[] = [], titleOut: Node[] = [];
+  let out = xOut;
   const half = A.linewidthPt * k / 2;
   const put = (s: string, x: number, y: number, p: Placement, sizePt: number, color: Rgb, weight: number = theme.font.weight): Option<PxBox> => {
     if (s === '') return none;
@@ -223,9 +251,10 @@ function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: numb
   // the same text's bottom edge in display y-up: XAxis._update_{offset_text,label}_position anchor it at
   // union(tick labels, spine).y0 − pad·dpi/72, then Text.get_window_extent (va='top')
   const bottomUp = (s: string, x: number, padPt: number, ha: HAlign, sizePt: number, weight: number): UpEdges =>
-    edges(windowExtent(measure(s, sizePt, dpi, resolveFace(theme.font.families, weight), ha), x, Math.min(f.H - (b.yBot + half), ...xb.nearUp.map((e) => e.b)) - padPt * dpi / 72, ha, 'top'));
+    edges(windowExtent(measure(s, sizePt, dpi, resolveFace(theme.font.families, weight), ha), x, Math.min(f.H - (sp.yBottom + half), ...xb.nearUp.map((e) => e.b)) - padPt * dpi / 72, ha, 'top'));
   if (roles.x.kind === 'shown') {
-    let bottom = b.yBot + half;
+    // the bottom spine's extent (where set_position put it) joins the tick labels'
+    let bottom = sp.yBottom + half;
     for (const lb of xb.near) bottom = Math.max(bottom, lb.y1);
     if (!ax.hiddenLabels.x) {
       const o = optBox(put(xt.offset, b.x1, bottom + pad, { kind: 'horizontal', ha: 'right', va: 'top' }, theme.xtick.labelSizePt, theme.xtick.color));
@@ -236,13 +265,14 @@ function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: numb
     xBoxes.push(...l);
     if (l.length > 0) xUp.push(bottomUp(ax.xlabel, b.x0 + (b.x1 - b.x0) / 2, A.labelPadPt, 'center', A.labelSizePt, theme.font.labelWeight));
   }
+  out = yOut;
   if (roles.yOnRight) {
-    let right = b.x1 + half;
+    let right = sp.xRight + half;
     for (const lb of yb.far) right = Math.max(right, lb.x1);
     if (!ax.hiddenLabels.y) yBoxes.push(...optBox(put(yt.offset, b.x1, b.yTop - pad, { kind: 'horizontal', ha: 'right', va: 'baseline' }, theme.ytick.labelSizePt, theme.ytick.color)));
     yBoxes.push(...optBox(put(ax.ylabel, right + lp, b.yTop + (b.yBot - b.yTop) / 2, { kind: 'ylabelRight' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseY));
   } else {
-    let left = b.x0 - half;
+    let left = sp.xLeft - half;
     for (const lb of yb.near) left = Math.min(left, lb.x0);
     if (!ax.hiddenLabels.y) yBoxes.push(...optBox(put(yt.offset, b.x0, b.yTop - pad, { kind: 'horizontal', ha: 'left', va: 'baseline' }, theme.ytick.labelSizePt, theme.ytick.color)));
     yBoxes.push(...optBox(put(ax.ylabel, left - lp, b.yTop + (b.yBot - b.yTop) / 2, { kind: 'ylabel' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseY));
@@ -250,6 +280,7 @@ function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: numb
   // Agg BboxTransform: x0 + frac*w. (x0+x1)/2 is 1 ulp off when x0+x1 is not dyadic (shifts FreeType 26.6 half-pen).
   const tx0 = ax.titleLoc === 'left' ? b.x0 : ax.titleLoc === 'right' ? b.x1 : b.x0 + (b.x1 - b.x0) / 2;
   // Agg flips after ScaledTranslation pad in y-up: H - (bbox.t + pad). yTop - pad is 1 ulp off when t*H is not dyadic.
+  out = titleOut;
   const tb = put(ax.title, tx0, f.H - (b.t + A.titlePadPt * k), { kind: 'horizontal', ha: ax.titleLoc, va: 'baseline' }, A.titleSizePt, A.titleColor, ax.titleWeight);
   // the title's top in display y-up: transAxes + ScaledTranslation(0, pad/72) maps (x, 1) to h·1 + (b + pad/72·dpi)
   // (moved above top tick labels, it has no exact form here: fall back to the flipped box)
@@ -257,13 +288,12 @@ function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: numb
     : some(xb.far.length > 0 ? { b: f.H - tb.value.y1, t: f.H - tb.value.y0 }
       : edges(windowExtent(measure(ax.title, A.titleSizePt, dpi, resolveFace(theme.font.families, ax.titleWeight), ax.titleLoc), tx0, b.h * 1.0 + (b.b + (A.titlePadPt / 72) * dpi), ax.titleLoc, 'baseline')));
   // Axes.get_tightbbox keeps 1 px of a title's width; zero-size boxes (empty titles) drop out
-  return { nodes: out, boxes: { x: xBoxes, y: yBoxes, title: tb.kind === 'some' ? some(collapseX(tb.value)) : none, xUp, titleUp } };
+  return { x: xOut, y: yOut, title: titleOut, boxes: { x: xBoxes, y: yBoxes, title: tb.kind === 'some' ? some(collapseX(tb.value)) : none, xUp, titleUp } };
 }
 
 /** Spine.get_window_extent: the spine's path, padded by the ticks it carries (not their labels). */
-function spineBoxes(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: number, xt: TickSet, yt: TickSet): readonly PxBox[] {
-  const b = f.box, has = theme.axes.spines, ov = ax.spines;
-  const off = (side: 'left' | 'right' | 'top' | 'bottom'): number => { const p = ov[side].position; return p.kind === 'some' ? p.value.pts * k : 0; };
+function spineBoxes(ax: AxesSpec, roles: Roles, f: Frame, k: number, xt: TickSet, yt: TickSet): readonly PxBox[] {
+  const b = f.box, ov = ax.spines;
   const pads = (tt: TickTheme, minor: boolean): { readonly out: number; readonly inn: number } => {
     const size = (minor ? tt.minorSizePt : tt.sizePt) * k;
     switch (tt.direction) {
@@ -275,11 +305,9 @@ function spineBoxes(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: numbe
   };
   const boxes: PxBox[] = [];
   const spine = (side: 'left' | 'right' | 'top' | 'bottom', vis: AxisVisibility, ticks: TickSet, tt: TickTheme): void => {
-    if (!(has[side] && ov[side].visible)) return;
-    const line: PxBox = side === 'left' ? { x0: b.x0 - off(side), x1: b.x0 - off(side), y0: b.yTop, y1: b.yBot }
-      : side === 'right' ? { x0: b.x1 + off(side), x1: b.x1 + off(side), y0: b.yTop, y1: b.yBot }
-      : side === 'bottom' ? { x0: b.x0, x1: b.x1, y0: b.yBot + off(side), y1: b.yBot + off(side) }
-      : { x0: b.x0, x1: b.x1, y0: b.yTop - off(side), y1: b.yTop - off(side) };
+    if (!ov[side].visible) return;
+    const at = spineAt(ax, side, f, k).at;
+    const line: PxBox = side === 'left' || side === 'right' ? { x0: at, x1: at, y0: b.yTop, y1: b.yBot } : { x0: b.x0, x1: b.x1, y0: at, y1: at };
     boxes.push(line);
     if (vis.kind !== 'shown') return;
     const near = side === 'left' || side === 'bottom';
@@ -418,14 +446,10 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, dev: Device,
   const userTexts = drawn.flatMap((d, i) => (zorder(ax.artists[i]) === 3 ? d.nodes : []));
   const artistLayers = drawn.flatMap((d, i): (readonly [number, readonly Node[]])[] => { const z = zorder(ax.artists[i]); return z === 3 ? [] : [[z, d.nodes]]; });
   // Spine outward offsets move the axis baseline (ticks and labels follow)
-  const offPx = (side: 'left' | 'right' | 'top' | 'bottom'): number => {
-    const p = ax.spines[side].position;
-    return p.kind === 'some' && p.value.kind === 'outward' ? p.value.pts * k : 0;
-  };
-  const baseX = { xLeft: box.x0 - offPx('left'), xRight: box.x1 + offPx('right') };
-  // tick marks flip with the geometry height, tick labels with the float height
-  const baseY = { yBottom: box.yBot + offPx('bottom'), yTop: box.yTop - offPx('top') };
-  const baseYG = { yBottomG: box.yBotG + offPx('bottom'), yTopG: box.yTopG - offPx('top') };
+  const at = (side: Side) => spineAt(ax, side, f, k);
+  const baseX = { xLeft: at('left').at, xRight: at('right').at };
+  const baseY = { yBottom: at('bottom').at, yTop: at('top').at };
+  const baseYG = { yBottomG: at('bottom').atG, yTopG: at('top').atG, yBottomUp: at('bottom').up, yTopUp: at('top').up };
   const bases = { ...baseX, ...baseY, ...baseYG };
   const xa = shown(roles.x, (sides) => tracer.span('axis.x', { ticks: xt.visible.length }, () =>
     drawAxis('x', xt, ax.tick.x, sides, ax.grid.x, ax.tickLabels.x, f, theme, dpi, tracer, bases)));
@@ -433,7 +457,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, dev: Device,
     drawAxis('y', yt, ax.tick.y, sides, ax.grid.y, ax.tickLabels.y, f, theme, dpi, tracer, bases)));
   const decTheme: Theme = { ...theme, xtick: ax.tick.x, ytick: ax.tick.y };
   const deco = tracer.span('decorations', { role: ax.role.kind }, () =>
-    decorations(ax, roles, decTheme, f, k, dpi, xt, yt, { near: xa.nearBoxes, far: xa.farBoxes, nearUp: xa.nearUp }, { near: ya.nearBoxes, far: ya.farBoxes, nearUp: ya.nearUp }));
+    decorations(ax, roles, decTheme, f, k, dpi, bases, xt, yt, { near: xa.nearBoxes, far: xa.farBoxes, nearUp: xa.nearUp }, { near: ya.nearBoxes, far: ya.farBoxes, nearUp: ya.nearUp }));
 
   const sourced = legendEntries(ax, drawn), entries = sourced.map((e) => e.entry);
   const axesUp: Box = { x0: box.x0, x1: box.x1, y0: box.b, y1: box.t };
@@ -451,8 +475,9 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, dev: Device,
   // matters for axisbelow=False: the axis (2.5) then draws over the spines (2.5).
   const layers: ReadonlyArray<readonly [number, readonly Node[]]> = [
     ...artistLayers, [2.5, spinesForAxes(ax, theme, f, k)],
-    [axisZ(theme.axes.axisBelow), [...clipped(xa.grid), ...xa.marks, ...clipped(ya.grid), ...ya.marks]],
-    [3, [...userTexts, ...deco.nodes]], [5, legend.kind === 'some' ? legend.value.out.nodes : []],
+    // Axis.draw: gridlines, ticks and tick labels, then the offset text and the axis label
+    [axisZ(theme.axes.axisBelow), [...clipped(xa.grid), ...xa.marks, ...deco.x, ...clipped(ya.grid), ...ya.marks, ...deco.y]],
+    [3, [...userTexts, ...deco.title]], [5, legend.kind === 'some' ? legend.value.out.nodes : []],
   ];
   const nodes = [...background, ...layers.toSorted((a, b) => a[0] - b[0]).flatMap(([, n]) => n)];
   const legendBoxes = legend.kind === 'some'
@@ -474,7 +499,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, dev: Device,
           ...ya.nearBoxes.map((bx, i) => ({ box: bx, up: ya.nearUp[i] })), ...ya.farBoxes.map((bx, i) => ({ box: bx, up: ya.farUp[i] })),
           ...deco.boxes.y.map(flip(H))] : []),
         ...(deco.boxes.title.kind === 'some' && deco.boxes.titleUp.kind === 'some' ? [{ box: deco.boxes.title.value, up: deco.boxes.titleUp.value }] : []),
-        ...spineBoxes(ax, roles, theme, f, k, xt, yt).map(flip(H)),
+        ...spineBoxes(ax, roles, f, k, xt, yt).map(flip(H)),
         ...(legend.kind === 'some' ? [{ box: { x0: legend.value.out.box.x0, x1: legend.value.out.box.x1, y0: H - legend.value.out.box.y1, y1: H - legend.value.out.box.y0 },
                                         up: { b: legend.value.out.box.y0, t: legend.value.out.box.y1 } }] : []),
       ]),

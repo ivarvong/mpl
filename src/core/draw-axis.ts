@@ -9,7 +9,7 @@ import { pathNode, snapIf, snapOffset } from './scene.ts';
 import type { TextBox } from './text.ts';
 import { measureLabel, placeLayout, pxPerPt, strokePx, windowExtent } from './text.ts';
 import type { TickSet } from './ticks.ts';
-import type { TickLabelStyles, AxisGrid, GridLines, Node, Rgb, Seg, Stroke, Theme, TickDirection, TickTheme, TickGrid } from './types.ts';
+import type { Option, TickLabelStyles, AxisGrid, GridLines, Node, Rgb, Seg, Stroke, Theme, TickDirection, TickTheme, TickGrid } from './types.ts';
 import { assertNever, none } from './types.ts';
 import { lookup } from './std.ts';
 import type { Tracer } from '../trace.ts';
@@ -73,7 +73,9 @@ export function drawAxis(
   theme: Theme,
   dpi: number,
   tracer: Tracer,
-  base: { readonly xLeft: number; readonly xRight: number; readonly yBottom: number; readonly yTop: number; readonly yBottomG: number; readonly yTopG: number },
+  base: { readonly xLeft: number; readonly xRight: number; readonly yBottom: number; readonly yTop: number; readonly yBottomG: number; readonly yTopG: number;
+    /** a bottom/top spine placed in display y-up ('axes'/'data'): its labels offset there, then flip (ScaledTranslation, then H − y) */
+    readonly yBottomUp: Option<number>; readonly yTopUp: Option<number> },
 ): AxisDrawn {
   const k = pxPerPt(dpi);
   const snap = (v: number, w: number): number => snapIf(f.snap, v, w);
@@ -124,7 +126,7 @@ export function drawAxis(
             const place = rot === 0
               ? { kind: 'horizontal' as const, ha, va: 'top' as const }
               : { kind: 'angled' as const, deg: rot, ha, va: 'top' as const };
-            const b = placeLayout(lay, d, bases.yBottom + out, place); nearBoxes.push(b); labels.push(...labelNodes(b, k, lcolor));
+            const b = placeLayout(lay, d, bases.yBottomUp.kind === 'some' ? f.H - (bases.yBottomUp.value - out) : bases.yBottom + out, place); nearBoxes.push(b); labels.push(...labelNodes(b, k, lcolor));
             nearUp.push(bases.yBottom === f.box.yBot ? upOf(windowExtent(lay, d, f.box.b + (-1 * padPts / 72) * dpi, ha, 'top')) : flipped(f.H, b));
           }
         }
@@ -136,7 +138,7 @@ export function drawAxis(
             const place = rot === 0
               ? { kind: 'horizontal' as const, ha, va: 'bottom' as const }
               : { kind: 'angled' as const, deg: rot, ha, va: 'bottom' as const };
-            const b = placeLayout(lay, d, bases.yTop - out, place); farBoxes.push(b); labels.push(...labelNodes(b, k, lcolor));
+            const b = placeLayout(lay, d, bases.yTopUp.kind === 'some' ? f.H - (bases.yTopUp.value + out) : bases.yTop - out, place); farBoxes.push(b); labels.push(...labelNodes(b, k, lcolor));
             farUp.push(bases.yTop === f.box.yTop ? upOf(windowExtent(lay, d, f.box.t + (padPts / 72) * dpi, ha, 'bottom')) : flipped(f.H, b));
           }
         }

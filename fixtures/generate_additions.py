@@ -683,6 +683,21 @@ case("invert_barh_categories", ("barh", [["alpha", "beta", "gamma", "delta"], [3
 case("invert_fixed_toggle", ("plot", [[0, 10], [0, 10]]), ("set_ylim", [2, 8]), ("invert_yaxis", []), ("invert_xaxis", []),
      ("invert_xaxis", []), ("set_xlim", [1, 9]))
 
+# Spines: a spine disabled in rc comes back with set_visible(True); set_position 'outward' (also inward), 'axes', 'data',
+# 'center' and 'zero'. The x (y) ticks and their labels follow the bottom (left) spine (tick1 is the spine transform).
+SPX = [round(-3 + i * 0.1, 1) for i in range(61)]
+SPY = [round(float(np.sin(v) * 1.6 + 0.3 * v), 4) for v in SPX]
+case("spines_rc_reenable", ("$rc", [], {"axes.spines.top": False, "axes.spines.right": False}), ("plot", [SPX, SPY]),
+     ("spine", ["top", "set_visible", True]), ("spine", ["top", "set_color", "C3"]))
+case("spines_center", ("plot", [SPX, SPY]), ("spine", ["left", "set_position", "center"]), ("spine", ["bottom", "set_position", "center"]),
+     ("spine", ["top", "set_visible", False]), ("spine", ["right", "set_visible", False]), ("set_xlabel", ["x"]), ("set_ylabel", ["y"]))
+case("spines_zero", ("plot", [[v + 1.2 for v in SPX], SPY]), ("spine", ["left", "set_position", "zero"]), ("spine", ["bottom", "set_position", "zero"]),
+     ("spine", ["top", "set_visible", False]), ("spine", ["right", "set_visible", False]), ("set_title", ["zero"]))
+case("spines_axes_data", ("plot", [SPX, SPY]), ("spine", ["left", "set_position", ["axes", 0.1]]), ("spine", ["bottom", "set_position", ["data", -0.5]]),
+     ("spine", ["right", "set_position", ["data", 2.0]]), ("spine", ["top", "set_position", ["axes", 0.85]]), ("set_xlabel", ["x"]), ("set_ylabel", ["y"]))
+case("spines_inward", ("plot", [SPX, SPY]), ("spine", ["left", "set_position", ["outward", -12]]), ("spine", ["bottom", "set_position", ["outward", -8]]),
+     ("spine", ["right", "set_position", ["outward", 10]]), ("set_xlabel", ["x"]), ("set_ylabel", ["y"]))
+
 def run_case(name, calls):
     style = STYLES.get(name)
     rc_layer = {}

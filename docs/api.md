@@ -352,7 +352,7 @@ Keyword arguments (unknown keys throw): `loc`, `fontweight | weight`
 
 ### `Axes.get spines()`
 
-ax.spines['left'].set_visible(False) etc.
+ax.spines[side]: set_visible, set_color, set_linewidth and set_position. set_position takes 'center', 'zero' or [type, amount] with type 'outward' (points; negative moves inward), 'axes' (an axes fraction) or 'data' (a data value), as matplotlib's Spine.set_position; the bottom (left) spine carries the x (y) ticks and their labels along. Anything else throws.
 
 ### `Axes.tick_params(kwargs?)`
 

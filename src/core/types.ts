@@ -311,6 +311,9 @@ export type DateLocatorSpec =
   | { readonly kind: 'auto' }
   | { readonly kind: 'rrule'; readonly rule: RRuleSpec }
   | { readonly kind: 'year'; readonly base: number; readonly month: number; readonly day: number };
+/** Spine.set_position: 'outward' pts from the axes edge (negative is inward), at an axes fraction, or at a data
+ *  value ('center' is ('axes', 0.5), 'zero' is ('data', 0)). */
+export type SpinePosition = { readonly kind: 'outward'; readonly pts: number } | { readonly kind: 'axes'; readonly at: number } | { readonly kind: 'data'; readonly at: number };
 
 export type AxisSpec =
   | { readonly kind: 'numeric'; readonly scale: Scale; readonly limits: Limits; readonly ticks: TickSpec; readonly labels: LabelSpec }
@@ -367,10 +370,10 @@ export type AxesSpec = {
    *  Layout shrinks the axes box like matplotlib._ColorbarAxesLocator before box_aspect. */
   readonly colorbarExtend: Option<{ readonly lower: number; readonly upper: number }>;
   readonly spines: {
-    readonly left: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };
-    readonly right: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };
-    readonly top: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };
-    readonly bottom: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<{ readonly kind: 'outward'; readonly pts: number }> };
+    readonly left: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<SpinePosition> };
+    readonly right: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<SpinePosition> };
+    readonly top: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<SpinePosition> };
+    readonly bottom: { readonly visible: boolean; readonly color: Option<Rgb>; readonly widthPt: Option<number>; readonly position: Option<SpinePosition> };
   };
   readonly tick: { readonly x: TickTheme; readonly y: TickTheme };
   readonly tickLabels: { readonly x: TickLabelStyles; readonly y: TickLabelStyles };

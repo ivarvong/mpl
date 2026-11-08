@@ -13,6 +13,7 @@
 <text x="517.1401" y="442.219" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">100</text>
 <text x="589.9049" y="442.219" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">120</text>
 <path d="M166.5816 421.9444 L166.5816 426.8056 M239.3464 421.9444 L239.3464 426.8056 M312.1112 421.9444 L312.1112 426.8056 M384.8761 421.9444 L384.8761 426.8056 M457.6409 421.9444 L457.6409 426.8056 M530.4057 421.9444 L530.4057 426.8056 M603.1706 421.9444 L603.1706 426.8056" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<text x="318.1658" y="461.6634" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">ms since request start</text>
 <text x="16.7031" y="78.6303" font-family="DejaVu Sans" font-weight="700" font-size="13.8889" fill="#000000">GET /api/checkout</text>
 <text x="60.5469" y="142.1181" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">├─ auth.verify</text>
 <text x="24.9219" y="204.3663" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">├─ db.query orders</text>
@@ -31,6 +32,5 @@
 </g>
 <path d="M166.5816 421.9444 L166.5816 36.0052" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
 <path d="M166.5816 421.9444 L625 421.9444" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
-<text x="318.1658" y="461.6634" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">ms since request start</text>
 <text x="166.5816" y="27.6719" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">Checkout request trace</text>
 </svg>
