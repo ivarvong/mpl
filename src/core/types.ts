@@ -120,8 +120,9 @@ export type DrawStyle = 'default' | 'steps-pre' | 'steps-mid' | 'steps-post';
  *  Only data coordinates update the data limits. */
 export type LineCoords = { readonly x: 'data' | 'axes'; readonly y: 'data' | 'axes' };
 /**
- * plot(…, { decimate }), not a matplotlib option: before path cleanup, keep only the first, lowest, highest and last
- * sample of every device-pixel column (perPx columns per pixel), in their original order. Off by default, so output
+ * plot(…, { decimate }), not a matplotlib option: before path cleanup, keep only the first and last sample of every
+ * device-pixel column (perPx columns per pixel), its lowest and highest with their neighbours, and both ends of every
+ * step over DECIMATE_STEP_PX, in their original order (decimateMinMax in path.ts). Off by default, so output
  * stays matplotlib's. Applies to a stroke whose x is non-decreasing; markers and legend placement see every sample.
  */
 export type Decimate = { readonly kind: 'off' } | { readonly kind: 'minmax'; readonly perPx: number };
