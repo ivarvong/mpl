@@ -16,6 +16,7 @@ import { scaleOf } from './core/ticks.ts';
 import { parseFmt, parseLinestyle, parseMarker } from './core/fmt.ts';
 import type { AxesAnnot } from './core/layout.ts';
 import { layoutFigure, supBoxes, tightBoxes, unionBox } from './core/layout.ts';
+import type { Device } from './core/frame.ts';
 import type { GridSpec, SubplotParams, SubplotSpec } from './core/gridspec.ts';
 import { gridSpec, subgridspec, subplotSpec } from './core/gridspec.ts';
 import { cellPosition, validParams } from './core/gridspec.ts';
@@ -91,6 +92,7 @@ type Series =
   | { readonly kind: 'datetime'; readonly values: Float64Array };   // date numbers (days since 1970-01-01 UTC)
 
 type NumericTypedArray = Float32Array | Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array;
+type LayoutCacheEntry = { readonly key: unknown; readonly scene: Scene; readonly meta: readonly AxesMeta[]; readonly annot: readonly AxesAnnot[] };
 const isNumericTypedArray = (v: unknown): v is NumericTypedArray =>
   v instanceof Float32Array || v instanceof Int8Array || v instanceof Uint8Array || v instanceof Uint8ClampedArray
   || v instanceof Int16Array || v instanceof Uint16Array || v instanceof Int32Array || v instanceof Uint32Array;
@@ -2325,8 +2327,9 @@ export class Figure {
   }
   // Layout cache: compute once per figure state; invalidated by any spec change.
   // The cache key is a snapshot of FigureSpec (core/snapshot.ts): layout is pure and deterministic in it.
-  private _layoutCache: Option<{ readonly key: unknown; readonly scene: Scene; readonly meta: readonly AxesMeta[]; readonly annot: readonly AxesAnnot[] }> = none;
-  private touch(): void { this._layoutCache = none; }
+  // one cached layout per device: PNG (Agg) and SVG geometry differ (frame.ts Device)
+  private _layoutCache: Record<Device, Option<LayoutCacheEntry>> = { agg: none, svg: none };
+  private touch(): void { this._layoutCache = { agg: none, svg: none }; }
   /** Figure-level text in figure coordinates (0..1). */
   text(x: unknown, y: unknown, s: unknown, kwargs: Kwargs = {}): this {
     const kw = new KwReader(kwargs, 'Figure.text');
@@ -2539,22 +2542,25 @@ export class Figure {
     return some({ left, bottom, right: 1 - right, top: 1 - top, wspace, hspace });
   }
   /** Run layout; one trace per run. */
-  toScene(): Scene {
+  toScene(): Scene { return this.sceneFor('agg'); }
+  /** The scene for a device ('agg' rasterizes, 'svg' writes SVG), cached per device by a FigureSpec snapshot. */
+  private sceneFor(dev: Device): Scene {
     // Cache by a FigureSpec snapshot: typed arrays are copied, not serialized. One walk compares and re-snapshots,
     // sharing the unchanged subtrees, so a miss (every frame of a pan) costs no deep copy.
     const spec = this.spec();
-    const prev = this._layoutCache.kind === 'some' ? this._layoutCache.value.key : NO_SNAPSHOT, key = resnapshot(prev, spec);
-    if (this._layoutCache.kind === 'some' && key === prev) {
+    const hit = this._layoutCache[dev];
+    const prev = hit.kind === 'some' ? hit.value.key : NO_SNAPSHOT, key = resnapshot(prev, spec);
+    if (hit.kind === 'some' && key === prev) {
       // Keep meta in sync with the last produced layout
-      this.meta = this._layoutCache.value.meta;
-      return this._layoutCache.value.scene;
+      this.meta = hit.value.meta;
+      return hit.value.scene;
     }
-    const root = tracer.startTrace('figure.layout', { axes: this.axes.length, dpi: this.dpi });
+    const root = tracer.startTrace('figure.layout', { axes: this.axes.length, dpi: this.dpi, device: dev });
     try {
-      const { scene, meta, annot } = layoutFigure(spec, tracer);
+      const { scene, meta, annot } = layoutFigure(spec, tracer, dev);
       this.meta = meta;
       root.setAttribute('nodes', scene.nodes.length);
-      this._layoutCache = some({ key, scene, meta, annot });
+      this._layoutCache[dev] = some({ key, scene, meta, annot });
       return scene;
     } catch (e) { root.recordException(e); throw e; } finally { root.end(); }
   }
@@ -2567,10 +2573,11 @@ export class Figure {
     const prefix = kw.read(['idPrefix'], (v): Result<string> => (typeof v === 'string' && /^[A-Za-z_][\w.-]*$|^$/.test(v) ? ok(v) : err(`idPrefix must be an XML name (letters, digits, _ . -), got ${JSON.stringify(v)}`)), () => '');
     kw.done();
     if (!interactive) return { prefix, pd, annot: [] };
-    this.toScene();
-    if (this._layoutCache.kind !== 'some') return { prefix, pd, annot: [] };
+    this.sceneFor('svg');
+    const cached = this._layoutCache.svg;
+    if (cached.kind !== 'some') return { prefix, pd, annot: [] };
     // sidecar pixels at the path data's own rounding when it is coarser than their 0.01 px, so they land on drawn vertices
-    const spec = this.spec(), annot = this._layoutCache.value.annot, write = sidecarWriter(), dp = Math.min(2, pd.kind === 'compact' ? pd.decimals : 4);
+    const spec = this.spec(), annot = cached.value.annot, write = sidecarWriter(), dp = Math.min(2, pd.kind === 'compact' ? pd.decimals : 4);
     return { prefix, pd, annot: tracer.span('render.annotate', { axes: annot.length }, () => annot.map((a, k) => ({ nodes: a.nodes, sidecar: write(spec.axes[k], a, dp) }))) };
   }
   /**
@@ -2586,7 +2593,7 @@ export class Figure {
    */
   toSVG(kwargs: Kwargs = {}): string {
     const o = this.svgOptions(kwargs, 'toSVG');
-    const scene = this.toScene();
+    const scene = this.sceneFor('svg');
     return tracer.span('render.svg', { topNodes: scene.nodes.length }, (sp) => {
       const out = iolistToString(svgIO(scene, tracer, this.theme.svgText, o.prefix, o.pd, o.annot));
       sp.setAttribute('bytes', out.length).setAttribute('leaves', scene.nodes.reduce((a, n) => a + leafCount(n), 0));
@@ -2594,9 +2601,9 @@ export class Figure {
     });
   }
   /** svgChunks({ precision, interactive, idPrefix }) — the SVG as a generator of string chunks (keywords as in toSVG). */
-  svgChunks(kwargs: Kwargs = {}): Generator<string> { const o = this.svgOptions(kwargs, 'svgChunks'); return svgChunks(this.toScene(), tracer, 'text', o.prefix, o.pd, o.annot); }
+  svgChunks(kwargs: Kwargs = {}): Generator<string> { const o = this.svgOptions(kwargs, 'svgChunks'); return svgChunks(this.sceneFor('svg'), tracer, 'text', o.prefix, o.pd, o.annot); }
   /** svgStream({ precision, interactive, idPrefix }) — the SVG as a byte stream (Workers, browsers, Node; keywords as in toSVG). */
-  svgStream(kwargs: Kwargs = {}): ReadableStream<Uint8Array> { const o = this.svgOptions(kwargs, 'svgStream'); return svgStream(this.toScene(), tracer, 'text', o.prefix, o.pd, o.annot); }
+  svgStream(kwargs: Kwargs = {}): ReadableStream<Uint8Array> { const o = this.svgOptions(kwargs, 'svgStream'); return svgStream(this.sceneFor('svg'), tracer, 'text', o.prefix, o.pd, o.annot); }
 
   /**
    * Layout at a savefig dpi (matplotlib Figure.savefig(dpi=…)). Default is this.dpi

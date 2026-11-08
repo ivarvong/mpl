@@ -53,6 +53,7 @@ assert.throws(() => subplots(1, 2)[0].subplots_adjust({ left: 0.9, right: 0.1 })
   ax[1][2].twinx().plot([0, 2], [10, 20]);
   const svg = fig.toSVG();
   assert.equal((svg.match(/<clipPath /g) ?? []).length, 7, 'six cells and one twin each clip their artists');
+  tracer.clear();   // the PNG lays out on its own (Agg's device geometry); count its spans alone
   const png = fig.toPNGSync();
   assert.ok(png.length > 1000);
   const spans = tracer.spans();

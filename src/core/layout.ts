@@ -7,7 +7,8 @@ import { drawAxis, labelNodes } from './draw-axis.ts';
 import type { Drawn } from './draw-artists.ts';
 import { drawAxLine, drawBar, drawFill, drawLine, drawPolygon, drawSegments, drawText, drawScatter, drawSpan, drawAnnotation, drawImage, handleOf } from './draw-artists.ts';
 import type { Frame } from './frame.ts';
-import { axesBox, frame } from './frame.ts';
+import { axesBox, frame, geomHeight } from './frame.ts';
+import type { Device } from './frame.ts';
 import { forward } from './scale.ts';
 import { layoutLegend } from './legend.ts';
 import type { Box } from './legend-index.ts';
@@ -150,22 +151,22 @@ function spinesForAxes(ax: AxesSpec, theme: Theme, f: Frame, k: number): readonl
   // Compute snapped positions per side, with optional outward offsets
   if (sideOn('left')) {
     const w = wOf('left'); const off = outwardPx('left');
-    const x = snap(b.x0 - off, w), y0 = snap(b.yBot, w), y1 = snap(b.yTop, w);
+    const x = snap(b.x0 - off, w), y0 = snap(b.yBotG, w), y1 = snap(b.yTopG, w);
     sides.push({ side: 'left', x0: x, y0, x1: x, y1 });
   }
   if (sideOn('right')) {
     const w = wOf('right'); const off = outwardPx('right');
-    const x = snap(b.x1 + off, w), y0 = snap(b.yBot, w), y1 = snap(b.yTop, w);
+    const x = snap(b.x1 + off, w), y0 = snap(b.yBotG, w), y1 = snap(b.yTopG, w);
     sides.push({ side: 'right', x0: x, y0, x1: x, y1 });
   }
   if (sideOn('bottom')) {
     const w = wOf('bottom'); const off = outwardPx('bottom');
-    const y = snap(b.yBot + off, w), x0 = snap(b.x0, w), x1 = snap(b.x1, w);
+    const y = snap(b.yBotG + off, w), x0 = snap(b.x0, w), x1 = snap(b.x1, w);
     sides.push({ side: 'bottom', x0, y0: y, x1, y1: y });
   }
   if (sideOn('top')) {
     const w = wOf('top'); const off = outwardPx('top');
-    const y = snap(b.yTop - off, w), x0 = snap(b.x0, w), x1 = snap(b.x1, w);
+    const y = snap(b.yTopG - off, w), x0 = snap(b.x0, w), x1 = snap(b.x1, w);
     sides.push({ side: 'top', x0, y0: y, x1, y1: y });
   }
   const nodes: Node[] = [];
@@ -391,22 +392,23 @@ type LayoutMode = 'scene' | 'tight';
 export type AxesAnnot = { readonly nodes: number; readonly frame: Frame; readonly legend: readonly { readonly artist: number; readonly box: PxBox }[] };
 type AxesPart = { readonly nodes: readonly Node[]; readonly meta: AxesMeta; readonly annot: AxesAnnot };
 
-function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, tracer: Tracer): AxesPart {
+function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, dev: Device, tracer: Tracer): AxesPart {
   const { ax } = inp;
   const theme = fig.theme, dpi = fig.dpi, k = pxPerPt(dpi);
   const W = fig.widthIn * dpi, H = fig.heightIn * dpi;
-  const box = axesBox(ax.position, W, H);
+  const Hg = geomHeight(H, dev);
+  const box = axesBox(ax.position, W, H, Hg);
   const roles = roleImplies(ax.role, inp.hasTwin, theme, ax.hiddenLabels);
   const xs = scaleOf(ax.x), ys = scaleOf(ax.y);
 
   const xlim = inp.x.lim, ylim = inp.y.lim;
   const xt = inp.x.ticks, yt = inp.y.ticks;
-  const f = frame(box, W, H, xlim, ylim, xs, ys);
-  const clip: Clip = { kind: 'rect', x: box.x0, y: box.yTop, w: box.w, h: box.h };
+  const f = frame(box, W, H, dev, xlim, ylim, xs, ys);
+  const clip: Clip = { kind: 'rect', x: box.x0, y: box.yTopG, w: box.w, h: box.h };
 
   const face = roles.patch ? inkOf(theme.axes.face, none) : none;
   // The axes patch is a rectilinear, edgeless path: Agg snaps its corners to whole pixels (snap value 0).
-  const bx0 = snap(box.x0, 0), bx1 = snap(box.x1, 0), by0 = snap(box.yTop, 0), by1 = snap(box.yBot, 0);
+  const bx0 = snap(box.x0, 0), bx1 = snap(box.x1, 0), by0 = snap(box.yTopG, 0), by1 = snap(box.yBotG, 0);
   const background: readonly Node[] = face.kind === 'some' ? [rectNode(bx0, by0, bx1 - bx0, by1 - by0, face.value)] : [];
   const undrawn = (): readonly Drawn[] => ax.artists.map((a): Drawn => ({ nodes: [], lines: [], boxes: [], points: [], handle: handleOf(a) }));
   const needArtists = mode === 'scene' || (ax.legend.kind === 'on' && ax.legend.loc.kind === 'best' && legendEntries(ax, undrawn()).length > 0);
@@ -419,8 +421,10 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, tracer: Trac
     return p.kind === 'some' && p.value.kind === 'outward' ? p.value.pts * k : 0;
   };
   const baseX = { xLeft: box.x0 - offPx('left'), xRight: box.x1 + offPx('right') };
+  // tick marks flip with the geometry height, tick labels with the float height
   const baseY = { yBottom: box.yBot + offPx('bottom'), yTop: box.yTop - offPx('top') };
-  const bases = { ...baseX, ...baseY };
+  const baseYG = { yBottomG: box.yBotG + offPx('bottom'), yTopG: box.yTopG - offPx('top') };
+  const bases = { ...baseX, ...baseY, ...baseYG };
   const xa = shown(roles.x, (sides) => tracer.span('axis.x', { ticks: xt.visible.length }, () =>
     drawAxis('x', xt, ax.tick.x, sides, ax.grid.x, ax.tickLabels.x, f, theme, dpi, tracer, bases)));
   const ya = shown(roles.y, (sides) => tracer.span('axis.y', { ticks: yt.visible.length, side: roles.yOnRight ? 'right' : 'left' }, () =>
@@ -434,7 +438,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, tracer: Trac
   const spec = ax.legend;
   const legend = spec.kind === 'on' && entries.length > 0
     ? some({ code: spec.loc, out: tracer.span('legend', { entries: entries.length }, () => layoutLegend({
-        entries, theme, dpi, W, H, axesBox: axesUp, lines: drawn.flatMap((d) => d.lines), points: drawn.flatMap((d) => d.points), boxes: drawn.flatMap((d) => d.boxes),
+        entries, theme, dpi, W, H, Hg, axesBox: axesUp, lines: drawn.flatMap((d) => d.lines), points: drawn.flatMap((d) => d.points), boxes: drawn.flatMap((d) => d.boxes),
         loc: spec.loc, ncols: spec.ncols, frame: spec.frame, fontSizePt: spec.fontSizePt, markers: spec.markers }, tracer)) })
     : none;
 
@@ -450,7 +454,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, tracer: Trac
   ];
   const nodes = [...background, ...layers.toSorted((a, b) => a[0] - b[0]).flatMap(([, n]) => n)];
   const legendBoxes = legend.kind === 'some'
-    ? legend.value.out.entries.map((e, j) => ({ artist: sourced[j].artist, box: { x0: e.x0, x1: e.x1, y0: H - e.y1, y1: H - e.y0 } })) : [];
+    ? legend.value.out.entries.map((e, j) => ({ artist: sourced[j].artist, box: { x0: e.x0, x1: e.x1, y0: Hg - e.y1, y1: Hg - e.y0 } })) : [];
   return {
     nodes,
     annot: { nodes: nodes.length, frame: f, legend: legendBoxes },
@@ -501,7 +505,7 @@ export function supBoxes(fig: FigureSpec): { readonly title: Option<PxBox>; read
   return { title: place(fig.suptitle, false), x: place(fig.supx, false), y: place(fig.supy, true) };
 }
 
-function layoutParts(fig: FigureSpec, mode: LayoutMode, tracer: Tracer): readonly AxesPart[] {
+function layoutParts(fig: FigureSpec, mode: LayoutMode, dev: Device, tracer: Tracer): readonly AxesPart[] {
   const ext = fig.axes.map((ax) => tracer.span('datalimits', { artists: ax.artists.length }, (sp) => {
     const e = dataExtents(ax.artists); sp.setAttribute('values', e.x.count + e.y.count); return e;
   }));
@@ -545,16 +549,17 @@ function layoutParts(fig: FigureSpec, mode: LayoutMode, tracer: Tracer): readonl
     return p;
   };
   return adjusted.map((ax, i) => tracer.span('axes.layout', { artists: ax.artists.length, role: ax.role.kind, index: i, mode }, () =>
-    layoutAxes({ ax, x: shared('x', i), y: shared('y', i), hasTwin: ax.role.kind === 'primary' && twinGroup(adjusted, i).length > 1 }, fig2, mode, tracer)));
+    layoutAxes({ ax, x: shared('x', i), y: shared('y', i), hasTwin: ax.role.kind === 'primary' && twinGroup(adjusted, i).length > 1 }, fig2, mode, dev, tracer)));
 }
 
 /** Each Axes' tight bbox (px, y down), as layoutFigure's meta[i].tight, without drawing what does not enter it. */
 export function tightBoxes(fig: FigureSpec, tracer: Tracer): readonly TightBox[] {
-  return layoutParts(fig, 'tight', tracer).map((p) => p.meta.tight);
+  return layoutParts(fig, 'tight', 'agg', tracer).map((p) => p.meta.tight);
 }
 
-export function layoutFigure(fig: FigureSpec, tracer: Tracer): { readonly scene: Scene; readonly meta: readonly AxesMeta[]; readonly annot: readonly AxesAnnot[] } {
-  const parts = layoutParts(fig, 'scene', tracer);
+/** The figure's scene for one device: 'agg' (PNG) or 'svg' (see Device). Text and ticks are the same on both. */
+export function layoutFigure(fig: FigureSpec, tracer: Tracer, dev: Device = 'agg'): { readonly scene: Scene; readonly meta: readonly AxesMeta[]; readonly annot: readonly AxesAnnot[] } {
+  const parts = layoutParts(fig, 'scene', dev, tracer);
   const W = fig.widthIn * fig.dpi, H = fig.heightIn * fig.dpi, k = pxPerPt(fig.dpi);
   const figTexts: Node[] = [];
   // generic fig.text

@@ -10,21 +10,25 @@ ax.set_title('layout cache');
 tracer.enable(); tracer.clear();
 const svg = fig.toSVG();
 assert.ok(svg.startsWith('<svg'));
+fig.toSVG();
+assert.equal(tracer.spans().filter((s) => s.name === 'figure.layout').length, 1, 'layout runs once across SVG renders');
+// PNG and SVG geometry differ (Agg's int canvas height; frame.ts Device), so each device has its own cached layout
 const firstPng = fig.toPNGSync();
 const layoutSpans1 = tracer.spans().filter((s) => s.name === 'figure.layout').length;
-assert.equal(layoutSpans1, 1, 'layout runs once across SVG and PNG');
+assert.equal(layoutSpans1, 2, 'one layout per device');
 
 // A second PNG render should reuse cached layout and be bit-identical
 const secondPng = fig.toPNGSync();
+fig.toSVG();
 const layoutSpans2 = tracer.spans().filter((s) => s.name === 'figure.layout').length;
-assert.equal(layoutSpans2, 1, 'layout cache reused for subsequent renders');
+assert.equal(layoutSpans2, 2, 'layout cache reused for subsequent renders');
 assert.ok(firstPng.length === secondPng.length && firstPng.every((b, i) => b === secondPng[i]), 'PNG bytes identical with layout cache');
 
 // A mutation must invalidate the cache and trigger a new layout
 ax.set_title('changed');
 fig.toPNGSync();
 const layoutSpans3 = tracer.spans().filter((s) => s.name === 'figure.layout').length;
-assert.equal(layoutSpans3, 2, 'mutation invalidates layout cache');
+assert.equal(layoutSpans3, 3, 'mutation invalidates layout cache');
 
 // The key is a snapshot (src/core/snapshot.ts), not JSON: a caller's Float64Array is held zero-copy, so mutating it
 // in place must invalidate the cache, and the re-render must match a fresh figure with the new data.

@@ -1,7 +1,7 @@
 // One axis: grid lines, major and minor tick marks, tick labels. Ticks are drawn from
 // a spine along its outward normal; labels sit outside the tick by its pad.
 import type { Frame } from './frame.ts';
-import { tx, ty } from './frame.ts';
+import { tx, ty, tyText } from './frame.ts';
 import { forward } from './scale.ts';
 import { lineStroke } from './marks.ts';
 import { resolveFace } from './fonts.ts';
@@ -73,7 +73,7 @@ export function drawAxis(
   theme: Theme,
   dpi: number,
   tracer: Tracer,
-  base: { readonly xLeft: number; readonly xRight: number; readonly yBottom: number; readonly yTop: number },
+  base: { readonly xLeft: number; readonly xRight: number; readonly yBottom: number; readonly yTop: number; readonly yBottomG: number; readonly yTopG: number },
 ): AxisDrawn {
   const k = pxPerPt(dpi);
   // all baselines taken from `bases`
@@ -110,9 +110,10 @@ export function drawAxis(
       const gridOn = gridDrawn(g), gridSegs = t.minor ? minorGrid : majorGrid, glw = strokePx(g.lines.widthPt, k);
       if (axis === 'x') {
         const d = tx(f, t.loc), x = snap(d, width);
-        if (gridOn) gridSegs.push(['M', snap(d, glw), snap(bases.yBottom, glw)], ['L', snap(d, glw), snap(bases.yTop, glw)]);
-        if (sides.near) segs.push(['M', x, te(bases.yBottom, e0)], ['L', x, te(bases.yBottom, e1)]);          // bottom: outward is +y
-        if (sides.far) segs.push(['M', x, te(bases.yTop, -e0)], ['L', x, te(bases.yTop, -e1)]);           // top: outward is -y
+        // grid and tick marks are paths (flipped with Hg); labels are text (flipped with H)
+        if (gridOn) gridSegs.push(['M', snap(d, glw), snap(bases.yBottomG, glw)], ['L', snap(d, glw), snap(bases.yTopG, glw)]);
+        if (sides.near) segs.push(['M', x, te(bases.yBottomG, e0)], ['L', x, te(bases.yBottomG, e1)]);          // bottom: outward is +y
+        if (sides.far) segs.push(['M', x, te(bases.yTopG, -e0)], ['L', x, te(bases.yTopG, -e1)]);           // top: outward is -y
         if (sides.labels === 'near') {
           const hidden = st.kind === 'some' && st.value.visible.kind === 'some' && st.value.visible.value === false;
           if (!hidden) {
@@ -138,8 +139,8 @@ export function drawAxis(
           }
         }
       } else {
-        const d = ty(f, t.loc), y = snap(d, width);
-        if (gridOn) gridSegs.push(['M', snap(bases.xLeft, glw), snap(d, glw)], ['L', snap(bases.xRight, glw), snap(d, glw)]);
+        const d = tyText(f, t.loc), y = snap(ty(f, t.loc), width), dg = ty(f, t.loc);
+        if (gridOn) gridSegs.push(['M', snap(bases.xLeft, glw), snap(dg, glw)], ['L', snap(bases.xRight, glw), snap(dg, glw)]);
         if (sides.near) segs.push(['M', te(bases.xLeft, -e0), y], ['L', te(bases.xLeft, -e1), y]);          // left: outward is -x
         if (sides.far) segs.push(['M', te(bases.xRight, e0), y], ['L', te(bases.xRight, e1), y]);           // right: outward is +x
         // a y label's anchor is transData's y (the ScaledTranslation is horizontal): (v·a + 0) + c
