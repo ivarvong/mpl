@@ -29,7 +29,7 @@ import type { StyleSpec } from './core/style.ts';
 import { composeStyles } from './core/style.ts';
 import { parseFontSize, parseLegendLoc, parseTheme, scatterPointsOf } from './core/theme.ts';
 import type {
-  Artist, Aspect, AxesMeta, DateLocatorSpec, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
+  Artist, Aspect, AxesMeta, DateLocatorSpec, SpinePosition, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
   AxLineArtist, AxLineThrough, Decimate, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist, StickyArtist,
   Cap, LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, TightBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, ImageArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
 } from './core/types.ts';
@@ -572,6 +572,21 @@ export class Axis {
   }
 }
 
+/** Spine.set_position's argument: 'center' → ('axes', 0.5), 'zero' → ('data', 0), or [type, amount]. */
+function parseSpinePosition(p: unknown): Result<SpinePosition> {
+  if (p === 'center') return ok({ kind: 'axes', at: 0.5 });
+  if (p === 'zero') return ok({ kind: 'data', at: 0 });
+  if (!Array.isArray(p) || p.length !== 2) return err(`spine position must be 'center', 'zero' or [type, amount], got ${JSON.stringify(p)}`);
+  const [t, v] = p;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return err(`spine position amount must be a finite number, got ${JSON.stringify(v)}`);
+  switch (t) {
+    case 'outward': return ok({ kind: 'outward', pts: v });
+    case 'axes': return ok({ kind: 'axes', at: v });
+    case 'data': return ok({ kind: 'data', at: v });
+    default: return err(`spine position type must be 'outward', 'axes' or 'data', got ${JSON.stringify(t)}`);
+  }
+}
+
 function shapeDefaults(shape: FmtShape, theme: Theme): { readonly line: Option<LineStyleName>; readonly marker: Option<MarkerName> } {
   switch (shape.kind) {
     case 'default': return { line: theme.lines.style, marker: theme.lines.marker };
@@ -598,10 +613,10 @@ export class Axes {
   private grid_: AxesGrid;
   legendSpec: LegendSpec = { kind: 'off' };
   private spineOv: {
-    left: { visible: boolean; color: Option<Rgb>; widthPt: Option<number>; position: Option<{ kind: 'outward'; pts: number }> };
-    right: { visible: boolean; color: Option<Rgb>; widthPt: Option<number>; position: Option<{ kind: 'outward'; pts: number }> };
-    top: { visible: boolean; color: Option<Rgb>; widthPt: Option<number>; position: Option<{ kind: 'outward'; pts: number }> };
-    bottom: { visible: boolean; color: Option<Rgb>; widthPt: Option<number>; position: Option<{ kind: 'outward'; pts: number }> };
+    left: { visible: boolean; color: Option<Rgb>; widthPt: Option<number>; position: Option<SpinePosition> };
+    right: { visible: boolean; color: Option<Rgb>; widthPt: Option<number>; position: Option<SpinePosition> };
+    top: { visible: boolean; color: Option<Rgb>; widthPt: Option<number>; position: Option<SpinePosition> };
+    bottom: { visible: boolean; color: Option<Rgb>; widthPt: Option<number>; position: Option<SpinePosition> };
   } = {
     left: { visible: true, color: none, widthPt: none, position: none },
     right: { visible: true, color: none, widthPt: none, position: none },
@@ -630,6 +645,8 @@ export class Axes {
     this.titleWeight = this.theme.font.titleWeight; this.titleLoc = this.theme.axes.titleLoc;
     this.xaxis = xaxis; this.grid_ = initialGrid(fig.theme);
     this.tickXOv = { ...this.theme.xtick }; this.tickYOv = { ...this.theme.ytick };
+    // rc axes.spines.* only sets each spine's initial visibility (Spine.set_visible(False) at creation); set_visible wins
+    for (const side of ['left', 'right', 'top', 'bottom'] as const) this.spineOv[side].visible = this.theme.axes.spines[side];
   }
   /** A second Axes sharing this one's x axis, with its y axis on the right. */
   twinx(): Axes {
@@ -1714,7 +1731,12 @@ export class Axes {
     this.title = str(s);
     return this;
   }
-  /** ax.spines['left'].set_visible(False) etc. */
+  /**
+   * ax.spines[side]: set_visible, set_color, set_linewidth and set_position. set_position takes 'center', 'zero' or
+   * [type, amount] with type 'outward' (points; negative moves inward), 'axes' (an axes fraction) or 'data' (a data
+   * value), as matplotlib's Spine.set_position; the bottom (left) spine carries the x (y) ticks and their labels along.
+   * Anything else throws.
+   */
   get spines(): Record<'left' | 'right' | 'top' | 'bottom', {
     set_visible: (v: boolean) => void; set_color: (v: unknown) => void; set_linewidth: (w: number) => void;
     set_position: (pos: unknown) => void;
@@ -1723,9 +1745,7 @@ export class Axes {
       set_visible: (v: boolean) => { this.spineOv[side].visible = !!v; },
       set_color: (v: unknown) => { this.spineOv[side].color = some(unwrap(parseRgb(v, this.theme.axes.cycle))); },
       set_linewidth: (w: number) => { this.spineOv[side].widthPt = some(unwrap(num('linewidth')(w))); },
-      set_position: (p: unknown) => {
-        if (Array.isArray(p) && p[0] === 'outward' && typeof p[1] === 'number') this.spineOv[side].position = some({ kind: 'outward', pts: Number(p[1]) });
-      },
+      set_position: (p: unknown) => { this.spineOv[side].position = some(unwrap(parseSpinePosition(p))); },
     });
     return { left: api('left'), right: api('right'), top: api('top'), bottom: api('bottom') };
   }

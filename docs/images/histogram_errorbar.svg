@@ -15,6 +15,7 @@
 <text x="330.1272" y="362.219" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">200</text>
 <text x="412.569" y="362.219" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">250</text>
 <path d="M96.0675 341.9444 L96.0675 346.8056 M178.5093 341.9444 L178.5093 346.8056 M260.951 341.9444 L260.951 346.8056 M343.3928 341.9444 L343.3928 346.8056 M425.8346 341.9444 L425.8346 346.8056" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<text x="231.4349" y="381.6634" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">latency (ms)</text>
 <text x="43.2882" y="347.2206" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">0</text>
 <text x="43.2882" y="286.5184" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">5</text>
 <text x="34.4444" y="225.8161" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">10</text>
@@ -22,6 +23,7 @@
 <text x="34.4444" y="104.4117" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">20</text>
 <text x="34.4444" y="43.7094" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">25</text>
 <path d="M61.8542 341.9444 L56.9931 341.9444 M61.8542 281.2422 L56.9931 281.2422 M61.8542 220.54 L56.9931 220.54 M61.8542 159.8378 L56.9931 159.8378 M61.8542 99.1355 L56.9931 99.1355 M61.8542 38.4333 L56.9931 38.4333" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<text x="25.5523" y="218.9826" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-90 25.5523 218.9826)">requests</text>
 <clipPath id="c2"><rect x="61.8542" y="36.0052" width="426.224" height="305.9392"/></clipPath>
 <g clip-path="url(#c2)" data-artist="artist/2/line">
 <path d="M228.7988 341.9444L228.7988 36.0052" fill="none" stroke="#1f77b4" stroke-width="2.0833" stroke-linejoin="round" stroke-dasharray="7.7083 3.3333"/>
@@ -34,8 +36,6 @@
 <path d="M488.0781 341.9444 L488.0781 36.0052" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
 <path d="M61.8542 341.9444 L488.0781 341.9444" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
 <path d="M61.8542 36.0052 L488.0781 36.0052" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
-<text x="231.4349" y="381.6634" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">latency (ms)</text>
-<text x="25.5523" y="218.9826" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-90 25.5523 218.9826)">requests</text>
 <text x="138.7474" y="27.6719" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">Latency distribution (illustrative)</text>
 <path d="M332.7396 130.4497 L478.3559 130.4497 Q481.1337 130.4497 481.1337 127.6719 L481.1337 45.7274 Q481.1337 42.9497 478.3559 42.9497 L332.7396 42.9497 Q329.9618 42.9497 329.9618 45.7274 L329.9618 127.6719 Q329.9618 130.4497 332.7396 130.4497 Z" fill="#ffffff" fill-opacity="0.8" stroke="#cccccc" stroke-width="1.3889" stroke-opacity="0.8"/>
 <rect x="335.5174" y="49.3353" width="27.7778" height="9.7222" fill="#ff7f0e" fill-opacity="0.5" stroke="none"/>
@@ -62,6 +62,7 @@
 <text x="522.5226" y="125.324" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">160</text>
 <text x="522.5226" y="76.9541" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">180</text>
 <path d="M558.776 313.5272 L553.9149 313.5272 M558.776 265.1573 L553.9149 265.1573 M558.776 216.7875 L553.9149 216.7875 M558.776 168.4176 L553.9149 168.4176 M558.776 120.0478 L553.9149 120.0478 M558.776 71.678 L553.9149 71.678" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<text x="513.6304" y="232.5061" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-90 513.6304 232.5061)">latency (ms)</text>
 <clipPath id="c4"><rect x="558.776" y="36.0052" width="426.224" height="305.9392"/></clipPath>
 <g clip-path="url(#c4)" data-artist="artist/1/segments">
 <path d="M578.1499 282.0868 L578.1499 64.4225" fill="none" stroke="#1f77b4" stroke-width="2.0833" stroke-linejoin="round"/>
@@ -96,7 +97,6 @@
 <path d="M985 341.9444 L985 36.0052" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
 <path d="M558.776 341.9444 L985 341.9444" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
 <path d="M558.776 36.0052 L985 36.0052" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
-<text x="513.6304" y="232.5061" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-90 513.6304 232.5061)">latency (ms)</text>
 <text x="663.7708" y="27.6719" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">Daily median (illustrative)</text>
 <path d="M806.0677 67.9497 L975.2778 67.9497 Q978.0556 67.9497 978.0556 65.1719 L978.0556 45.7274 Q978.0556 42.9497 975.2778 42.9497 L806.0677 42.9497 Q803.2899 42.9497 803.2899 45.7274 L803.2899 65.1719 Q803.2899 67.9497 806.0677 67.9497 Z" fill="#ffffff" fill-opacity="0.8" stroke="#cccccc" stroke-width="1.3889" stroke-opacity="0.8"/>
 <defs><path id="m12" d="M822.7344 -338.8592 L822.7344 -352.748" fill="none" stroke="#1f77b4" stroke-width="2.0833" stroke-linejoin="round"/></defs>
