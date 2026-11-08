@@ -697,6 +697,16 @@ case("spines_axes_data", ("plot", [SPX, SPY]), ("spine", ["left", "set_position"
      ("spine", ["right", "set_position", ["data", 2.0]]), ("spine", ["top", "set_position", ["axes", 0.85]]), ("set_xlabel", ["x"]), ("set_ylabel", ["y"]))
 case("spines_inward", ("plot", [SPX, SPY]), ("spine", ["left", "set_position", ["outward", -12]]), ("spine", ["bottom", "set_position", ["outward", -8]]),
      ("spine", ["right", "set_position", ["outward", 10]]), ("set_xlabel", ["x"]), ("set_ylabel", ["y"]))
+# Fonts. Inter has ■ ● ‒ ▲ ✓ (mpl bakes Inter's General Punctuation, Arrows, Geometric Shapes and check marks); with font.family ["Inter", "DejaVu Sans"],
+# matplotlib's font fallback (FT2Font _fallback_list, libraqm runs per face) draws what Inter lacks (∀ ∈ ∇ ⇄ ∃) from DejaVu.
+case("font_inter_symbols", ("$rc", [], {"font.family": ["Inter"]}), ("plot", [[0, 1, 2], [1, 3, 2]], {"label": "● online"}),
+     ("plot", [[0, 1, 2], [2, 1, 2.5]], {"label": "■ offline ‒ ok"}), ("legend", []), ("set_title", ["Status ■ ● ‒ ▲ ✓ • → ±"]),
+     ("set_xlabel", ["time — s"]))
+case("font_fallback_chain", ("$rc", [], {"font.family": ["Inter", "DejaVu Sans"]}), ("plot", [[0, 1, 2], [1, 3, 2]], {"label": "∃ a ■ b"}),
+     ("legend", []), ("set_title", ["∀x ∈ S: ∇f ⇄ g ■ ok"]), ("set_xlabel", ["Wave ∇ AV ∇ Ta"]),
+     ("text", [0.2, 2.5, "x∈A∧B, AV∀To"]))
+case("font_fallback_chain_bold", ("$rc", [], {"font.family": ["Inter", "DejaVu Sans"], "axes.titleweight": "bold"}),
+     ("plot", [[0, 1], [0, 1]]), ("set_title", ["Bold ∀ ∈ ■ ‒ fallback"]))
 
 def run_case(name, calls):
     style = STYLES.get(name)
@@ -712,6 +722,8 @@ def run_case(name, calls):
         if not style:   # a pro sheet names its own font
             matplotlib.rcParams["font.family"] = "DejaVu Sans"
         else:
+            use_static_inter()
+        if any(fn == "$rc" and "Inter" in str(kw.get("font.family", "")) for fn, _a, kw in calls):
             use_static_inter()
         matplotlib.rcParams["text.hinting"] = "none"
         # "$rc" steps configure the figure before it exists (replay builds the Figure with fx.rc)

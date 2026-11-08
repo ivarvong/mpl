@@ -17,13 +17,13 @@ type TextNode = Extract<Node, { kind: 'text' }> & { readonly weight?: number }; 
 const rgb = (hex: string, alpha = 1): Rgb => ({ hex, alpha });
 const rect = ({ x, y, w, h, fill, fillAlpha = 1 }: { x: number; y: number; w: number; h: number; fill: string; fillAlpha?: number }): Node => ({ kind: 'rect', x, y, w, h, ink: { kind: 'fill', fill: rgb(fill, fillAlpha) } });
 const path = ({ segs, stroke, strokeWidth }: { segs: Seg[]; stroke: string; strokeWidth: number }): Node => ({ kind: 'path', segs, ink: { kind: 'stroke', stroke: { color: rgb(stroke), width: strokeWidth, cap: 'butt', join: 'miter', dash: { kind: 'solid' } } }, antialiased: true });
-const text = ({ text: t, x, y, size, color, weight = 400 }: { text: string; x: number; y: number; size: number; color: string; weight?: number }): TextNode => ({ kind: 'text', text: t, x, y, dy: 0, sizePx: size, sizePt: size, weight, face: resolveFace([FONT], weight).id, glyphs: [], color: rgb(color), rotation: 'horizontal' });
+const text = ({ text: t, x, y, size, color, weight = 400 }: { text: string; x: number; y: number; size: number; color: string; weight?: number }): TextNode => ({ kind: 'text', text: t, x, y, dy: 0, sizePx: size, sizePt: size, weight, face: resolveFace([[FONT]], weight).id, glyphs: [], color: rgb(color), rotation: 'horizontal' });
 const group = (nodes: Node[]): Node => ({ kind: 'group', clip: { kind: 'none' }, nodes, tag: '' });
 
 const PALETTE = ['#4e79a7', '#f28e2b', '#59a14f', '#e15759', '#b07aa1', '#76b7b2', '#edc948', '#ff9da7', '#9c755f', '#bab0ab', '#1f77b4', '#17becf'];
 registerFonts(...allFonts);   // a bench tool: every face
 const FONT = 'Inter', DPI = 72;                                 // layout in 1x px (1px = 1pt); scaleScene renders at S×
-const M = (s: string | number, size: number) => measure(String(s), size, DPI, resolveFace([FONT], 400));
+const M = (s: string | number, size: number) => measure(String(s), size, DPI, resolveFace([[FONT]], 400));
 const W = 1500, LEFT = 330, RIGHT = 24, TOP = 78, ROW = 34, NAME = 12, ATTR = 9.5, GUTTER = 8;
 
 const colorFor = (() => { const m = new Map<string, string>(); return (name: string): string => { const c = m.get(name) ?? PALETTE[m.size % PALETTE.length] as string; m.set(name, c); return c; }; })();
@@ -40,7 +40,7 @@ export function scaleScene(scene: Scene, S: number): Scene {
       case 'rect': return { ...n, x: n.x * S, y: n.y * S, w: n.w * S, h: n.h * S, ink: inkS(n.ink) };
       case 'path': return { ...n, segs: n.segs.map((g) => g.map((v, i) => (i === 0 ? v : (v as number) * S)) as unknown as Seg), ink: inkS(n.ink) };
       case 'text': {
-        const face = n.face, lay = measure(n.text, n.sizePt, DPI * S, resolveFace([FONT], 'weight' in n ? (n.weight as number) : 400));
+        const face = n.face, lay = measure(n.text, n.sizePt, DPI * S, resolveFace([[FONT]], 'weight' in n ? (n.weight as number) : 400));
         return { ...n, x: n.x * S, y: n.y * S, sizePx: n.sizePx * S, face, glyphs: lay.runs[0]?.glyphs ?? [] };
       }
       default: return n;

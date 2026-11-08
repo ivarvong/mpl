@@ -31,8 +31,42 @@ export type Run = { readonly text: string; readonly dx: number; readonly dy: num
  *  own descent and height the stacked total, both as Text._get_layout keeps them (ascent + descent can differ by an ulp). */
 export type LabelLayout = { readonly width: number; readonly ascent: number; readonly descent: number; readonly height: number; readonly lastDescent: number; readonly runs: readonly Run[] };
 
+/** The face each character draws from: the first of the face and its fallback chain that has it (FT2Font::layout
+ *  re-lays out missing clusters with each fallback in turn); none has it → the face's own .notdef. */
+function faceFor(face: Face, ch: string): Face {
+  if (face.cmap.has(ch)) return face;
+  for (const f of face.fallback) if (f.cmap.has(ch)) return f;
+  return face;
+}
+
+/**
+ * Text that needs font fallback: libraqm shapes each run of one face on its own (GSUB and kerning stay inside a run)
+ * and the pen carries on across runs in 26.6. The ink box is the union of every glyph's box in its own face; the
+ * minimum ascent and descent stay the first face's. Glyph offsets are from the text's start, so every run sits at dx 0.
+ */
+function measureFallback(text: string, sizePt: number, dpi: number, face: Face): LabelLayout {
+  const groups: { readonly face: Face; text: string }[] = [];
+  for (const ch of text) {
+    const f = faceFor(face, ch), last = groups.length > 0 ? groups[groups.length - 1] : { face, text: '' };
+    if (groups.length > 0 && last.face === f) last.text += ch; else groups.push({ face: f, text: ch });
+  }
+  let pen = 0, lo = Infinity, hi = -Infinity;
+  const runs: Run[] = groups.map((g) => {
+    const scale = ftScale(g.face, sizePt, dpi), gids = shapeGlyphs(g.face, g.text), pens = penPositions(g.face, gids, scale);
+    const glyphs = gids.map((gid, i): Glyph => ({ gid, dx: (pen + pens[i]) / 64 }));
+    if (gids.length > 0) { const ink = inkExtent(g.face, gids, scale); lo = Math.min(lo, ink.yMin); hi = Math.max(hi, ink.yMax); }
+    pen += pens[gids.length];
+    return { text: g.text, dx: 0, dy: 0, sizePt, face: g.face.id, glyphs };
+  });
+  const min = minMetrics(face, sizePt, dpi);
+  const h = lo > hi ? 0 : hi - lo, d = lo > hi ? 0 : -lo;
+  const descent = Math.max(d, min.descent);
+  return { width: pen / 64, ascent: Math.max(h - d, min.ascent), descent, height: Math.max(h - d, min.ascent) + descent, lastDescent: descent, runs };
+}
+
 /** Plain single-line text (Agg path): FT2Font pen positions, 26.6 exact. */
 function measurePlain(text: string, sizePt: number, dpi: number, face: Face): LabelLayout {
+  if (face.fallback.length > 0 && [...text].some((ch) => !face.cmap.has(ch))) return measureFallback(text, sizePt, dpi, face);
   const scale = ftScale(face, sizePt, dpi);
   const gids = shapeGlyphs(face, text), pens = penPositions(face, gids, scale);
   const glyphs = gids.map((gid, i): Glyph => ({ gid, dx: pens[i] / 64 }));
