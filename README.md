@@ -11,7 +11,7 @@ rendering — its layout, tickers, text and its Agg rasterizer — that runs in 
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/hero-dark.png">
     <source media="(prefers-color-scheme: light)" srcset="docs/images/readme/hero-light.png">
-    <img src="docs/images/readme/hero-light.png" width="720" alt="Six charts rendered by mpljs: latency percentiles with bands, a latency heatmap with a colorbar, a request-trace Gantt chart, a scatter on a log axis coloured by a colormap, stacked bars, and overlaid histograms">
+    <img src="docs/images/readme/hero-light.png" width="640" alt="Six charts rendered by mpljs: latency percentiles with bands, a latency heatmap with a colorbar, a request-trace Gantt chart, a scatter on a log axis coloured by a colormap, stacked bars, and overlaid histograms">
   </picture>
 </p>
 <p align="center"><sub>One mpljs figure, six Axes (<a href="scripts/readme_images.ts"><code>scripts/readme_images.ts</code></a>), in the bundled <code>pro-slate</code> and <code>pro-dark</code> themes.</sub></p>
@@ -26,7 +26,9 @@ rendering — its layout, tickers, text and its Agg rasterizer — that runs in 
 **Left: matplotlib 3.11.2. Right: mpljs.** All 307,200 pixels are identical. The left image is matplotlib's own
 `savefig` output, committed as [`fixtures/ref/example_gantt_trace.png`](fixtures/ref/example_gantt_trace.png);
 [`test/examples.test.ts`](test/examples.test.ts) checks the right one against it on every CI run. The code is the
-same, call for call:
+same, call for call.
+
+**Python** (matplotlib):
 
 ```python
 import matplotlib.pyplot as plt
@@ -57,6 +59,8 @@ ax.spines[["top", "right"]].set_visible(False)
 fig.tight_layout()
 fig.savefig("trace.png")
 ```
+
+**TypeScript** (mpljs, [`examples/gantt.ts`](examples/gantt.ts) in the repo):
 
 ```ts
 import { registerFonts, subplots } from 'mpl';
