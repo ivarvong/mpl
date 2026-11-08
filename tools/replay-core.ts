@@ -3,10 +3,14 @@
 import type { Axes, Figure, subplots as SubplotsFn } from '../src/index.ts';
 import type { ConciseDateFormatterInit } from '../src/core/date-formatters.ts';
 
-/** Date-axis constructors from the mpl build under test (src, dist/browser, or page bundle). */
-export type DateCtors = {
-  readonly AutoDateLocator: new () => { readonly kind: 'auto' };
-  readonly ConciseDateFormatter: new (loc: { readonly kind: 'auto' }, opts?: ConciseDateFormatterInit) => unknown;
+/** Date-axis constructors from the mpl build under test (src, dist/browser, or page bundle), by their exported names:
+ *  AutoDateLocator, ConciseDateFormatter, DateFormatter and the Year/Month/Day/Hour/Minute/SecondLocator classes. */
+export type DateCtors = Readonly<Record<string, unknown>>;
+type Ctor = new (...args: unknown[]) => unknown;
+const ctor = (dates: DateCtors, name: string): Ctor => {
+  const c = dates[name];
+  if (typeof c !== 'function') throw new Error(`replay: no date constructor ${name}`);
+  return c as Ctor;
 };
 
 /** A fixture file as matplotlib's generator wrote it (JSON, so deliberately loose). */
@@ -77,12 +81,23 @@ export function buildWith(fx: Fixture, subplots: Subplots, dates?: DateCtors): F
     }
     if (fn === '$concise_x') {
       if (dates === undefined) throw new Error('$concise_x: DateCtors not provided to buildWith');
-      const loc = new dates.AutoDateLocator();
-      const init = kwargs && typeof kwargs === 'object' && 'show_offset' in (kwargs as object)
+      const loc = new (ctor(dates, 'AutoDateLocator'))();
+      const init: ConciseDateFormatterInit = kwargs && typeof kwargs === 'object' && 'show_offset' in (kwargs as object)
         ? { show_offset: Boolean((kwargs as { show_offset?: unknown }).show_offset) }
         : {};
       ax.xaxis.set_major_locator(loc);
-      ax.xaxis.set_major_formatter(new dates.ConciseDateFormatter(loc, init));
+      ax.xaxis.set_major_formatter(new (ctor(dates, 'ConciseDateFormatter'))(loc, init));
+      continue;
+    }
+    // ['$date_x', [locator, locatorKwargs, formatter]]: ax.xaxis.set_major_locator(mdates.<locator>(**kwargs)), then
+    // formatter null (the default AutoDateFormatter), {"DateFormatter": fmt} or {"ConciseDateFormatter": kwargs}
+    if (fn === '$date_x') {
+      if (dates === undefined) throw new Error('$date_x: DateCtors not provided to buildWith');
+      const [name, lkw, f] = args0 as [string, Record<string, unknown>, Record<string, unknown> | null];
+      const loc = new (ctor(dates, name))(lkw);
+      ax.xaxis.set_major_locator(loc);
+      if (f !== null && 'DateFormatter' in f) ax.xaxis.set_major_formatter(new (ctor(dates, 'DateFormatter'))(f['DateFormatter']));
+      else if (f !== null && 'ConciseDateFormatter' in f) ax.xaxis.set_major_formatter(new (ctor(dates, 'ConciseDateFormatter'))(loc, f['ConciseDateFormatter']));
       continue;
     }
     if (fn === 'twinx') { ax = ax.twinx(); axes.push(ax); continue; }

@@ -85,7 +85,7 @@ try {
     const r = await import(core) as typeof import('../tools/replay-core.ts');
     // oxlint-disable-next-line unicorn/consistent-function-scoping -- this body runs in the page; it cannot see the outer scope
     const b64 = (u: Uint8Array): string => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
-    const dates = { AutoDateLocator: m.AutoDateLocator, ConciseDateFormatter: m.ConciseDateFormatter };
+    const dates = { AutoDateLocator: m.AutoDateLocator, ConciseDateFormatter: m.ConciseDateFormatter, DateFormatter: m.DateFormatter, DayLocator: m.DayLocator, HourLocator: m.HourLocator, MinuteLocator: m.MinuteLocator, MonthLocator: m.MonthLocator, SecondLocator: m.SecondLocator, YearLocator: m.YearLocator };
     const res: Out[] = [];
     for (const [name, spec] of Object.entries(fx)) {
       const t0 = performance.now();

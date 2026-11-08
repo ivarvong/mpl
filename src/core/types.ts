@@ -299,11 +299,24 @@ export type DateFormatterSpec =
       readonly showOffset: boolean;
     };
 
+/** A dateutil rrule as matplotlib's RRuleLocator subclasses build it: every by-list explicit (a full range means any). */
+export type RRuleSpec = {
+  readonly freq: 'monthly' | 'daily' | 'hourly' | 'minutely' | 'secondly';
+  readonly interval: number;
+  readonly bymonth: readonly number[]; readonly bymonthday: readonly number[];
+  readonly byhour: readonly number[]; readonly byminute: readonly number[]; readonly bysecond: readonly number[];
+};
+/** Date-axis major locator: AutoDateLocator (default), an RRuleLocator (Month/Day/Hour/Minute/SecondLocator) or YearLocator. */
+export type DateLocatorSpec =
+  | { readonly kind: 'auto' }
+  | { readonly kind: 'rrule'; readonly rule: RRuleSpec }
+  | { readonly kind: 'year'; readonly base: number; readonly month: number; readonly day: number };
+
 export type AxisSpec =
   | { readonly kind: 'numeric'; readonly scale: Scale; readonly limits: Limits; readonly ticks: TickSpec; readonly labels: LabelSpec }
   | { readonly kind: 'category'; readonly names: readonly string[]; readonly limits: Limits; readonly ticks: TickSpec; readonly labels: LabelSpec }
   /** values are matplotlib date numbers: days since 1970-01-01T00:00:00 UTC */
-  | { readonly kind: 'datetime'; readonly limits: Limits; readonly ticks: TickSpec; readonly labels: LabelSpec; readonly formatter: DateFormatterSpec };
+  | { readonly kind: 'datetime'; readonly limits: Limits; readonly ticks: TickSpec; readonly labels: LabelSpec; readonly formatter: DateFormatterSpec; readonly locator: DateLocatorSpec };
 
 export type GridWhich = 'x' | 'y' | 'both';
 /** Text properties set on one major tick label (set_xticklabels kwargs, get_xticklabels()[i].set_*). */

@@ -26,5 +26,5 @@ export { modern, modernDark, paperClassic, paperModern } from './presets.ts';
 export { availableColormaps, ColormapNotLoadedError, getColormap, logNorm, MissingColormapRgbaError, normalize, registerColormapRgba, registerColormaps, registeredColormaps, requireColormap, requireColormapRgba, twoSlopeNorm } from './core/colormap.ts';
 export type { CmapRgbaPack } from './core/colormap.ts';
 export type { CmapPack, Colormap, Norm } from './core/colormap.ts';
-export { AutoDateLocator, ConciseDateFormatter, DateFormatter } from './core/date-formatters.ts';
-export type { ConciseDateFormatterInit, DateFormatList, MajorFormatter } from './core/date-formatters.ts';
+export { AutoDateLocator, ConciseDateFormatter, DateFormatter, DayLocator, HourLocator, MinuteLocator, MonthLocator, SecondLocator, YearLocator } from './core/date-formatters.ts';
+export type { ConciseDateFormatterInit, DateFormatList, DateLocatorHandle, MajorFormatter } from './core/date-formatters.ts';

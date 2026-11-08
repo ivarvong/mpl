@@ -1,6 +1,6 @@
 // Axis._update_ticks: major and minor tick locations, labels and offset text.
 // 'auto' means "what matplotlib picks for this kind of axis and scale".
-import { autoDateFormat, autoDateTicks, conciseDateFormat, dateFormat } from './dates.ts';
+import { autoDateFormat, conciseDateFormat, dateFormat, dateTicks } from './dates.ts';
 import { logFormat, logTicks } from './log.ts';
 import { forward } from './scale.ts';
 import { autoTicks, scalarFormat } from './ticker.ts';
@@ -49,8 +49,8 @@ function locations(spec: AxisSpec, lim: readonly [number, number], space: number
     }
     case 'category':
       return { major: spec.ticks.kind === 'fixed' ? spec.ticks.locs : spec.names.map((_, i) => i), minor: [] };   // StrCategoryLocator
-    case 'datetime':                                                            // AutoDateLocator; no minor locator
-      return { major: spec.ticks.kind === 'fixed' ? spec.ticks.locs : autoDateTicks(lim).locs, minor: [] };
+    case 'datetime':                                                            // the axis' date locator; no minor locator
+      return { major: spec.ticks.kind === 'fixed' ? spec.ticks.locs : dateTicks(spec.locator, lim).locs, minor: [] };
     default: return assertNever(spec);
   }
 }
@@ -85,8 +85,8 @@ function format(spec: AxisSpec, l: Locs, lim: readonly [number, number], theme: 
       const inv = lim[0] > lim[1];
       const fmt = spec.formatter;
       switch (fmt.kind) {
-        case 'auto':                                                            // AutoDateFormatter
-          return { labels: autoDateFormat(l.major, autoDateTicks(lim).locator).map(plain), offset: '', minor: [] };
+        case 'auto':                                                            // AutoDateFormatter, keyed by its locator's unit
+          return { labels: autoDateFormat(l.major, dateTicks(spec.locator, lim).unitDays).map(plain), offset: '', minor: [] };
         case 'strftime':
           return { labels: dateFormat(l.major, fmt.fmt).map(plain), offset: '', minor: [] };
         case 'concise': {
