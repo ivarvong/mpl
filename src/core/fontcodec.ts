@@ -12,6 +12,8 @@
 //   offsets   per gid, ascending: Δgid, contours; per contour: length, then the values
 //   kern      per pair, in baked order: Δleft, right, value
 import type { FaceData, SubTable } from './fonts.ts';
+import { lookup } from './std.ts';
+import { none, some, type Option } from './types.ts';
 
 /** The faces mpl ships. Families and weights are matplotlib's names for them. */
 export const FACE_CATALOG = [
@@ -45,16 +47,17 @@ for (let i = 0; i < 64; i++) DIGIT[VLQ_ALPHABET.charCodeAt(i)] = i;
 /** base64 VLQ → integers. */
 export function decodeVlq(s: string): Int32Array {
   const out = new Int32Array(s.length);
-  let n = 0, v = 0, shift = 0;
+  // mul is 2^(5·digits so far); a product, not 2 ** shift, which unoptimized code runs as a call
+  let n = 0, v = 0, mul = 1;
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i), d = c < 128 ? DIGIT[c] : -1;
     if (d < 0) throw new Error(`font data: bad VLQ character ${JSON.stringify(s[i])} at ${i}`);
-    v += (d & 31) * 2 ** shift;
-    if ((d & 32) !== 0) { shift += 5; continue; }
+    v += (d & 31) * mul;
+    if ((d & 32) !== 0) { mul *= 32; continue; }
     out[n++] = v % 2 === 1 ? -(v - 1) / 2 : v / 2;
-    v = 0; shift = 0;
+    v = 0; mul = 1;
   }
-  if (shift !== 0) throw new Error('font data: truncated VLQ');
+  if (mul !== 1) throw new Error('font data: truncated VLQ');
   return out.subarray(0, n);
 }
 
@@ -114,4 +117,92 @@ export function decodeFace(b: BakedFace, entry: CatalogEntry): FaceData {
   for (let r = new Ints(decodeVlq(b.kern)), left = 0; !r.done;) { left += r.next(); const right = r.next(); kern[`${left},${right}`] = r.next(); }
 
   return { family: entry.family, weight: entry.weight, upm: b.upm, typo: b.typo, cmap, cover, glyphs, outlines, offsets, kern, gsub: b.gsub };
+}
+
+/** gid → contours: outline points (flat [x, y, tag]) or a composite's component offsets. */
+export type Contours = readonly (readonly number[])[];
+
+/**
+ * The outlines or offsets table of a face, decoded per glyph on first use. A chart draws a few dozen
+ * of a face's ~1200 glyphs, so building every glyph's arrays up front (decodeFace) is most of a face's
+ * load time, paid by every cold isolate. The first lookup decodes the table's integers and records
+ * where each gid starts; a glyph's arrays are built, exactly as decodeFace builds them, when first asked.
+ */
+export class GlyphContours {
+  private readonly src: string;
+  private readonly points: boolean;
+  private ints: Int32Array = new Int32Array(0);
+  private readonly start = new Map<number, number>();
+  private indexed = false;
+  private readonly memo = new Map<number, Contours>();
+  /** points: an outlines table (per point 3·Δx + tag, Δy); else an offsets table (per contour, length then values). */
+  constructor(src: string, points: boolean) { this.src = src; this.points = points; }
+  private index(): void {
+    const a = decodeVlq(this.src), n = a.length;
+    let i = 0, g = 0;
+    while (i < n) {
+      g += a[i++];
+      this.start.set(g, i);
+      for (let c = a[i++]; c > 0; c--) { const k = a[i++]; i += this.points ? 2 * k : k; }
+    }
+    if (i !== n) throw new Error('font data: table ends early');
+    this.ints = a; this.indexed = true;
+  }
+  /** The gids the table has, ascending. */
+  gids(): readonly number[] { if (!this.indexed) this.index(); return [...this.start.keys()]; }
+  get(gid: number): Option<Contours> {
+    const m = lookup(this.memo, gid);
+    if (m.kind === 'some') return m;
+    if (!this.indexed) this.index();
+    const s = lookup(this.start, gid);
+    if (s.kind === 'none') return none;
+    const a = this.ints, contours: number[][] = [];
+    let i = s.value, x = 0, y = 0;
+    for (let c = a[i++]; c > 0; c--) {
+      const vals: number[] = [];
+      if (this.points) {
+        for (let p = a[i++]; p > 0; p--) {
+          const v = a[i++], tag = ((v % 3) + 3) % 3;
+          x += (v - tag) / 3; y += a[i++];
+          vals.push(x, y, tag);
+        }
+      } else {
+        for (let k = a[i++]; k > 0; k--) vals.push(a[i++]);
+      }
+      contours.push(vals);
+    }
+    this.memo.set(gid, contours);
+    return some(contours);
+  }
+}
+
+/** A face's lookup tables straight from its encoded form: the Maps getFace needs, without decodeFace's records. */
+export type FaceTables = {
+  readonly cmap: ReadonlyMap<string, number>;
+  readonly cover: readonly (readonly [number, number])[];
+  readonly glyphs: ReadonlyMap<number, readonly [number, number, number, number, number]>;
+  readonly kern: ReadonlyMap<number, number>;
+  readonly outlines: GlyphContours;
+  readonly offsets: GlyphContours;
+};
+/** A table's integers, checked to be whole records of `k`. */
+const records = (s: string, k: number): Int32Array => {
+  const a = decodeVlq(s);
+  if (a.length % k !== 0) throw new Error('font data: table ends early');
+  return a;
+};
+export function decodeTables(b: BakedFace): FaceTables {
+  const cmap = new Map<string, number>();
+  for (let a = records(b.cmap, 2), i = 0, cp = 0; i < a.length; i += 2) { cp += a[i]; cmap.set(String.fromCodePoint(cp), a[i + 1]); }
+  const cover: (readonly [number, number])[] = [];
+  for (let a = records(b.cover, 2), i = 0, last = 0; i < a.length; i += 2) { const first = last + a[i]; last = first + a[i + 1]; cover.push([first, last]); }
+  const glyphs = new Map<number, readonly [number, number, number, number, number]>();
+  for (let a = records(b.glyphs, 6), i = 0, g = 0; i < a.length; i += 6) {
+    g += a[i];
+    const x0 = a[i + 2], y0 = a[i + 4];
+    glyphs.set(g, [a[i + 1], x0, x0 + a[i + 3], y0, y0 + a[i + 5]]);
+  }
+  const kern = new Map<number, number>();
+  for (let a = records(b.kern, 3), i = 0, left = 0; i < a.length; i += 3) { left += a[i]; kern.set(left * 65536 + a[i + 1], a[i + 2]); }
+  return { cmap, cover, glyphs, kern, outlines: new GlyphContours(b.outlines, true), offsets: new GlyphContours(b.offsets, false) };
 }

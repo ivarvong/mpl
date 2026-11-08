@@ -237,9 +237,9 @@ const applyMat = (m: RotMat, x: number, y: number): readonly [number, number] =>
 
 /** Scaled (26.6), transformed and translated outline points per contour. */
 function loadGlyph(face: Face, gid: number, scale: number, rot: RotMat, ox: number, oy: number): Pt[][] {
-  const o = lookup(face.outlines, gid);
+  const o = face.outlines.get(gid);
   if (o.kind === 'none') return [];
-  const offs = lookup(face.offsets, gid);
+  const offs = face.offsets.get(gid);
   return o.value.map((flat, ci) => {
     // a composite's component offsets are scaled one by one and added to the scaled points
     let dx = 0, dy = 0;

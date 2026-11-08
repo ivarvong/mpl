@@ -93,9 +93,9 @@ type Ids = { next: number; readonly glyphs: Map<string, string>; readonly text: 
 
 /** Outline in font units (y up) as path data: on-curve, conic (with implied midpoints) and cubic segments. */
 function glyphPath(face: Face, gid: number): string {
-  const o = lookup(face.outlines, gid);
+  const o = face.outlines.get(gid);
   if (o.kind === 'none') return '';
-  const offs = lookup(face.offsets, gid);
+  const offs = face.offsets.get(gid);
   const out: string[] = [];
   for (const [ci, flat] of o.value.entries()) {
     const n = flat.length / 3;
