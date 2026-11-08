@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="400" viewBox="0 0 700 400">
+<rect width="700" height="400" fill="#ffffff"/>
+<rect x="88" y="48" width="542" height="308" fill="#ffffff" stroke="none"/>
+<text x="173.1667" y="376.2745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">A</text>
+<text x="353.9844" y="376.2745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">B</text>
+<text x="534.7318" y="376.2745" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">C</text>
+<path d="M178.5 356.5 L178.5 361.5 M359.5 356.5 L359.5 361.5 M540.5 356.5 L540.5 361.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<text x="57.2934" y="316.4429" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">−2</text>
+<text x="68.934" y="254.1512" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">0</text>
+<text x="68.934" y="191.8595" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">2</text>
+<text x="68.934" y="129.5678" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">4</text>
+<text x="68.934" y="67.2762" font-family="DejaVu Sans" font-size="13.8889" fill="#000000">6</text>
+<path d="M88.5 311.5 L83.5 311.5 M88.5 249.5 L83.5 249.5 M88.5 187.5 L83.5 187.5 M88.5 124.5 L83.5 124.5 M88.5 62.5 L83.5 62.5" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c0"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c0)" data-artist="artist/0/line">
+<path d="M151.5 264.5L205.5 264.5L205.5 225.5L151.5 225.5L151.5 264.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c1"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c1)" data-artist="artist/1/line">
+<path d="M178.5 264.5L178.5 313.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c2"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c2)" data-artist="artist/2/line">
+<path d="M178.5 225.5L178.5 186.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c3"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c3)" data-artist="artist/3/line">
+<path d="M164.5 313.5L191.5 313.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c4"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c4)" data-artist="artist/4/line">
+<path d="M164.5 186.5L191.5 186.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c5"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c5)" data-artist="artist/6/line">
+<defs><path id="m6" d="M0 4.1667 C1.105 4.1667 2.1649 3.7276 2.9463 2.9463 C3.7276 2.1649 4.1667 1.105 4.1667 0 C4.1667 -1.105 3.7276 -2.1649 2.9463 -2.9463 C2.1649 -3.7276 1.105 -4.1667 0 -4.1667 C-1.105 -4.1667 -2.1649 -3.7276 -2.9463 -2.9463 C-3.7276 -2.1649 -4.1667 -1.105 -4.1667 0 C-4.1667 1.105 -3.7276 2.1649 -2.9463 2.9463 C-2.1649 3.7276 -1.105 4.1667 0 4.1667 Z" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linejoin="round"/></defs>
+<use href="#m6" x="178.5" y="332.5"/>
+</g>
+<clipPath id="c7"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c7)" data-artist="artist/7/line">
+<path d="M332.5 225.5L386.5 225.5L386.5 195.5L332.5 195.5L332.5 225.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c8"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c8)" data-artist="artist/8/line">
+<path d="M359.5 225.5L359.5 262.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c9"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c9)" data-artist="artist/9/line">
+<path d="M359.5 195.5L359.5 175.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c10"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c10)" data-artist="artist/10/line">
+<path d="M345.5 262.5L372.5 262.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c11"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c11)" data-artist="artist/11/line">
+<path d="M345.5 175.5L372.5 175.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c12"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c12)" data-artist="artist/13/line">
+<defs><path id="m13" d="M0 4.1667 C1.105 4.1667 2.1649 3.7276 2.9463 2.9463 C3.7276 2.1649 4.1667 1.105 4.1667 0 C4.1667 -1.105 3.7276 -2.1649 2.9463 -2.9463 C2.1649 -3.7276 1.105 -4.1667 0 -4.1667 C-1.105 -4.1667 -2.1649 -3.7276 -2.9463 -2.9463 C-3.7276 -2.1649 -4.1667 -1.105 -4.1667 0 C-4.1667 1.105 -3.7276 2.1649 -2.9463 2.9463 C-2.1649 3.7276 -1.105 4.1667 0 4.1667 Z" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linejoin="round"/></defs>
+<use href="#m13" x="359.5" y="62.5"/>
+</g>
+<clipPath id="c14"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c14)" data-artist="artist/14/line">
+<path d="M512.5 278.5L567.5 278.5L567.5 235.5L512.5 235.5L512.5 278.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c15"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c15)" data-artist="artist/15/line">
+<path d="M540.5 278.5L540.5 342.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c16"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c16)" data-artist="artist/16/line">
+<path d="M540.5 235.5L540.5 177.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c17"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c17)" data-artist="artist/17/line">
+<path d="M526.5 342.5L553.5 342.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c18"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c18)" data-artist="artist/18/line">
+<path d="M526.5 177.5L553.5 177.5" fill="none" stroke="#000000" stroke-width="1.3889" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c19"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c19)" data-artist="artist/5/line">
+<path d="M151.5 248.5L205.5 248.5" fill="none" stroke="#ff7f0e" stroke-width="1.3889" stroke-linejoin="round"/>
+</g>
+<clipPath id="c20"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c20)" data-artist="artist/12/line">
+<path d="M332.5 209.5L386.5 209.5" fill="none" stroke="#ff7f0e" stroke-width="1.3889" stroke-linejoin="round"/>
+</g>
+<clipPath id="c21"><rect x="87.5" y="48" width="542.5" height="308"/></clipPath>
+<g clip-path="url(#c21)" data-artist="artist/19/line">
+<path d="M512.5 258.5L567.5 258.5" fill="none" stroke="#ff7f0e" stroke-width="1.3889" stroke-linejoin="round"/>
+</g>
+<path d="M88.5 356.5 L88.5 48.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M630.5 356.5 L630.5 48.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M88.5 356.5 L630.5 356.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M88.5 48.5 L630.5 48.5" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="48.4013" y="220.9688" font-family="DejaVu Sans" font-size="13.8889" fill="#000000" transform="rotate(-90 48.4013 220.9688)">value</text>
+<text x="269.0156" y="39.6667" font-family="DejaVu Sans" font-size="16.6667" fill="#000000">boxplot: three groups</text>
+</svg>
