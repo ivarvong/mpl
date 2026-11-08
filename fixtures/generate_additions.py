@@ -136,7 +136,7 @@ case("api_gantt_waterfall",
      ("spine", ["top", "set_visible", False]), ("spine", ["right", "set_visible", False]),
      ("fig.tight_layout", []))
 
-# examples/gantt.ts, call for call (docs/images/gantt.svg)
+# examples/gantt.ts, call for call (docs/images/gantt.png)
 TRACE = [("GET /api/checkout", 0, 120, "C0"), ("├─ auth.verify", 2, 14, "C1"), ("├─ db.query orders", 15, 55, "C2"),
          ("└─ pool.acquire", 15, 19, "C2"), ("├─ inventory.reserve", 56, 92, "C4"), ("└─ render.json", 93, 118, "C1")]
 case("example_gantt_trace", ("$rc", [], {"axes.axisbelow": True}),
@@ -204,7 +204,7 @@ case("grid_twinx_tight", ("$subplots", [1, 2]), *panels(2), ("set_ylabel", ["lef
      ("plot", [lin(20, 0, 10), lin(20, 1000, 3000)], {"color": "C1"}), ("set_ylabel", ["right"]), ("fig.tight_layout", []))
 case("grid_figsize_dpi", ("$rc", [], {"figure.figsize": [7.0, 3.0], "figure.dpi": 80}), ("$subplots", [1, 3], {"sharey": True}), *panels(3))
 
-# examples/small_multiples.ts, call for call (docs/images/small_multiples.svg)
+# examples/small_multiples.ts, call for call (docs/images/small_multiples.png)
 CITIES = [('Oslo', [-4.0, -2.7, 1.0, 6.0, 11.0, 14.7, 16.0, 14.7, 11.0, 6.0, 1.0, -2.7]), ('Lisbon', [11.0, 11.8, 14.0, 17.0, 20.0, 22.2, 23.0, 22.2, 20.0, 17.0, 14.0, 11.8]), ('Cairo', [15.0, 15.9, 18.5, 22.0, 25.5, 28.1, 29.0, 28.1, 25.5, 22.0, 18.5, 15.9]), ('Sydney', [23.0, 22.3, 20.5, 18.0, 15.5, 13.7, 13.0, 13.7, 15.5, 18.0, 20.5, 22.3]), ('Quito', [13.5, 13.6, 13.8, 14.0, 14.2, 14.4, 14.5, 14.4, 14.2, 14.0, 13.8, 13.6]), ('Montreal', [-8.0, -6.0, -0.5, 7.0, 14.5, 20.0, 22.0, 20.0, 14.5, 7.0, -0.5, -6.0])]
 SM = []
 for i, (city, temps) in enumerate(CITIES):
@@ -270,7 +270,7 @@ case("plots_grid", ("$subplots", [2, 2], {"figsize": [8, 6]}),
      ("sca", [3]), ("vlines", [SX, 0, SY], {"label": "stems"}), ("plot", [SX, SY, "o"]), ("axline", [[0, 0]], {"slope": 0.2, "color": "C3", "label": "trend"}), ("legend", []),
      ("fig.tight_layout", []))
 
-# examples/histogram_errorbar.ts, call for call (docs/images/histogram_errorbar.svg); the data is illustrative
+# examples/histogram_errorbar.ts, call for call (docs/images/histogram_errorbar.png); the data is illustrative
 LAT_BEFORE = [144, 166, 61, 136, 129, 173, 133, 152, 147, 173, 122, 192, 112, 155, 149, 249, 109, 159, 125, 97, 166, 85, 103, 135, 172, 162, 143, 76, 110, 118,   95, 69, 137, 164, 115, 172, 81, 93, 136, 112, 160, 151, 115, 84, 110, 152, 162, 112, 69, 80, 148, 114, 115, 93, 92, 171, 150, 105, 133, 141,   214, 90, 140, 170, 206, 104, 114, 160, 75, 144, 240, 149, 57, 97, 105, 183, 123, 69, 128, 136, 109, 92, 248, 171, 176, 123, 103, 111, 81, 213,   125, 197, 113, 150, 138, 78, 222, 114, 87, 161, 130, 145, 134, 59, 96, 95, 175, 131, 153, 116, 155, 123, 120, 138, 134, 276, 96, 75, 144, 100]
 LAT_AFTER = [45, 71, 203, 76, 53, 199, 70, 244, 92, 178, 96, 120, 99, 96, 112, 122, 110, 106, 81, 101, 170, 79, 114, 152, 122, 140, 69, 114, 94, 95,   165, 96, 115, 53, 178, 138, 102, 93, 126, 151, 179, 136, 106, 143, 134, 107, 133, 132, 102, 87, 128, 72, 67, 115, 127, 115, 119, 47, 126, 165,   137, 135, 112, 114, 99, 118, 71, 166, 78, 137, 158, 137, 210, 48, 89, 157, 66, 78, 124, 106, 121, 109, 112, 81, 111, 91, 95, 136, 65, 41,   133, 111, 158, 79, 101, 107, 84, 76, 135, 62, 71, 99, 140, 86, 83, 97, 117, 92, 146, 149, 99, 189, 106, 147, 116, 115, 57, 69, 94, 148]
 DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']

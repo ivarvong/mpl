@@ -2,7 +2,7 @@
 // panels only (label_outer), and the figure carries a suptitle and shared axis labels; tight_layout
 // does the spacing. The same calls are an oracle case (fixtures/ref/example_small_multiples), checked
 // pixel for pixel against matplotlib. Writes examples/out/small_multiples.{svg,png};
-// docs/images/small_multiples.svg is this SVG.
+// docs/images/small_multiples.png is this PNG.
 import { subplots } from '../src/index.ts';
 import { save } from './_save.ts';
 
