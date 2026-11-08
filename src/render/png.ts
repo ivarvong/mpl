@@ -59,19 +59,19 @@ for (let n = 0; n < 256; n++) {
   CRC4[n] = c;
 }
 for (let n = 0; n < 256; n++) for (let k = 1; k < 4; k++) CRC4[k * 256 + n] = CRC4[(CRC4[(k - 1) * 256 + n] & 0xff)] ^ (CRC4[(k - 1) * 256 + n] >>> 8);
-function crc32(parts: readonly Uint8Array[]): number {
-  let c = -1;
-  for (const p of parts) {
-    const n = p.length, n4 = n - (n & 3);
-    let i = 0;
-    for (; i < n4; i += 4) {
-      c ^= p[i] | (p[i + 1] << 8) | (p[i + 2] << 16) | (p[i + 3] << 24);
-      c = CRC4[768 + (c & 0xff)] ^ CRC4[512 + ((c >>> 8) & 0xff)] ^ CRC4[256 + ((c >>> 16) & 0xff)] ^ CRC4[c >>> 24];
-    }
-    for (; i < n; i++) c = CRC4[(c ^ p[i]) & 0xff] ^ (c >>> 8);
+/** CRC-32 register after the bytes of p, from c0 (−1 to start; crcDone finishes). */
+function crc32(p: Uint8Array, c0 = -1): number {
+  let c = c0;
+  const n = p.length, n4 = n - (n & 3);
+  let i = 0;
+  for (; i < n4; i += 4) {
+    c ^= p[i] | (p[i + 1] << 8) | (p[i + 2] << 16) | (p[i + 3] << 24);
+    c = CRC4[768 + (c & 0xff)] ^ CRC4[512 + ((c >>> 8) & 0xff)] ^ CRC4[256 + ((c >>> 16) & 0xff)] ^ CRC4[c >>> 24];
   }
-  return (c ^ -1) >>> 0;
+  for (; i < n; i++) c = CRC4[(c ^ p[i]) & 0xff] ^ (c >>> 8);
+  return c;
 }
+const crcDone = (c: number): number => (c ^ -1) >>> 0;
 /**
  * Chunks of 2048 keep b < 2^31 (b ≤ 65520 + 2048·(65520 + 255·2048) ≈ 1.2e9), so the sums stay
  * in V8's int32 representation (`| 0`). Measured on 11 MB: 16.9 ms → 12.8 ms, same checksum.
@@ -93,7 +93,7 @@ function chunk(type: string, data: Uint8Array): Uint8Array {
   const t = ascii(type);
   const out = new Uint8Array(12 + data.length);
   out.set(u32(data.length), 0); out.set(t, 4); out.set(data, 8);
-  out.set(u32(crc32([t, data])), 8 + data.length);
+  out.set(u32(crcDone(crc32(data, crc32(t)))), 8 + data.length);
   return out;
 }
 
@@ -235,7 +235,6 @@ const LSYM = new Uint8Array(259);
 for (let s = 0; s < 29; s++) for (let l = LBASE[s]; l < (s < 28 ? LBASE[s + 1] : 259); l++) LSYM[l] = s;
 const DSYM = new Uint8Array(32769);                   // distance → symbol, O(1)
 for (let s = 0; s < 30; s++) DSYM.fill(s, DBASE[s], s < 29 ? DBASE[s + 1] : 32769);
-const distSym = (d: number): number => DSYM[d];
 const rev = (code: number, len: number): number => { let r = 0; for (let i = 0; i < len; i++) { r = (r << 1) | (code & 1); code >>= 1; } return r; };
 
 /**
@@ -278,7 +277,7 @@ class Bits {
     out[0] = (n >>> 24) & 255; out[1] = (n >>> 16) & 255; out[2] = (n >>> 8) & 255; out[3] = n & 255;
     out[4] = 73; out[5] = 68; out[6] = 65; out[7] = 84; // IDAT
     out.set(this.buf.subarray(0, n), 8);
-    const crc = crc32([out.subarray(4, 8 + n)]);
+    const crc = crcDone(crc32(out.subarray(4, 8 + n)));
     out[8 + n] = (crc >>> 24) & 255; out[9 + n] = (crc >>> 16) & 255;
     out[10 + n] = (crc >>> 8) & 255; out[11 + n] = crc & 255;
     this.n = 0;
@@ -295,6 +294,29 @@ const BITS = new Bits();
 const CL_F = new Float64Array(286), CL_W = new Float64Array(600), CL_P = new Int32Array(600), CL_H = new Int32Array(600), CL_USED = new Int32Array(286);
 const CL_OUT_A = new Uint8Array(286), CL_OUT_B = new Uint8Array(286), CL_OUT_CF = new Uint8Array(19);
 let CL_FLIP = 0;
+/** codeLengths' binary min-heap of node ids in CL_H[0, CL_HS), ordered by CL_W then id (module functions, not
+ *  closures per call, so their feedback and optimized code carry over between blocks and encodes). */
+let CL_HS = 0;
+const clLess = (a: number, b: number): boolean => CL_W[a] < CL_W[b] || (CL_W[a] === CL_W[b] && a < b);
+function clPush(x: number): void {
+  const heap = CL_H;
+  let i = CL_HS++; heap[i] = x;
+  while (i > 0) { const p = (i - 1) >> 1; if (!clLess(heap[i], heap[p])) break; const t = heap[i]; heap[i] = heap[p]; heap[p] = t; i = p; }
+}
+function clPop(): number {
+  const heap = CL_H, top = heap[0], hs = --CL_HS, last = heap[hs];
+  if (hs > 0) {
+    heap[0] = last; let i = 0;
+    for (;;) {
+      const l = 2 * i + 1, r = l + 1; let m = i;
+      if (l < hs && clLess(heap[l], heap[m])) m = l;
+      if (r < hs && clLess(heap[r], heap[m])) m = r;
+      if (m === i) break;
+      const t = heap[i]; heap[i] = heap[m]; heap[m] = t; i = m;
+    }
+  }
+  return top;
+}
 /** Length-limited Huffman code lengths: plain Huffman, frequencies flattened until it fits.
  *  Alternates A/B so writeBlock can keep ll and dl; pass `into` for a third concurrent result (cf). */
 function codeLengths(freq: Uint32Array, limit: number, into: Option<Uint8Array>): Uint8Array {
@@ -305,38 +327,17 @@ function codeLengths(freq: Uint32Array, limit: number, into: Option<Uint8Array>)
   else out = new Uint8Array(n);
   const f = n <= CL_F.length ? CL_F.subarray(0, n) : new Float64Array(n);
   for (let i = 0; i < n; i++) f[i] = freq[i];
-  const weight = CL_W, parent = CL_P, heap = CL_H, used = CL_USED;
+  const weight = CL_W, parent = CL_P, used = CL_USED;
   for (;;) {
     let nu = 0;
     for (let i = 0; i < n; i++) if (f[i] > 0) used[nu++] = i;
     out.fill(0);
     if (nu === 0) return out;
     if (nu === 1) { out[used[0]] = 1; return out; }
-    let hs = 0;
-    const less = (a: number, b: number): boolean => weight[a] < weight[b] || (weight[a] === weight[b] && a < b);
-    const push = (x: number): void => {
-      let i = hs++; heap[i] = x;
-      while (i > 0) { const p = (i - 1) >> 1; if (!less(heap[i], heap[p])) break; const t = heap[i]; heap[i] = heap[p]; heap[p] = t; i = p; }
-    };
-    const pop = (): number => {
-      const top = heap[0], last = heap[--hs];
-      if (hs > 0) {
-        heap[0] = last; let i = 0;
-        for (;;) {
-          const l = 2 * i + 1, r = l + 1; let m = i;
-          if (l < hs && less(heap[l], heap[m])) m = l;
-          if (r < hs && less(heap[r], heap[m])) m = r;
-          if (m === i) break;
-          const t = heap[i]; heap[i] = heap[m]; heap[m] = t; i = m;
-        }
-      }
-      return top;
-    };
-    for (let k = 0; k < nu; k++) { const i = used[k]; weight[i] = f[i]; parent[i] = -1; push(i); }
+    CL_HS = 0;
+    for (let k = 0; k < nu; k++) { const i = used[k]; weight[i] = f[i]; parent[i] = -1; clPush(i); }
     let next = n;
-    // pop() decrements hs (closed over); oxlint cannot see that
-    // oxlint-disable-next-line no-unmodified-loop-condition
-    while (hs > 1) { const a = pop(), b = pop(); weight[next] = weight[a] + weight[b]; parent[next] = -1; parent[a] = next; parent[b] = next; push(next); next++; }
+    while (CL_HS > 1) { const a = clPop(), b = clPop(); weight[next] = weight[a] + weight[b]; parent[next] = -1; parent[a] = next; parent[b] = next; clPush(next); next++; }
     let max = 0;
     for (let k = 0; k < nu; k++) {
       const i = used[k]; let d = 0;
@@ -435,11 +436,7 @@ const WB_SEQ = new Uint8Array(316), WB_CL = new Uint8Array(316), WB_CE = new Uin
 function writeBlock(bw: Bits, tok: Int32Array, a: number, b: number, last: boolean): void {
   const lf = WB_LF, df = WB_DF;
   lf.fill(0); df.fill(0);
-  for (let k = a; k < b; k++) {
-    const t = tok[k];
-    if (t < 256) lf[t]++;
-    else { const m = t - 256, l = m >>> 16, dd = m & 0xffff; lf[257 + LSYM[l]]++; df[distSym(dd)]++; }
-  }
+  countTokens(tok, a, b);
   lf[256] = 1;
   let anyD = false; for (let i = 0; i < 30; i++) if (df[i] !== 0) { anyD = true; break; }
   if (!anyD) df[0] = 1;
@@ -469,6 +466,22 @@ function writeBlock(bw: Bits, tok: Int32Array, a: number, b: number, last: boole
   }
   const lc = canonical(ll), dc = canonical(dl);
   bw.reserve((b - a) * 6 + 8);
+  emitTokens(bw, tok, a, b, ll, lc, dl, dc);
+  bw.put(lc[256], ll[256]);
+}
+
+/** Literal/length and distance frequencies of tokens [a, b) into WB_LF and WB_DF. */
+function countTokens(tok: Int32Array, a: number, b: number): void {
+  const lf = WB_LF, df = WB_DF;
+  for (let k = a; k < b; k++) {
+    const t = tok[k];
+    if (t < 256) lf[t]++;
+    else { const m = t - 256, l = m >>> 16, dd = m & 0xffff; lf[257 + LSYM[l]]++; df[DSYM[dd]]++; }
+  }
+}
+
+/** Tokens [a, b) Huffman-coded into the bit writer (space reserved by the caller). */
+function emitTokens(bw: Bits, tok: Int32Array, a: number, b: number, ll: Uint8Array, lc: Uint16Array, dl: Uint8Array, dc: Uint16Array): void {
   const buf = bw.buf;
   let acc = bw.acc, cnt = bw.cnt, o = bw.n;
   for (let k = a; k < b; k++) {
@@ -485,7 +498,6 @@ function writeBlock(bw: Bits, tok: Int32Array, a: number, b: number, last: boole
     while (cnt >= 8) { buf[o++] = acc & 255; acc >>>= 8; cnt -= 8; }
   }
   bw.acc = acc; bw.cnt = cnt; bw.n = o;
-  bw.put(lc[256], ll[256]);
 }
 
 /** Token stream → zlib (RFC 1950): header, dynamic blocks of 2^16 tokens, Adler-32 trailer. */
@@ -709,6 +721,10 @@ class ZlibEnc {
     this.W = c.w; this.H = c.h; this.px = c.px; this.RB = c.w * 4; this.S = this.RB + 1;
     this.nb = c.nb; this.mix = c.mix; this.u = c.i32; this.blk = c.blkI32;
     this.upOk = this.S <= 32768; this.epoch = epoch;
+    // tok, held and hasHeld first change when a token block fills, part way into a cold isolate's first encode.
+    // V8 treats a field as constant until then, and code optimized on that assumption is thrown away when it
+    // changes; a second store here marks them variable before anything is optimized.
+    this.tok = TOK_B; this.tok = TOK_A; this.held = TOK_A; this.held = TOK_B; this.hasHeld = true; this.hasHeld = false;
   }
   retainedHigh(): number { return Math.max(this.high, BITS.retainedHigh); }
 }
@@ -733,12 +749,22 @@ function rotateTok(e: ZlibEnc): boolean {
   return coded;
 }
 
-/** Row y's left and up intervals, and its bytes added to the Adler-32 halves. */
+/**
+ * Row y's left and up intervals, and its bytes added to the Adler-32 halves. Three small functions, each one loop
+ * nest, so each tiers up on its own; inside mixed blocks the scans step through runs of equal (or unequal) pixels in
+ * tight inner loops, which costs the baseline tier far fewer bytecodes per pixel than one test-everything loop.
+ */
 function startRow(e: ZlibEnc, y: number): void {
-  const W = e.W, nb = e.nb, mix = e.mix, blk = e.blk, u = e.u, px = e.px;
-  const row = y * W, brow = y * nb;
-  const L = TOK_L, U = TOK_U, le = L.e, ue = U.e;
-  let ln = 0, lo = -1, un = 0, uo = -1, last = u[row];
+  leftIntervals(e, y);
+  if (y > 0) upIntervals(e, y); else { TOK_U.n = 0; TOK_U.k = 0; }
+  adlerRow(e, y);
+}
+
+/** [start, end) pixels of row y equal to their left neighbour, from the block state and mixed blocks' pixels. */
+function leftIntervals(e: ZlibEnc, y: number): void {
+  const W = e.W, nb = e.nb, mix = e.mix, blk = e.blk, u = e.u;
+  const row = y * W, brow = y * nb, le = TOK_L.e;
+  let ln = 0, lo = -1, last = u[row];
   for (let j = 0; j < nb; j++) {
     const bs = j << BLOCK_SHIFT, be = Math.min(bs + BLOCK, W), bi = brow + j;
     if (mix[bi] === 0) {
@@ -746,29 +772,56 @@ function startRow(e: ZlibEnc, y: number): void {
       if (bs > 0 && col === last) { if (lo < 0) lo = bs; }
       else { if (lo >= 0) { le[ln++] = lo; le[ln++] = bs; } lo = be - bs > 1 ? bs + 1 : -1; }
       last = col;
-    } else {
-      for (let x = bs; x < be; x++) {
-        const v = u[row + x];
-        if (x > 0 && v === last) { if (lo < 0) lo = x; }
-        else if (lo >= 0) { le[ln++] = lo; le[ln++] = x; lo = -1; }
-        last = v;
-      }
+      continue;
     }
-    if (y > 0) {
-      if (mix[bi] === 0 && mix[bi - nb] === 0) {
-        if (blk[bi] === blk[bi - nb]) { if (uo < 0) uo = bs; }
-        else if (uo >= 0) { ue[un++] = uo; ue[un++] = bs; uo = -1; }
+    // pixel 0 has no left neighbour: it only sets `last` (already u[row])
+    let p = row + (bs === 0 ? 1 : bs);
+    const pe = row + be;
+    while (p < pe) {
+      if (u[p] === last) {
+        if (lo < 0) lo = p - row;
+        do p++; while (p < pe && u[p] === last);
       } else {
-        for (let x = bs; x < be; x++) {
-          if (u[row + x] === u[row + x - W]) { if (uo < 0) uo = x; }
-          else if (uo >= 0) { ue[un++] = uo; ue[un++] = x; uo = -1; }
-        }
+        if (lo >= 0) { le[ln++] = lo; le[ln++] = p - row; lo = -1; }
+        do { last = u[p]; p++; } while (p < pe && u[p] !== last);
       }
     }
   }
   if (lo >= 0) { le[ln++] = lo; le[ln++] = W; }
+  TOK_L.n = ln; TOK_L.k = 0;
+}
+
+/** [start, end) pixels of row y (> 0) equal to the pixel above. */
+function upIntervals(e: ZlibEnc, y: number): void {
+  const W = e.W, nb = e.nb, mix = e.mix, blk = e.blk, u = e.u;
+  const row = y * W, brow = y * nb, ue = TOK_U.e;
+  let un = 0, uo = -1;
+  for (let j = 0; j < nb; j++) {
+    const bs = j << BLOCK_SHIFT, bi = brow + j;
+    if (mix[bi] === 0 && mix[bi - nb] === 0) {
+      if (blk[bi] === blk[bi - nb]) { if (uo < 0) uo = bs; }
+      else if (uo >= 0) { ue[un++] = uo; ue[un++] = bs; uo = -1; }
+      continue;
+    }
+    let p = row + bs;
+    const pe = row + Math.min(bs + BLOCK, W);
+    while (p < pe) {
+      if (u[p] === u[p - W]) {
+        if (uo < 0) uo = p - row;
+        do p++; while (p < pe && u[p] === u[p - W]);
+      } else {
+        if (uo >= 0) { ue[un++] = uo; ue[un++] = p - row; uo = -1; }
+        do p++; while (p < pe && u[p] !== u[p - W]);
+      }
+    }
+  }
   if (uo >= 0) { ue[un++] = uo; ue[un++] = W; }
-  L.n = ln; L.k = 0; U.n = un; U.k = 0;
+  TOK_U.n = un; TOK_U.k = 0;
+}
+
+/** Row y's filter byte (0) and pixels into the Adler-32 halves: runs from the left intervals in O(1), singles per pixel. */
+function adlerRow(e: ZlibEnc, y: number): void {
+  const W = e.W, px = e.px, row = y * W, le = TOK_L.e, ln = TOK_L.n;
   let a = modA(e.a), b = modA(e.b + a), pending = 0;
   for (let k = 0, x = 0; x < W;) {
     const s0 = k < ln ? le[k] - 1 : W;
@@ -791,82 +844,86 @@ function startRow(e: ZlibEnc, y: number): void {
 
 /** LZ77 over the rows from (e.y, e.xb). true: a Huffman block was coded (take an IDAT); false: past the last row. */
 function encodeRows(e: ZlibEnc): boolean {
-  const W = e.W, H = e.H, px = e.px, u = e.u, RB = e.RB, S = e.S, upOk = e.upOk, epoch = e.epoch;
+  while (e.y < e.H) {
+    if (!e.rowStarted) { startRow(e, e.y); e.rowStarted = true; e.xb = 0; e.tok[e.nTok++] = 0; }
+    else if (e.xb < e.RB) encodeRow(e);
+    else { e.y++; e.rowStarted = false; continue; }
+    // as soon as a token block fills, as zlib's deflate would
+    if (e.nTok === TOK_BLOCK && rotateTok(e)) return true;
+  }
+  return false;
+}
+
+/**
+ * Tokens for row e.y from byte e.xb to the row's end, or until the token block is full. One row per call, so the
+ * loop V8 compiles on stack replacement is the function's outermost: optimized code no longer deopts ("exit from
+ * OSR'd inner loop") at every row end, and the per-row calls tier the whole function up normally. Leaving the
+ * block rotation (rare, and a call) to the caller keeps this loop free of paths that have never run.
+ * Stopping inside a run of 258-byte left matches is the same as continuing it: the next token search at an aligned
+ * xb finds the same 258-byte left match exactly when the run would go on (L.from ≥ 65 pixels, a full 258 left).
+ */
+function encodeRow(e: ZlibEnc): void {
+  const W = e.W, px = e.px, u = e.u, RB = e.RB, S = e.S, upOk = e.upOk, epoch = e.epoch, y = e.y;
   const head = TOK_HEAD, prev = TOK_PREV, age = TOK_AGE, L = TOK_L, U = TOK_U;
-  let y = e.y, xb = e.xb, rowStarted = e.rowStarted, tok = e.tok, nTok = e.nTok;
-  let coded = false;
-  for (; y < H; y++, rowStarted = false) {
-    if (!rowStarted) {
-      startRow(e, y);
-      rowStarted = true; xb = 0;
-      tok[nTok++] = 0;
-      if (nTok === TOK_BLOCK) { e.tok = tok; coded = rotateTok(e); tok = e.tok; nTok = 0; if (coded) break; }
-    }
-    const rowB = y * RB;
-    while (xb < RB) {
-      const pb = rowB + xb, max = Math.min(258, RB - xb);
-      let best = 0, dist = 0;
-      if (max >= 3) {
-        if (xb >= 4) { best = alongMatch(L, px, W, pb, xb, 4, max); dist = 4; }
-        if (y > 0 && upOk && best < max) { const l = alongMatch(U, px, W, pb, xb, RB, max); if (l > best) { best = l; dist = S; } }
-        if (best < 32 && (xb & 3) === 0) {
-          const p = pb >> 2;
-          const hh = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
-          let j = age[hh] === epoch ? head[hh] : -1, chain = CHAIN;
-          while (j >= 0 && chain-- > 0 && p - j <= RM) {
-            const qy = (j / W) | 0, qxb = (j - qy * W) * 4, bd = (y - qy) * S + xb - qxb;
-            if (bd > 32768) break;
-            const mlen = Math.min(max, RB - qxb);
-            if (best < mlen && px[j * 4 + best] === px[pb + best]) {
-              const l = runBytes(px, u, pb, j * 4, mlen);
-              if (l > best) { best = l; dist = bd; }
-            }
-            const pj = prev[j & RM];
-            if (pj >= j) break;
-            j = pj;
+  let xb = e.xb, nTok = e.nTok;
+  const tok = e.tok, rowB = y * RB;
+  while (xb < RB && nTok < TOK_BLOCK) {
+    const pb = rowB + xb, max = Math.min(258, RB - xb);
+    let best = 0, dist = 0;
+    if (max >= 3) {
+      if (xb >= 4) { best = alongMatch(L, px, W, pb, xb, 4, max); dist = 4; }
+      if (y > 0 && upOk && best < max) { const l = alongMatch(U, px, W, pb, xb, RB, max); if (l > best) { best = l; dist = S; } }
+      if (best < 32 && (xb & 3) === 0) {
+        const p = pb >> 2;
+        const hh = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
+        let j = age[hh] === epoch ? head[hh] : -1, chain = CHAIN;
+        while (j >= 0 && chain-- > 0 && p - j <= RM) {
+          const qy = (j / W) | 0, qxb = (j - qy * W) * 4, bd = (y - qy) * S + xb - qxb;
+          if (bd > 32768) break;
+          const mlen = Math.min(max, RB - qxb);
+          if (best < mlen && px[j * 4 + best] === px[pb + best]) {
+            const l = runBytes(px, u, pb, j * 4, mlen);
+            if (l > best) { best = l; dist = bd; }
           }
+          const pj = prev[j & RM];
+          if (pj >= j) break;
+          j = pj;
         }
       }
-      if (best >= 3) {
-        if (dist === 4 && best === 258 && (xb & 3) === 0) {
-          for (;;) {
-            tok[nTok++] = 256 + ((258 << 16) | 4);
-            if (nTok === TOK_BLOCK) { e.tok = tok; coded = rotateTok(e) || coded; tok = e.tok; nTok = 0; }
-            const p1 = (rowB + xb + 258) >> 2;
-            for (let p = p1 - 2; p < p1; p++) {
-              const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
-              prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
-            }
-            xb += 258;
-            if (xb + 258 > RB) break;
-            if (L.from(xb >> 2) < 65) break;
-            if (coded) break;
-          }
-        } else {
-          tok[nTok++] = 256 + ((best << 16) | dist);
-          if (nTok === TOK_BLOCK) { e.tok = tok; coded = rotateTok(e); tok = e.tok; nTok = 0; }
-          const p0 = (rowB + ((xb + 3) & ~3)) >> 2, p1 = (pb + best) >> 2;
-          for (let p = best <= 32 ? p0 : Math.max(p0, p1 - 2); p < p1; p++) {
+    }
+    if (best >= 3) {
+      if (dist === 4 && best === 258 && (xb & 3) === 0) {
+        for (;;) {
+          tok[nTok++] = 256 + ((258 << 16) | 4);
+          const p1 = (rowB + xb + 258) >> 2;
+          for (let p = p1 - 2; p < p1; p++) {
             const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
             prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
           }
-          xb += best;
+          xb += 258;
+          if (xb + 258 > RB) break;
+          if (L.from(xb >> 2) < 65) break;
+          if (nTok === TOK_BLOCK) break;
         }
       } else {
-        tok[nTok++] = px[pb];
-        if (nTok === TOK_BLOCK) { e.tok = tok; coded = rotateTok(e); tok = e.tok; nTok = 0; }
-        if ((xb & 3) === 0) {
-          const p = pb >> 2, h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
+        tok[nTok++] = 256 + ((best << 16) | dist);
+        const p0 = (rowB + ((xb + 3) & ~3)) >> 2, p1 = (pb + best) >> 2;
+        for (let p = best <= 32 ? p0 : Math.max(p0, p1 - 2); p < p1; p++) {
+          const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
           prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
         }
-        xb++;
+        xb += best;
       }
-      if (coded) break;
+    } else {
+      tok[nTok++] = px[pb];
+      if ((xb & 3) === 0) {
+        const p = pb >> 2, h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
+        prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
+      }
+      xb++;
     }
-    if (coded) break;
   }
-  e.y = y; e.xb = xb; e.rowStarted = rowStarted; e.tok = tok; e.nTok = nTok;
-  return coded;
+  e.xb = xb; e.nTok = nTok;
 }
 
 /** The coded bytes as one IDAT chunk (single allocation, no intermediate payload copy). */
@@ -892,7 +949,7 @@ function adlerIdat(e: ZlibEnc): Uint8Array {
   out[9 + tail.length] = (adler >>> 16) & 255;
   out[10 + tail.length] = (adler >>> 8) & 255;
   out[11 + tail.length] = adler & 255;
-  const crc = crc32([out.subarray(4, 8 + n)]);
+  const crc = crcDone(crc32(out.subarray(4, 8 + n)));
   out[8 + n] = (crc >>> 24) & 255; out[9 + n] = (crc >>> 16) & 255;
   out[10 + n] = (crc >>> 8) & 255; out[11 + n] = crc & 255;
   if (n > e.high) e.high = n;
