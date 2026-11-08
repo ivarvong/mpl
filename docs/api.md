@@ -136,17 +136,17 @@ Keyword arguments (unknown keys throw): `pad`, `h_pad`, `w_pad`, `rect`
 
 Run layout; one trace per run.
 
-### `Figure.toSVG()`
+### `Figure.toSVG(kwargs?)`
 
-The figure as an SVG document string, as matplotlib's SVG backend writes it.
+The figure as an SVG document string, as matplotlib's SVG backend writes it. Optional { precision }, mpl's own: path coordinates (line and path `d`, marker positions) rounded to 0–4 decimals, a repeated command letter written once, and line vertices that round onto the previous one dropped. Omitted, the output is unchanged (4 decimals).
 
-### `Figure.svgChunks()`
+### `Figure.svgChunks(kwargs?)`
 
-The SVG as a generator of string chunks.
+The SVG as a generator of string chunks. Optional { precision } as in toSVG.
 
-### `Figure.svgStream()`
+### `Figure.svgStream(kwargs?)`
 
-The SVG as a byte stream (Workers, browsers, Node).
+The SVG as a byte stream (Workers, browsers, Node). Optional { precision } as in toSVG.
 
 ### `Figure.toRGBA(kwargs?)`
 
