@@ -10,6 +10,8 @@ import type { Fmt, FmtShape } from './core/fmt.ts';
 import { dataExtents, unionExtent, viewLimits } from './core/autoscale.ts';
 import type { Bins, Sample } from './core/histogram.ts';
 import { BIN_ESTIMATORS, histTops } from './core/histogram.ts';
+import type { Whis } from './core/boxplot.ts';
+import { boxplotStats, parseWhis, reshapeBoxplotData } from './core/boxplot.ts';
 import { scaleOf } from './core/ticks.ts';
 import { parseFmt, parseLinestyle, parseMarker } from './core/fmt.ts';
 import { layoutFigure, supBoxes, tightBoxes, unionBox } from './core/layout.ts';
@@ -25,8 +27,8 @@ import { composeStyles } from './core/style.ts';
 import { parseFontSize, parseLegendLoc, parseTheme, scatterPointsOf } from './core/theme.ts';
 import type {
   Artist, Aspect, AxesMeta, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
-  AxLineArtist, AxLineThrough, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist,
-  LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, TightBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, ImageArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
+  AxLineArtist, AxLineThrough, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist, StickyArtist,
+  Cap, LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, TightBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, ImageArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
 } from './core/types.ts';
 import { assertNever, err, none, ok, some, unwrap } from './core/types.ts';
 import { iolistToString } from './render/iolist.ts';
@@ -207,6 +209,28 @@ const pyRepr = (v: unknown): string => {
   if (Array.isArray(v)) return `[${v.map(pyRepr).join(', ')}]`;
   return typeof v === 'number' ? String(v) : JSON.stringify(v);
 };
+/** Python `str(float)` / `str(np.float64)`: wholes get '.0'; NaN/±inf as 'nan'/'inf'/'-inf'. */
+const pyFloatStr = (v: number): string => {
+  if (Number.isNaN(v)) return 'nan';
+  if (v === Infinity) return 'inf';
+  if (v === -Infinity) return '-inf';
+  if (Object.is(v, -0)) return '-0.0';
+  if (Number.isInteger(v)) return `${v}.0`;
+  return String(v);
+};
+/**
+ * Default boxplot tick label for a position. Matplotlib uses str() on numpy-array elements:
+ * all-int → '1','2'; any float → every value as str(float) ('2.0' for wholes).
+ * JS cannot distinguish [1.0,2.0] from [1,2], so all-integral float positions render like Python ints.
+ */
+const boxplotPositionLabel = (positions: ArrayLike<number>, i: number): string => {
+  let allIntegral = true;
+  for (let j = 0; j < positions.length; j++) {
+    if (!Number.isInteger(positions[j])) { allIntegral = false; break; }
+  }
+  const v = positions[i];
+  return allIntegral ? String(v) : pyFloatStr(v);
+};
 const unwrapErr = <T>(r: Result<T>): string => (r.ok ? '' : r.error);
 const mapResult = <T, U>(r: Result<T>, f: (t: T) => U): Result<U> => (r.ok ? ok(f(r.value)) : r);
 const parseDrawStyle = (v: unknown): Result<DrawStyle> => {
@@ -314,6 +338,17 @@ export type HistResult = readonly [Float64Array, Float64Array, HistPatches];
 /** hist([x0, x1, …]): one n row and one patches entry per dataset, sharing the bin edges */
 export type HistResultMulti = readonly [readonly Float64Array[], Float64Array, readonly HistPatches[]];
 export type HistType = 'bar' | 'barstacked' | 'step' | 'stepfilled';
+/** Axes.boxplot return: artists per component, as matplotlib's dict. Boxes are LineArtist or PolygonArtist. */
+export type BoxplotBox = LineArtist | PolygonArtist;
+export type BoxplotResult = {
+  readonly boxes: readonly BoxplotBox[];
+  readonly medians: readonly LineArtist[];
+  readonly whiskers: readonly LineArtist[];
+  readonly caps: readonly LineArtist[];
+  readonly fliers: readonly LineArtist[];
+  readonly means: readonly LineArtist[];
+};
+
 /** ErrorbarContainer: (data_line, caplines, barlinecols) plus the legend artist. data_line is none for fmt='none'. */
 export type ErrorbarContainer = {
   readonly artist: ErrorbarArtist; readonly data_line: Option<LineArtist>; readonly caplines: readonly LineArtist[];
@@ -321,6 +356,99 @@ export type ErrorbarContainer = {
 };
 
 type Units = { readonly kind: 'numeric' } | { readonly kind: 'category'; readonly names: readonly string[] } | { readonly kind: 'datetime' };
+
+const propsDict = (name: string) => (v: unknown): Result<Kwargs> => {
+  if (!isPlainObject(v)) return err(`${name} must be a dict of artist properties`);
+  const out: Record<string, unknown> = {};
+  for (const [k, val] of Object.entries(v)) out[k] = val;
+  return ok(out);
+};
+
+type MergedLine = { readonly stroke: LineStroke; readonly face: Option<Paint> };
+/** Merge boxplot.*props rc with a caller props dict. patchArtist maps color → edge and allows facecolor. */
+function mergeLineProps(rc: { readonly color: Rgb; readonly linewidthPt: number; readonly style: LineStyleName }, props: Kwargs, patchArtist: boolean, cycle: readonly Rgb[]): MergedLine {
+  const kw = new KwReader(props, 'boxplot props');
+  // For patchArtist, color is an alias of edgecolor (matplotlib pops color → edgecolor)
+  let edge: Rgb = rc.color;
+  if (patchArtist) {
+    const c = kw.get(['color']);
+    const ec = kw.get(['edgecolor', 'ec']);
+    if (c.kind === 'some' && ec.kind === 'some') throw new TypeError('boxplot props got both color and edgecolor');
+    const picked = ec.kind === 'some' ? ec : c;
+    if (picked.kind === 'some') edge = unwrap(parseRgb(picked.value, cycle));
+  } else {
+    edge = kw.read(['color', 'c'], (v) => parseRgb(v, cycle), () => rc.color);
+  }
+  const lw = kw.read(['linewidth', 'lw'], num('linewidth'), () => rc.linewidthPt);
+  const style = kw.read(['linestyle', 'ls'], (v) => {
+    const r = parseLinestyle(v);
+    if (!r.ok) return r;
+    return r.value.kind === 'some' ? ok(r.value.value) : err('linestyle none is not supported for box/whisker/cap/median');
+  }, () => rc.style);
+  const face = patchArtist
+    ? kw.read(['facecolor', 'fc'], (v) => mapResult(parsePaint(v, cycle), some), (): Option<Paint> => none)
+    : none;
+  // refuse marker-related keys on non-marker parts
+  for (const k of ['marker', 'markersize', 'ms', 'markerfacecolor', 'mfc', 'markeredgecolor', 'mec', 'markeredgewidth', 'mew'] as const) {
+    if (kw.get([k]).kind === 'some') throw new TypeError(`boxplot props does not support '${k}' on this artist`);
+  }
+  kw.done();
+  const stroke: LineStroke = lw > 0 ? { kind: 'on', color: edge, widthPt: lw, style } : { kind: 'none' };
+  return { stroke, face };
+}
+
+function mergeMeanProps(
+  rc: Theme['boxplot']['mean'],
+  props: Kwargs,
+  meanline: boolean,
+  cycle: readonly Rgb[],
+): { readonly stroke: LineStroke; readonly markers: LineMarkers } {
+  const kw = new KwReader(props, 'meanprops');
+  const color = kw.read(['color', 'c'], (v) => parseRgb(v, cycle), () => rc.color);
+  const lw = kw.read(['linewidth', 'lw'], num('linewidth'), () => rc.linewidthPt);
+  const styleR = kw.get(['linestyle', 'ls']);
+  const style: Option<LineStyleName> = styleR.kind === 'some'
+    ? unwrap(parseLinestyle(styleR.value))
+    : (meanline ? some(rc.style) : none);
+  // when meanline, default no marker unless explicitly set; when !meanline, default marker and no line
+  const markerR = kw.get(['marker']);
+  const marker: Option<MarkerName> = markerR.kind === 'some'
+    ? unwrap(parseMarker(markerR.value))
+    : (meanline ? none : some(rc.marker));
+  const sizePt = kw.read(['markersize', 'ms'], num('markersize'), () => rc.markerSizePt);
+  const face = kw.read(['markerfacecolor', 'mfc'], (v) => parsePaint(v, cycle), () => ({ kind: 'solid' as const, color: rc.markerFace }));
+  const edge = kw.read(['markeredgecolor', 'mec'], (v) => parsePaint(v, cycle), () => ({ kind: 'solid' as const, color: rc.markerEdge }));
+  const mew = kw.read(['markeredgewidth', 'mew'], num('markeredgewidth'), () => 1.0);
+  kw.done();
+  const stroke: LineStroke = style.kind === 'some' && lw > 0
+    ? { kind: 'on', color, widthPt: lw, style: style.value } : { kind: 'none' };
+  const markers: LineMarkers = marker.kind === 'some'
+    ? { kind: 'on', shape: marker.value, sizePt, edgeWidthPt: mew, face, edge } : { kind: 'none' };
+  return { stroke, markers };
+}
+
+function mergeFlierProps(
+  rc: Theme['boxplot']['flier'],
+  props: Kwargs,
+  cycle: readonly Rgb[],
+): { readonly stroke: LineStroke; readonly markers: LineMarkers } {
+  const kw = new KwReader(props, 'flierprops');
+  const color = kw.read(['color', 'c'], (v) => parseRgb(v, cycle), () => rc.color);
+  const lw = kw.read(['linewidth', 'lw'], num('linewidth'), () => rc.linewidthPt);
+  const style = kw.read(['linestyle', 'ls'], parseLinestyle, () => rc.style);
+  const marker = kw.read(['marker'], parseMarker, () => some(rc.marker));
+  const sizePt = kw.read(['markersize', 'ms'], num('markersize'), () => rc.markerSizePt);
+  const face = kw.read(['markerfacecolor', 'mfc'], (v) => parsePaint(v, cycle), () => rc.markerFace);
+  const edge = kw.read(['markeredgecolor', 'mec'], (v) => parsePaint(v, cycle), () => ({ kind: 'solid' as const, color: rc.markerEdge }));
+  const mew = kw.read(['markeredgewidth', 'mew'], num('markeredgewidth'), () => rc.markerEdgeWidthPt);
+  kw.done();
+  const stroke: LineStroke = style.kind === 'some' && lw > 0
+    ? { kind: 'on', color, widthPt: lw, style: style.value } : { kind: 'none' };
+  const markers: LineMarkers = marker.kind === 'some'
+    ? { kind: 'on', shape: marker.value, sizePt, edgeWidthPt: mew, face, edge } : { kind: 'none' };
+  return { stroke, markers };
+}
+
 
 export class Axis {
   units: Units = { kind: 'numeric' };
@@ -560,7 +688,7 @@ export class Axes {
     const p = this.lineProps(kw, fmt, () => ({ kind: 'solid', color: this.next('line') }));
     kw.done();
     const line: LineArtist = { kind: 'line', x: this.xaxis.convert(xs), y: this.yaxis.convert(ys), stroke: p.stroke, markers: p.markers, label: p.label,
-                               clip: p.clip, drawstyle: p.drawstyle, coords: DATA_COORDS, zorder: p.zorder };
+                               clip: p.clip, drawstyle: p.drawstyle, coords: DATA_COORDS, zorder: p.zorder, cap: none };
     this.artists.push(line);
     this.xaxis.request(); this.yaxis.request();
     return line;
@@ -638,7 +766,7 @@ export class Axes {
     const line: LineArtist = {
       kind: 'line', x: horiz ? Float64Array.of(f0, f1) : Float64Array.of(v, v), y: horiz ? Float64Array.of(v, v) : Float64Array.of(f0, f1),
       stroke: p.stroke, markers: p.markers, label: p.label, clip: p.clip, drawstyle: p.drawstyle,
-      coords: horiz ? { x: 'axes', y: 'data' } : { x: 'data', y: 'axes' }, zorder: p.zorder,
+      coords: horiz ? { x: 'axes', y: 'data' } : { x: 'data', y: 'axes' }, zorder: p.zorder, cap: none,
     };
     this.artists.push(line);
     if (v < b0 || v > b1) axis.request();
@@ -751,7 +879,7 @@ export class Axes {
     const alphaRgb = (c: Rgb): Rgb => (lp.alpha.kind === 'some' ? { hex: c.hex, alpha: lp.alpha.value } : c);
     const dataLine: Option<LineArtist> = fmtNone ? none : some({
       kind: 'line', x: xs, y: ys, stroke: lp.stroke, markers: lp.markers, label: { kind: 'none' }, clip: lp.clip,
-      drawstyle: lp.drawstyle, coords: DATA_COORDS, zorder: barsabove ? zorder - 0.1 : zorder + 0.1,
+      drawstyle: lp.drawstyle, coords: DATA_COORDS, zorder: barsabove ? zorder - 0.1 : zorder + 0.1, cap: none,
     });
     if (dataLine.kind === 'some') this.artists.push(dataLine.value);
     const barWidth = elw.kind === 'some' ? elw.value : lp.lw.kind === 'some' ? lp.lw.value : this.theme.lines.widthPt;
@@ -762,7 +890,7 @@ export class Axes {
     const capFace: Paint = withAlphaOpt(base, lp.alpha);
     const capLine = (x: Float64Array, y: Float64Array, shape: MarkerName): LineArtist => ({
       kind: 'line', x, y, stroke: { kind: 'none' }, markers: { kind: 'on', shape, sizePt: capSizePt, edgeWidthPt: capMew, face: capFace, edge: capEdge },
-      label: { kind: 'none' }, clip: lp.clip, drawstyle: 'default', coords: DATA_COORDS, zorder,
+      label: { kind: 'none' }, clip: lp.clip, drawstyle: 'default', coords: DATA_COORDS, zorder, cap: none,
     });
     const bars: SegmentsArtist[] = [];
     const caps: LineArtist[] = [];
@@ -976,7 +1104,7 @@ export class Axes {
         const edgeP = st.edge.kind === 'some' ? st.edge.value : fill ? forced : colors[k];
         const face: Paint = fill ? withAlphaOpt(st.face.kind === 'some' ? st.face.value : colors[k], alpha) : { kind: 'none' };
         const px = (vertical ? o.x : o.y).slice(0, split), py = (vertical ? o.y : o.x).slice(0, split);
-        const poly: PolygonArtist = { kind: 'polygon', x: px, y: py, closed: fill, face, edge: edgeOf(withAlphaOpt(edgeP, alpha), lw), label: lblOf(k), clip, zorder: fill ? 1 : 2, orientation, antialiased: true };
+        const poly: PolygonArtist = { kind: 'polygon', x: px, y: py, closed: fill, face, edge: edgeOf(withAlphaOpt(edgeP, alpha), lw), label: lblOf(k), clip, zorder: fill ? 1 : 2, stickyBase: some({ axis: vertical ? 'y' : 'x', value: 0 }), antialiased: true };
         this.artists.push(poly);
         polys.unshift(poly);
       }
@@ -985,6 +1113,214 @@ export class Axes {
     this.xaxis.request(); this.yaxis.request();
     return multi ? [tops, edges, patches] : [tops[0], edges, patches[0]];
   }
+
+  /**
+   * boxplot(x, { notch, vert, orientation, whis, positions, widths, patch_artist, showmeans, meanline,
+   * showcaps, showbox, showfliers, manage_ticks, autorange, tick_labels|labels, zorder,
+   * boxprops, whiskerprops, capprops, flierprops, medianprops, meanprops, clip_on }) —
+   * Tukey's box-and-whisker plot. Quartiles match numpy.percentile linear. bootstrap / usermedians /
+   * conf_intervals / capwidths / sym are unsupported and throw. Returns { boxes, medians, whiskers,
+   * caps, fliers, means } as matplotlib does.
+   *
+   * Default tick labels (when `tick_labels`/`labels` are omitted): if every `positions` value is
+   * integral, labels are `'1'`,`'2'`,…; otherwise each is Python `str(float)` (wholes get `'.0'`,
+   * e.g. positions `[0.5, 2, 4.5]` → `'0.5'`,`'2.0'`,`'4.5'`). JS cannot distinguish `[1.0, 2.0]`
+   * from `[1, 2]`, so all-integral float positions render like Python ints.
+   */
+  boxplot(xRaw: unknown, kwargs: Kwargs = {}): BoxplotResult {
+    const kw = new KwReader(kwargs, 'boxplot');
+    const T = this.theme.boxplot;
+    // bootstrap: accepted only as null/undefined/'None' (off); any sample count is refused
+    const bootstrap = kw.get(['bootstrap']);
+    if (bootstrap.kind === 'some' && bootstrap.value !== 'None' && bootstrap.value !== 'none') {
+      throw new TypeError('boxplot() bootstrap is not supported in mpl; omit it for the Gaussian notch CI');
+    }
+    if (kw.get(['usermedians']).kind === 'some') throw new TypeError("boxplot() does not support 'usermedians' in mpl");
+    if (kw.get(['conf_intervals']).kind === 'some') throw new TypeError("boxplot() does not support 'conf_intervals' in mpl");
+    if (kw.get(['capwidths']).kind === 'some') throw new TypeError("boxplot() does not support 'capwidths' in mpl");
+    if (kw.get(['sym']).kind === 'some') throw new TypeError("boxplot() does not support 'sym' in mpl");
+    const whis = kw.read(['whis'], parseWhis, (): Whis => T.whiskers);
+    const notch = kw.read(['notch'], bool('notch'), () => T.notch);
+    const vertK = kw.get(['vert']);
+    const orientation0 = kw.read(['orientation'], oneOf('orientation', ['horizontal', 'vertical']), (): Orientation => 'vertical');
+    const orientation: Orientation = vertK.kind === 'some'
+      ? (unwrap(bool('vert')(vertK.value)) ? 'vertical' : 'horizontal')
+      : orientation0;
+    const vertical = orientation === 'vertical';
+    const patchArtist = kw.read(['patch_artist'], bool('patch_artist'), () => T.patchArtist);
+    const showmeans = kw.read(['showmeans'], bool('showmeans'), () => T.showMeans);
+    const meanline = kw.read(['meanline'], bool('meanline'), () => T.meanline);
+    const showcaps = kw.read(['showcaps'], bool('showcaps'), () => T.showCaps);
+    const showbox = kw.read(['showbox'], bool('showbox'), () => T.showBox);
+    const showfliers = kw.read(['showfliers'], bool('showfliers'), () => T.showFliers);
+    const manageTicks = kw.read(['manage_ticks'], bool('manage_ticks'), () => true);
+    const autorange = kw.read(['autorange'], bool('autorange'), () => false);
+    const zorder = kw.read(['zorder'], num('zorder'), () => 2);
+    const clip = kw.read(['clip_on', 'clipon', 'clip'], bool('clip_on'), () => true);
+    const tickLabels = kw.read(['tick_labels', 'labels'], (v): Result<Option<readonly Option<string>[]>> => {
+      if (!Array.isArray(v)) return err('tick_labels must be a list of strings');
+      return ok(some(v.map((x): Option<string> => (typeof x === 'string' || typeof x === 'number' ? some(str(x)) : none))));
+    }, (): Option<readonly Option<string>[]> => none);
+    const positionsK = kw.read(['positions'], (v): Result<Option<Float64Array>> => {
+      const s = parseSeries(v, 'positions');
+      if (!s.ok) return s;
+      if (s.value.kind === 'strings') return err('positions should be an iterable of numbers');
+      return ok(some(s.value.values));
+    }, (): Option<Float64Array> => none);
+    type Widths = { readonly kind: 'scalar'; readonly value: number } | { readonly kind: 'array'; readonly values: Float64Array };
+    const widthsK = kw.read(['widths'], (v): Result<Option<Widths>> => {
+      if (typeof v === 'number') return ok(some({ kind: 'scalar', value: v }));
+      const s = parseSeries(v, 'widths');
+      if (!s.ok) return s;
+      if (s.value.kind === 'strings') return err('widths must be a float or array-like');
+      return ok(some({ kind: 'array', values: s.value.values }));
+    }, (): Option<Widths> => none);
+    const boxprops = kw.read(['boxprops'], propsDict('boxprops'), (): Kwargs => ({}));
+    const whiskerprops = kw.read(['whiskerprops'], propsDict('whiskerprops'), (): Kwargs => ({}));
+    const capprops = kw.read(['capprops'], propsDict('capprops'), (): Kwargs => ({}));
+    const flierprops = kw.read(['flierprops'], propsDict('flierprops'), (): Kwargs => ({}));
+    const medianprops = kw.read(['medianprops'], propsDict('medianprops'), (): Kwargs => ({}));
+    const meanprops = kw.read(['meanprops'], propsDict('meanprops'), (): Kwargs => ({}));
+    // legend label: unsupported as a full multi-artist legend wiring; refuse rather than mis-label
+    if (kw.get(['label']).kind === 'some') throw new TypeError("boxplot() does not support 'label' in mpl");
+    kw.done();
+
+    const datasets = unwrap(reshapeBoxplotData(xRaw));
+    const N = datasets.length;
+    const stats = unwrap(boxplotStats(datasets, whis, tickLabels, autorange));
+    const positions = positionsK.kind === 'some' ? positionsK.value : Float64Array.from({ length: N }, (_, i) => i + 1);
+    if (positions.length !== N) throw new Error('List of boxplot statistics and `positions` values must have same the length');
+    for (const p of positions) if (typeof p !== 'number' || Number.isNaN(p)) throw new TypeError('positions should be an iterable of numbers');
+
+    const widths: Float64Array = ((): Float64Array => {
+      if (widthsK.kind === 'none') {
+        let lo = Infinity, hi = -Infinity;
+        for (const p of positions) { if (p < lo) lo = p; if (p > hi) hi = p; }
+        const span = N === 0 ? 0 : hi - lo;
+        const w = Math.min(0.5, Math.max(0.15, 0.15 * span));
+        return Float64Array.from({ length: N }, () => w);
+      }
+      const wspec = widthsK.value;
+      if (wspec.kind === 'scalar') {
+        const s = wspec.value;
+        return Float64Array.from({ length: N }, () => s);
+      }
+      if (wspec.values.length !== N) throw new Error('List of boxplot statistics and `widths` values must have same the length');
+      return wspec.values;
+    })();
+    const capwidths = Float64Array.from(widths, (w) => 0.5 * w);
+
+    const boxes: BoxplotBox[] = [];
+    const medians: LineArtist[] = [];
+    const whiskers: LineArtist[] = [];
+    const caps: LineArtist[] = [];
+    const fliers: LineArtist[] = [];
+    const means: LineArtist[] = [];
+
+    const swap = (xs: Float64Array, ys: Float64Array): { x: Float64Array; y: Float64Array } =>
+      (vertical ? { x: xs, y: ys } : { x: ys, y: xs });
+
+    const lineAt = (
+      xs: Float64Array, ys: Float64Array,
+      stroke: LineStroke, markers: LineMarkers, z: number, lbl: Label,
+      cap: Option<Cap> = none,
+    ): LineArtist => {
+      const p = swap(xs, ys);
+      const line: LineArtist = {
+        kind: 'line', x: p.x, y: p.y, stroke, markers, label: lbl, clip,
+        drawstyle: 'default', coords: DATA_COORDS, zorder: z, cap,
+      };
+      this.artists.push(line);
+      return line;
+    };
+
+    const cycle = this.theme.axes.cycle;
+    const boxStroke = mergeLineProps(T.box, boxprops, patchArtist, cycle);
+    const whiskerStroke = mergeLineProps(T.whisker, whiskerprops, false, cycle);
+    const capStroke = mergeLineProps(T.cap, capprops, false, cycle);
+    const medianStroke = mergeLineProps(T.median, medianprops, false, cycle);
+    const meanMerged = mergeMeanProps(T.mean, meanprops, meanline, cycle);
+    const flierMerged = mergeFlierProps(T.flier, flierprops, cycle);
+
+    for (let i = 0; i < N; i++) {
+      const s = stats[i];
+      const pos = positions[i];
+      const width = widths[i];
+      const capwidth = capwidths[i];
+      const boxLeft = pos - width * 0.5, boxRight = pos + width * 0.5;
+      const capLeft = pos - capwidth * 0.5, capRight = pos + capwidth * 0.5;
+      let boxX: Float64Array, boxY: Float64Array, medX: Float64Array;
+      if (notch) {
+        const notchLeft = pos - width * 0.25, notchRight = pos + width * 0.25;
+        boxX = Float64Array.of(boxLeft, boxRight, boxRight, notchRight, boxRight, boxRight, boxLeft, boxLeft, notchLeft, boxLeft, boxLeft);
+        boxY = Float64Array.of(s.q1, s.q1, s.cilo, s.med, s.cihi, s.q3, s.q3, s.cihi, s.med, s.cilo, s.q1);
+        medX = Float64Array.of(notchLeft, notchRight);
+      } else {
+        boxX = Float64Array.of(boxLeft, boxRight, boxRight, boxLeft, boxLeft);
+        boxY = Float64Array.of(s.q1, s.q1, s.q3, s.q3, s.q1);
+        medX = Float64Array.of(boxLeft, boxRight);
+      }
+      const medY = Float64Array.of(s.med, s.med);
+
+      if (showbox) {
+        if (patchArtist) {
+          const p = swap(boxX, boxY);
+          const face = boxStroke.face.kind === 'some' ? boxStroke.face.value : { kind: 'solid' as const, color: cycle[0] };
+          const poly: PolygonArtist = {
+            kind: 'polygon', x: p.x, y: p.y, closed: true, face,
+            edge: boxStroke.stroke.kind === 'on' ? { kind: 'on', color: boxStroke.stroke.color, widthPt: boxStroke.stroke.widthPt } : { kind: 'none' },
+            label: { kind: 'none' }, clip, zorder, stickyBase: none, antialiased: true,
+          };
+          this.artists.push(poly);
+          boxes.push(poly);
+        } else {
+          boxes.push(lineAt(boxX, boxY, boxStroke.stroke, { kind: 'none' }, zorder, { kind: 'none' }));
+        }
+      }
+
+      whiskers.push(lineAt(Float64Array.of(pos, pos), Float64Array.of(s.q1, s.whislo), whiskerStroke.stroke, { kind: 'none' }, zorder, { kind: 'none' }));
+      whiskers.push(lineAt(Float64Array.of(pos, pos), Float64Array.of(s.q3, s.whishi), whiskerStroke.stroke, { kind: 'none' }, zorder, { kind: 'none' }));
+
+      if (showcaps) {
+        caps.push(lineAt(Float64Array.of(capLeft, capRight), Float64Array.of(s.whislo, s.whislo), capStroke.stroke, { kind: 'none' }, zorder, { kind: 'none' }));
+        caps.push(lineAt(Float64Array.of(capLeft, capRight), Float64Array.of(s.whishi, s.whishi), capStroke.stroke, { kind: 'none' }, zorder, { kind: 'none' }));
+      }
+
+      medians.push(lineAt(medX, medY, medianStroke.stroke, { kind: 'none' }, zorder + 0.1, { kind: 'none' }, some('butt')));
+
+      if (showmeans) {
+        if (meanline) {
+          means.push(lineAt(Float64Array.of(boxLeft, boxRight), Float64Array.of(s.mean, s.mean), meanMerged.stroke, { kind: 'none' }, zorder + 0.1, { kind: 'none' }, some('butt')));
+        } else {
+          means.push(lineAt(Float64Array.of(pos), Float64Array.of(s.mean), { kind: 'none' }, meanMerged.markers, zorder + 0.1, { kind: 'none' }));
+        }
+      }
+
+      if (showfliers) {
+        const fx = Float64Array.from(s.fliers, () => pos);
+        const fy = s.fliers;
+        fliers.push(lineAt(fx, fy, flierMerged.stroke, flierMerged.markers, zorder, { kind: 'none' }));
+      }
+    }
+
+    if (manageTicks && N > 0) {
+      const axis = vertical ? this.xaxis : this.yaxis;
+      const sticky: number[] = [];
+      for (const pos of positions) { sticky.push(pos - 0.5); sticky.push(pos + 0.5); }
+      const art: StickyArtist = vertical
+        ? { kind: 'sticky', xs: sticky, ys: [], label: { kind: 'none' }, clip: false }
+        : { kind: 'sticky', xs: [], ys: sticky, label: { kind: 'none' }, clip: false };
+      this.artists.push(art);
+      // FixedLocator + FixedFormatter: positions, labels from tick_labels or the numeric position
+      const labels = stats.map((s, i) => (s.label.kind === 'some' ? s.label.value : boxplotPositionLabel(positions, i)));
+      axis.ticks = { kind: 'fixed', locs: [...positions] };
+      axis.labels = { kind: 'fixed', labels };
+    }
+
+    this.xaxis.request(); this.yaxis.request();
+    return { boxes, medians, whiskers, caps, fliers, means };
+  }
+
 
   private parseBins(v: unknown, axis: Axis): Result<Bins> {
     if (typeof v === 'number') return Number.isInteger(v) && v >= 1 ? ok({ kind: 'count', n: v }) : err('`bins` must be positive, when an integer');
@@ -1759,7 +2095,7 @@ export class Colorbar {
         x: Float64Array.from(pts.map((p) => p[0])),
         y: Float64Array.from(pts.map((p) => p[1])),
         closed: true, face: under, edge: { kind: 'none' },
-        label: { kind: 'none' }, clip: false, zorder: 0.9, orientation, antialiased: false,
+        label: { kind: 'none' }, clip: false, zorder: 0.9, stickyBase: none, antialiased: false,
       });
     }
     if (extendUpper) {
@@ -1772,7 +2108,7 @@ export class Colorbar {
         x: Float64Array.from(pts.map((p) => p[0])),
         y: Float64Array.from(pts.map((p) => p[1])),
         closed: true, face: over, edge: { kind: 'none' },
-        label: { kind: 'none' }, clip: false, zorder: 0.9, orientation, antialiased: false,
+        label: { kind: 'none' }, clip: false, zorder: 0.9, stickyBase: none, antialiased: false,
       });
     }
     const bar: BarArtist = {
@@ -1795,7 +2131,7 @@ export class Colorbar {
       face: { kind: 'none' },
       edge: { kind: 'on', color: cax.theme.axes.edge, widthPt: cax.theme.axes.linewidthPt },
       label: { kind: 'none' }, clip: false, zorder: 2,
-      orientation, antialiased: true,
+      stickyBase: none, antialiased: true,
     };
     cax.artists.push(outline);
     if (cblabel) {

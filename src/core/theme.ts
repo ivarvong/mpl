@@ -6,7 +6,7 @@ import { parseWeight } from './fonts.ts';
 import { parseLinestyle, parseMarker } from './fmt.ts';
 import type { RcLayer, RcValue } from './rc.ts';
 import { lookup } from './std.ts';
-import type { AnchorCode, AxisBelow, Cap, GridWhich, HAlign, Join, LegendLoc, LineStyleName, Option, Paint, Result, Rgb, Theme, TickDirection, TickTheme } from './types.ts';
+import type { AnchorCode, AxisBelow, Cap, GridWhich, HAlign, Join, LegendLoc, LineStyleName, Option, Paint, Result, Rgb, Theme, TickDirection, TickTheme, WhisRc, BoxplotLineRc, BoxplotMeanRc, BoxplotFlierRc } from './types.ts';
 import { err, none, ok, some } from './types.ts';
 
 const FONT_SCALES: ReadonlyMap<string, number> = new Map([
@@ -227,6 +227,61 @@ export function parseTheme(rc: RcLayer): Result<Theme> {
     errorbar: { capsizePt: r.num('errorbar.capsize'), capthickPt: r.optNum('errorbar.capthick'), elinewidthPt: r.optNum('errorbar.elinewidth') },
     scatterEdge: r.raw('scatter.edgecolors') === 'face' ? { kind: 'face' } : { kind: 'paint', paint: r.paint('scatter.edgecolors', cycle) },
     histBins: ((): Theme['histBins'] => { const v = r.raw('hist.bins'); return typeof v === 'string' ? { kind: 'estimator', name: v } : { kind: 'count', n: r.num('hist.bins') }; })(),
+    boxplot: boxplotTheme(r, cycle),
   };
   return r.errors.length > 0 ? err(`invalid rcParams:\n  ${r.errors.join('\n  ')}`) : ok(theme);
 }
+
+function boxplotLine(r: Reader, sub: string, cycle: readonly Rgb[]): BoxplotLineRc {
+  return {
+    color: r.rgb(`boxplot.${sub}props.color`, cycle),
+    linewidthPt: r.num(`boxplot.${sub}props.linewidth`),
+    style: r.solidStyle(`boxplot.${sub}props.linestyle`),
+  };
+}
+function boxplotTheme(r: Reader, cycle: readonly Rgb[]): Theme['boxplot'] {
+  const whisRaw = r.raw('boxplot.whiskers');
+  const whiskers: WhisRc = ((): WhisRc => {
+    if (typeof whisRaw === 'number') return { kind: 'iqr', coef: whisRaw };
+    if (Array.isArray(whisRaw) && whisRaw.length === 2 && whisRaw.every((x) => typeof x === 'number')) {
+      return { kind: 'percentiles', lo: Number(whisRaw[0]), hi: Number(whisRaw[1]) };
+    }
+    return r.fail('boxplot.whiskers', `expected a number or [lo, hi], got ${JSON.stringify(whisRaw)}`, { kind: 'iqr', coef: 1.5 });
+  })();
+  const meanLine = boxplotLine(r, 'mean', cycle);
+  const meanMarker = parseMarker(r.raw('boxplot.meanprops.marker'));
+  const flierMarker = parseMarker(r.raw('boxplot.flierprops.marker'));
+  const flierFaceRaw = r.raw('boxplot.flierprops.markerfacecolor');
+  const flierFace: BoxplotFlierRc['markerFace'] = flierFaceRaw === 'none' || flierFaceRaw === 'None'
+    ? { kind: 'none' }
+    : { kind: 'solid', color: r.rgb('boxplot.flierprops.markerfacecolor', cycle) };
+  const mean: BoxplotMeanRc = {
+    ...meanLine,
+    marker: meanMarker.ok && meanMarker.value.kind === 'some' ? meanMarker.value.value : r.fail('boxplot.meanprops.marker', 'bad marker', '^'),
+    markerFace: r.rgb('boxplot.meanprops.markerfacecolor', cycle),
+    markerEdge: r.rgb('boxplot.meanprops.markeredgecolor', cycle),
+    markerSizePt: r.num('boxplot.meanprops.markersize'),
+  };
+  // flier linestyle may be 'none' — solidStyle would fail; read color/lw and allow none style via parseLinestyle
+  const flierLs = r.fromResult('boxplot.flierprops.linestyle', parseLinestyle(r.raw('boxplot.flierprops.linestyle')), none);
+  const flier: BoxplotFlierRc = {
+    color: r.rgb('boxplot.flierprops.color', cycle),
+    linewidthPt: r.num('boxplot.flierprops.linewidth'),
+    style: flierLs,
+    marker: flierMarker.ok && flierMarker.value.kind === 'some' ? flierMarker.value.value : r.fail('boxplot.flierprops.marker', 'bad marker', 'o'),
+    markerFace: flierFace,
+    markerEdge: r.rgb('boxplot.flierprops.markeredgecolor', cycle),
+    markerEdgeWidthPt: r.num('boxplot.flierprops.markeredgewidth'),
+    markerSizePt: r.num('boxplot.flierprops.markersize'),
+  };
+  return {
+    whiskers, notch: r.bool('boxplot.notch'), patchArtist: r.bool('boxplot.patchartist'),
+    showMeans: r.bool('boxplot.showmeans'), showCaps: r.bool('boxplot.showcaps'),
+    showBox: r.bool('boxplot.showbox'), showFliers: r.bool('boxplot.showfliers'),
+    meanline: r.bool('boxplot.meanline'),
+    box: boxplotLine(r, 'box', cycle), whisker: boxplotLine(r, 'whisker', cycle),
+    cap: boxplotLine(r, 'cap', cycle), median: boxplotLine(r, 'median', cycle),
+    mean, flier,
+  };
+}
+

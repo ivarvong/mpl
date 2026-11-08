@@ -704,6 +704,22 @@ def run_case(name, calls):
             json.dump(rec, f, indent=1)
         plt.close(fig)
 
+
+# boxplot (data is synthetic, seeded)
+RB = np.random.default_rng(11)
+BA = RB.normal(0, 1, 80).tolist()
+BB = (RB.normal(1.5, 0.8, 70) + [8.0]).tolist()
+BC = RB.normal(-0.5, 1.1, 60).tolist()
+case("boxplot_basic", ("boxplot", [[BA, BB, BC]]))
+case("boxplot_notch_means", ("boxplot", [[BA, BB]], {"notch": True, "showmeans": True, "tick_labels": ["a", "b"]}))
+case("boxplot_patch_horiz", ("boxplot", [[BA, BB]], {"patch_artist": True, "orientation": "horizontal",
+     "boxprops": {"facecolor": "C0"}, "medianprops": {"color": "k", "linewidth": 1.5}}))
+case("boxplot_whis_fliers", ("boxplot", [[BB]], {"whis": [5, 95], "flierprops": {"marker": "x", "markersize": 8}}))
+case("boxplot_meanline", ("boxplot", [[BA, BC]], {"showmeans": True, "meanline": True, "widths": 0.4,
+     "positions": [1, 2], "showfliers": False}))
+# Mixed float positions: tick labels must be str(np.float64) ('0.5','2.0','4.5'), not JS String() ('0.5','2','4.5')
+case("boxplot_positions_float", ("boxplot", [[BA, BB, BC]], {"positions": [0.5, 2.0, 4.5], "widths": [0.3, 0.8, 1.2]}))
+
 def main():
     check_no_literal_newlines(CASES)
     with open(INDEX, "r") as f:

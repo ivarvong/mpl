@@ -270,6 +270,12 @@ hist(x, { bins, range, density, weights, cumulative, bottom, histtype, align, or
 
 Keyword arguments (unknown keys throw): `histtype`, `align`, `orientation`, `stacked`, `bins`, `range`, `density`, `weights`, `cumulative`, `bottom`, `rwidth`, `log`, `color`, `label`, `facecolor | fc`, `edgecolor | ec`, `linewidth | lw`, `alpha`, `clip_on | clipon | clip`
 
+### `Axes.boxplot(xRaw, kwargs?)`
+
+boxplot(x, { notch, vert, orientation, whis, positions, widths, patch_artist, showmeans, meanline, showcaps, showbox, showfliers, manage_ticks, autorange, tick_labels|labels, zorder, boxprops, whiskerprops, capprops, flierprops, medianprops, meanprops, clip_on }) — Tukey's box-and-whisker plot. Quartiles match numpy.percentile linear. bootstrap / usermedians / conf_intervals / capwidths / sym are unsupported and throw. Returns { boxes, medians, whiskers, caps, fliers, means } as matplotlib does. Default tick labels (when `tick_labels`/`labels` are omitted): if every `positions` value is integral, labels are `'1'`,`'2'`,…; otherwise each is Python `str(float)` (wholes get `'.0'`, e.g. positions `[0.5, 2, 4.5]` → `'0.5'`,`'2.0'`,`'4.5'`). JS cannot distinguish `[1.0, 2.0]` from `[1, 2]`, so all-integral float positions render like Python ints.
+
+Keyword arguments (unknown keys throw): `bootstrap`, `usermedians`, `conf_intervals`, `capwidths`, `sym`, `whis`, `notch`, `vert`, `orientation`, `patch_artist`, `showmeans`, `meanline`, `showcaps`, `showbox`, `showfliers`, `manage_ticks`, `autorange`, `zorder`, `clip_on | clipon | clip`, `tick_labels | labels`, `positions`, `widths`, `boxprops`, `whiskerprops`, `capprops`, `flierprops`, `medianprops`, `meanprops`, `label`
+
 ### `Axes.bar(x, height, kwargs?)`
 
 bar(x, height, { width, bottom, align, color|facecolor|fc, edgecolor|ec, linewidth|lw, alpha, label, clip_on }) — vertical bars.

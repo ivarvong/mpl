@@ -74,9 +74,18 @@ export function dataExtents(artists: readonly Artist[]): { readonly x: Extent; r
         scan(nanExtent(a.x0, a.x1), X); scan(nanExtent(a.y0, a.y1), Y);
         break;
       }
-      case 'polygon':                                // every vertex; hist appends 0 to the sticky edges
+      case 'polygon': {                              // every vertex; hist's stickyBase appends 0 on the value axis
         scan(a.x, X); scan(a.y, Y);
-        if (a.orientation === 'vertical') sy.push(0); else sx.push(0);
+        if (a.stickyBase.kind === 'some') {
+          if (a.stickyBase.value.axis === 'x') sx.push(a.stickyBase.value.value);
+          else sy.push(a.stickyBase.value.value);
+        }
+        break;
+      }
+      case 'sticky':                                 // boxplot manage_ticks: extent + sticky at positions ± 0.5
+        scan(Float64Array.from(a.xs), X); scan(Float64Array.from(a.ys), Y);
+        for (const v of a.xs) sx.push(v);
+        for (const v of a.ys) sy.push(v);
         break;
       case 'errorbar': break;                        // a container: its lines are artists of their own
       case 'bar':
