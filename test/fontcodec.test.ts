@@ -2,7 +2,7 @@
 // Runs in its own process against mpl/core so the registry starts empty (lean entry).
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { decodeFace, decodeVlq, FACE_CATALOG } from '../src/core/fontcodec.ts';
+import { decodeFace, decodeTables, decodeVlq, FACE_CATALOG } from '../src/core/fontcodec.ts';
 import { FACE_LOADS, FontNotLoadedError, registerFonts, registeredFonts, subplots } from '../src/core.ts';
 import { allFonts, dejavuSans, dejavuSansBold, interMedium, interRegular } from '../src/fonts/all.ts';
 import { encodeFace } from '../scripts/encode_fonts.ts';
@@ -26,6 +26,17 @@ FACE_CATALOG.forEach((e, i) => {
   const d = decodeFace(b, e), json = JSON.stringify(d);
   assert.equal(createHash('sha256').update(json).digest('hex'), BAKED_SHA256[e.module], `${e.module}: decodes to the baked data`);
   assert.deepEqual(encodeFace(d, e), b, `${e.module}: re-encodes to the committed module`);
+  // the tables getFace loads (Maps, glyphs decoded on first use) hold exactly decodeFace's data
+  const t = decodeTables(b);
+  assert.deepEqual(new Map(Object.entries(d.cmap)), t.cmap, `${e.module}: cmap`);
+  assert.deepEqual(d.cover, t.cover, `${e.module}: cover`);
+  assert.deepEqual(new Map(Object.entries(d.glyphs).map(([k, v]) => [Number(k), v])), t.glyphs, `${e.module}: glyphs`);
+  assert.deepEqual(new Map(Object.entries(d.kern).map(([k, v]) => { const [l, r] = k.split(','); return [Number(l) * 65536 + Number(r), v]; })), t.kern, `${e.module}: kern`);
+  for (const [name, rec, lazy] of [['outlines', d.outlines, t.outlines], ['offsets', d.offsets, t.offsets]] as const) {
+    assert.deepEqual(lazy.gids(), Object.keys(rec).map(Number), `${e.module}: ${name} gids`);
+    for (const [g, v] of Object.entries(rec)) assert.deepEqual(lazy.get(Number(g)), { kind: 'some', value: v }, `${e.module}: ${name} ${g}`);
+    assert.deepEqual(lazy.get(1 << 20), { kind: 'none' }, `${e.module}: ${name} absent gid`);
+  }
 });
 // VLQ: signs, multi-digit values, the 32-bit range, and corrupt input
 const vlq = (xs: readonly number[]): string => encodeFace({ ...decodeFace(allFonts[0], FACE_CATALOG[0]), cover: [], kern: {}, cmap: {}, glyphs: {}, outlines: {}, offsets: { 1: [xs] } }, FACE_CATALOG[0]).offsets;

@@ -5,7 +5,7 @@
 //   - advances: FT_MulFix(hAdvance, x_scale), in 26.6
 //   - kerning: HarfBuzz em_mult on the hb-ft font scale, in 26.6
 //   - substitutions: the GSUB lookups behind ccmp/locl/rlig/calt/clig/liga for Latin text
-import { decodeFace, FACE_CATALOG, type BakedFace, type CatalogEntry, type FaceId } from './fontcodec.ts';
+import { decodeTables, FACE_CATALOG, type BakedFace, type CatalogEntry, type FaceId, type GlyphContours } from './fontcodec.ts';
 import { lookup } from './std.ts';
 import { assertNever } from './types.ts';
 import { tracer } from '../trace.ts';
@@ -87,28 +87,28 @@ export type Face = {
   readonly id: string; readonly family: string; readonly weight: number; readonly upm: number;
   readonly cmap: ReadonlyMap<string, number>;
   readonly glyphs: ReadonlyMap<number, readonly [number, number, number, number, number]>;
-  readonly outlines: ReadonlyMap<number, readonly (readonly number[])[]>;
-  readonly offsets: ReadonlyMap<number, readonly (readonly number[])[]>;
+  /** gid → contours (FaceData.outlines), each glyph decoded on first use */
+  readonly outlines: GlyphContours;
+  /** composite gid → per-contour component offsets (FaceData.offsets), decoded on first use */
+  readonly offsets: GlyphContours;
   readonly kern: ReadonlyMap<number, number>;            // key: left * 65536 + right
   readonly lookups: ReadonlyMap<number, Lookup>;
   /** GDEF glyph class (1 base, 2 ligature, 3 mark) */
   readonly gclass: ReadonlyMap<number, number>;
-  readonly data: FaceData;
+  readonly data: Pick<FaceData, 'cover' | 'typo' | 'gsub'>;
   /** Text._get_layout's minimum ascent and descent, font units */
   readonly minAscent: number; readonly minDescent: number;
 };
 
-function load(d: FaceData): Face {
-  const glyphs = new Map(Object.entries(d.glyphs).map(([k, v]) => [Number(k), v] as const));
-  const cmap = new Map(Object.entries(d.cmap));
+/** The same tables decodeFace bakes, built as Maps directly; glyph outlines wait until drawn. */
+function load(b: BakedFace, e: CatalogEntry): Face {
+  const t = decodeTables(b);
   return {
-    id: `${d.family}:${d.weight}`, family: d.family, weight: d.weight, upm: d.upm, cmap, glyphs,
-    outlines: new Map(Object.entries(d.outlines).map(([k, v]) => [Number(k), v] as const)),
-    offsets: new Map(Object.entries(d.offsets).map(([k, v]) => [Number(k), v] as const)),
-    kern: new Map(Object.entries(d.kern).map(([k, v]) => { const [a, b] = k.split(','); return [Number(a) * 65536 + Number(b), v] as const; })),
-    lookups: new Map(Object.entries(d.gsub.lookups).map(([k, v]) => [Number(k), compileLookup(v)] as const)),
-    gclass: numMap(d.gsub.gclass),
-    data: d, minAscent: d.typo[0], minDescent: d.typo[1],
+    id: `${e.family}:${e.weight}`, family: e.family, weight: e.weight, upm: b.upm, cmap: t.cmap, glyphs: t.glyphs,
+    outlines: t.outlines, offsets: t.offsets, kern: t.kern,
+    lookups: new Map(Object.entries(b.gsub.lookups).map(([k, v]) => [Number(k), compileLookup(v)] as const)),
+    gclass: numMap(b.gsub.gclass),
+    data: { cover: t.cover, typo: b.typo, gsub: b.gsub }, minAscent: b.typo[0], minDescent: b.typo[1],
   };
 }
 
@@ -164,7 +164,7 @@ export function getFace(e: CatalogEntry): Face {
   const slot = o.value;
   if (slot.face.kind === 'some') return slot.face.value;
   const f = tracer.span('font.decode', { face: e.id }, () => {
-    const t = performance.now(), face = load(decodeFace(slot.baked, e));
+    const t = performance.now(), face = load(slot.baked, e);
     faceLoads.push({ id: face.id, startMs: t, endMs: performance.now(), glyphs: face.glyphs.size });
     return face;
   });

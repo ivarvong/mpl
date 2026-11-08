@@ -15,7 +15,7 @@ const color = { r: 20, g: 120, b: 220, a: 230 };
 let glyphs = 0, bad = 0;
 registerFonts(...allFonts);
 for (const face of FACE_CATALOG.map(getFace)) {
-  const gids = [...face.outlines.keys()];
+  const gids = face.outlines.gids();
   for (const [pt, dpi] of [[7.5, 100], [10, 72], [14.5, 240]]) {
     const scale = ftScale(face, pt, dpi);
     clearGlyphCache();
