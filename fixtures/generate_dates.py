@@ -77,6 +77,28 @@ case("autofmt_sharex", ("$subplots", [2, 1], {"sharex": True}),
 case("autofmt_concise", ("plot", [dates("2024-01-01", 60, (1, "D")), walk[:60]]),
      ("$concise_x", []), ("fig.autofmt_xdate", []), ("set_title", ["autofmt + concise"]))
 
+# Explicit date locators (RRuleLocator subclasses and YearLocator) with the default AutoDateFormatter (which takes the
+# locator's unit), a DateFormatter or a ConciseDateFormatter: ("$date_x", [locator, kwargs, formatter or None]).
+W = {"figsize": [8, 3.2]}
+case("datelocator_hour_interval12", ("$subplots", [1, 1], W), ("plot", [dates("2013-06-18T06:30", 97, (1, "h")), walk[:97]]),
+     ("$date_x", ["HourLocator", {"interval": 12}, {"DateFormatter": "%m-%d %H:%M"}]), ("set_title", ["HourLocator(interval=12)"]))
+case("datelocator_hour_byhour", ("$subplots", [1, 1], W), ("plot", [dates("2024-03-10T05:00", 140, (30, "m")), walk[:140]]),
+     ("$date_x", ["HourLocator", {"byhour": [0, 12]}, None]), ("set_title", ["HourLocator(byhour=[0, 12]), AutoDateFormatter"]))
+case("datelocator_day_interval", ("$subplots", [1, 1], W), ("plot", [dates("2024-01-03T07:00", 40, (1, "D")), walk[:40]]),
+     ("$date_x", ["DayLocator", {"interval": 5}, {"DateFormatter": "%a %b %d"}]), ("set_title", ["DayLocator(interval=5)"]))
+case("datelocator_day_bymonthday_concise", ("$subplots", [1, 1], W), ("plot", [dates("2023-11-20", 100, (1, "D")), walk[:100]]),
+     ("$date_x", ["DayLocator", {"bymonthday": [1, 15]}, {"ConciseDateFormatter": {}}]), ("set_title", ["DayLocator(bymonthday=[1, 15]), concise"]))
+case("datelocator_minute_interval", ("$subplots", [1, 1], W), ("plot", [dates("2024-03-10T09:07", 180, (1, "m")), walk[:180]]),
+     ("$date_x", ["MinuteLocator", {"interval": 20}, None]), ("set_title", ["MinuteLocator(interval=20)"]))
+case("datelocator_second_interval", ("$subplots", [1, 1], W), ("plot", [dates("2024-03-10T09:07:03", 150, (1, "s")), walk[:150]]),
+     ("$date_x", ["SecondLocator", {"interval": 15}, None]), ("set_title", ["SecondLocator(interval=15)"]))
+case("datelocator_month_interval", ("$subplots", [1, 1], W), ("plot", [dates("2021-02-11", 30, (31, "D")), walk[:30]]),
+     ("$date_x", ["MonthLocator", {"interval": 3}, {"DateFormatter": "%Y-%m"}]), ("set_title", ["MonthLocator(interval=3)"]))
+case("datelocator_month_bymonth_concise", ("$subplots", [1, 1], W), ("plot", [dates("2018-05-01", 75, (30, "D")), walk[:75]]),
+     ("$date_x", ["MonthLocator", {"bymonth": [1, 7]}, {"ConciseDateFormatter": {}}]), ("set_title", ["MonthLocator(bymonth=[1, 7]), concise"]))
+case("datelocator_year_base", ("$subplots", [1, 1], W), ("plot", [dates("1931-04-01", 61, (365, "D")), walk[:61]]),
+     ("$date_x", ["YearLocator", {"base": 10}, None]), ("set_title", ["YearLocator(10)"]))
+
 def run_case(name, calls):
     with matplotlib.rc_context():
         ver = getattr(ft, "__freetype_version__", "")
@@ -103,6 +125,15 @@ def run_case(name, calls):
                 fmt = mdates.ConciseDateFormatter(loc, show_offset=kwargs.get("show_offset", True))
                 ax.xaxis.set_major_locator(loc)
                 ax.xaxis.set_major_formatter(fmt)
+                continue
+            if fn == "$date_x":
+                lname, lkw, f = args
+                loc = getattr(mdates, lname)(**lkw)
+                ax.xaxis.set_major_locator(loc)
+                if f is not None and "DateFormatter" in f:
+                    ax.xaxis.set_major_formatter(mdates.DateFormatter(f["DateFormatter"]))
+                elif f is not None and "ConciseDateFormatter" in f:
+                    ax.xaxis.set_major_formatter(mdates.ConciseDateFormatter(loc, **f["ConciseDateFormatter"]))
                 continue
             if fn.startswith("fig."):
                 getattr(fig, fn[4:])(*args, **kwargs); continue

@@ -1,12 +1,122 @@
-// matplotlib.dates AutoDateLocator / DateFormatter / ConciseDateFormatter as typed handles.
-// Locators currently only expose AutoDateLocator (interval_multiples=True, the mpl default).
-import { prop, isPlainObject } from './std.ts';
-import { assertNever, none, some, type DateFormatterSpec, type Option } from './types.ts';
+// matplotlib.dates locators and formatters as typed handles: AutoDateLocator (interval_multiples=True, the default),
+// the RRuleLocators MonthLocator / DayLocator / HourLocator / MinuteLocator / SecondLocator, YearLocator, DateFormatter
+// and ConciseDateFormatter. UTC only.
+import { isNullish, isPlainObject, lookup, prop } from './std.ts';
+import { assertNever, none, some, type DateFormatterSpec, type DateLocatorSpec, type Option, type RRuleSpec } from './types.ts';
 
-/** AutoDateLocator — the only locator ConciseDateFormatter / date axes need today. */
+/** Positional arguments, then an optional trailing kwargs object, by matplotlib's parameter names (tz must be UTC).
+ *  A nullish value counts as not given (matplotlib's None). */
+function readArgs(cls: string, names: readonly string[], args: readonly unknown[]): ReadonlyMap<string, unknown> {
+  const hasKw = args.length > 0 && isPlainObject(args[args.length - 1]);
+  const pos = hasKw ? args.slice(0, -1) : args;
+  if (pos.length > names.length) throw new TypeError(`${cls}() takes at most ${names.length} positional arguments (${names.join(', ')})`);
+  const out = new Map<string, unknown>();
+  pos.forEach((v, i) => { if (!isNullish(v)) out.set(names[i], v); });
+  const kw: object = hasKw ? Object(args[args.length - 1]) : {};
+  for (const [k, v] of Object.entries(kw)) {
+    if (k === 'tz') { if (!isNullish(v) && v !== 'UTC') throw new TypeError(`${cls}: only tz='UTC' is supported, got ${JSON.stringify(v)}`); continue; }
+    if (!names.includes(k)) throw new TypeError(`${cls}() got an unexpected keyword argument '${k}'`);
+    if (out.has(k)) throw new TypeError(`${cls}() got multiple values for argument '${k}'`);
+    if (!isNullish(v)) out.set(k, v);
+  }
+  return out;
+}
+const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
+const fullRange = (lo: number, hi: number): readonly number[] => Array.from({ length: hi - lo + 1 }, (_, i) => lo + i);
+/** An int or a list of ints in [lo, hi]; not given → `dflt` (matplotlib's `None` is the full range). */
+function intList(cls: string, name: string, a: ReadonlyMap<string, unknown>, lo: number, hi: number, dflt: readonly number[] = fullRange(lo, hi)): readonly number[] {
+  const o = lookup(a, name);
+  if (o.kind === 'none') return dflt;
+  const xs: readonly unknown[] = Array.isArray(o.value) ? o.value : [o.value];
+  if (xs.length === 0 || !xs.every((x) => isInt(x) && x >= lo && x <= hi)) {
+    throw new RangeError(`${cls}: ${name} must be an int or a list of ints in ${lo}..${hi}${lo === 1 && hi === 31 ? ' (negative month days are not supported)' : ''}, got ${JSON.stringify(o.value)}`);
+  }
+  return xs.filter(isInt);
+}
+function intArg(cls: string, name: string, a: ReadonlyMap<string, unknown>, dflt: number, lo: number, hi: number): number {
+  const o = lookup(a, name);
+  if (o.kind === 'none') return dflt;
+  if (!isInt(o.value) || o.value < lo || o.value > hi) {
+    throw new RangeError(`${cls}: ${name} must be an integer ${hi === Infinity ? `greater than ${lo - 1}` : `in ${lo}..${hi}`}, got ${JSON.stringify(o.value)}`);
+  }
+  return o.value;
+}
+const interval = (cls: string, a: ReadonlyMap<string, unknown>): number => intArg(cls, 'interval', a, 1, 1, Infinity);
+type ByLists = Omit<RRuleSpec, 'freq' | 'interval'>;
+const MONTHS = fullRange(1, 12), MONTHDAYS = fullRange(1, 31), HOURS = fullRange(0, 23), SIXTY = fullRange(0, 59);
+/** matplotlib's RRuleLocator subclasses fix every unit below the frequency at 0 (hms0d and friends). */
+const AT0: ByLists = { bymonth: MONTHS, bymonthday: MONTHDAYS, byhour: [0], byminute: [0], bysecond: [0] };
+const rule = (freq: RRuleSpec['freq'], iv: number, by: ByLists): RRuleSpec => ({ freq, interval: iv, ...by });
+
+/** AutoDateLocator() — the default date locator (interval_multiples=True). minticks/maxticks/interval_multiples are not supported. */
 export class AutoDateLocator {
   readonly kind = 'auto' as const;
+  readonly spec: DateLocatorSpec = { kind: 'auto' };
+  constructor(...args: readonly unknown[]) { readArgs('AutoDateLocator', [], args); }
 }
+/** MonthLocator(bymonth = every month, bymonthday = 1, interval = 1): rrule MONTHLY at 00:00. */
+export class MonthLocator {
+  readonly kind = 'rrule' as const;
+  readonly spec: DateLocatorSpec;
+  constructor(...args: readonly unknown[]) {
+    const a = readArgs('MonthLocator', ['bymonth', 'bymonthday', 'interval'], args);
+    this.spec = { kind: 'rrule', rule: rule('monthly', interval('MonthLocator', a), { ...AT0,
+      bymonth: intList('MonthLocator', 'bymonth', a, 1, 12), bymonthday: intList('MonthLocator', 'bymonthday', a, 1, 31, [1]) }) };
+  }
+}
+/** DayLocator(bymonthday = every day, interval = 1): rrule DAILY at 00:00. */
+export class DayLocator {
+  readonly kind = 'rrule' as const;
+  readonly spec: DateLocatorSpec;
+  constructor(...args: readonly unknown[]) {
+    const a = readArgs('DayLocator', ['bymonthday', 'interval'], args);
+    this.spec = { kind: 'rrule', rule: rule('daily', interval('DayLocator', a), { ...AT0, bymonthday: intList('DayLocator', 'bymonthday', a, 1, 31) }) };
+  }
+}
+/** HourLocator(byhour = every hour, interval = 1): rrule HOURLY at :00:00. */
+export class HourLocator {
+  readonly kind = 'rrule' as const;
+  readonly spec: DateLocatorSpec;
+  constructor(...args: readonly unknown[]) {
+    const a = readArgs('HourLocator', ['byhour', 'interval'], args);
+    this.spec = { kind: 'rrule', rule: rule('hourly', interval('HourLocator', a), { ...AT0, byhour: intList('HourLocator', 'byhour', a, 0, 23) }) };
+  }
+}
+/** MinuteLocator(byminute = every minute, interval = 1): rrule MINUTELY at :00. */
+export class MinuteLocator {
+  readonly kind = 'rrule' as const;
+  readonly spec: DateLocatorSpec;
+  constructor(...args: readonly unknown[]) {
+    const a = readArgs('MinuteLocator', ['byminute', 'interval'], args);
+    this.spec = { kind: 'rrule', rule: rule('minutely', interval('MinuteLocator', a), { ...AT0, byhour: HOURS, byminute: intList('MinuteLocator', 'byminute', a, 0, 59) }) };
+  }
+}
+/** SecondLocator(bysecond = every second, interval = 1): rrule SECONDLY. */
+export class SecondLocator {
+  readonly kind = 'rrule' as const;
+  readonly spec: DateLocatorSpec;
+  constructor(...args: readonly unknown[]) {
+    const a = readArgs('SecondLocator', ['bysecond', 'interval'], args);
+    this.spec = { kind: 'rrule', rule: rule('secondly', interval('SecondLocator', a), { ...AT0,
+      byhour: HOURS, byminute: SIXTY, bysecond: intList('SecondLocator', 'bysecond', a, 0, 59) }) };
+  }
+}
+/** YearLocator(base = 1, month = 1, day = 1): every base-th year (multiples of base) on that month and day. */
+export class YearLocator {
+  readonly kind = 'year' as const;
+  readonly spec: DateLocatorSpec;
+  constructor(...args: readonly unknown[]) {
+    const a = readArgs('YearLocator', ['base', 'month', 'day'], args);
+    const base = intArg('YearLocator', 'base', a, 1, 1, Infinity), month = intArg('YearLocator', 'month', a, 1, 1, 12), day = intArg('YearLocator', 'day', a, 1, 1, 31);
+    if (day > [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]) throw new RangeError(`YearLocator: month ${month} has no day ${day} (dateutil: "Invalid rrule byxxx generates an empty set")`);
+    this.spec = { kind: 'year', base, month, day };
+  }
+}
+/** Any date locator: set_major_locator takes one, and ConciseDateFormatter(locator) accepts one. */
+export type DateLocatorHandle = AutoDateLocator | MonthLocator | DayLocator | HourLocator | MinuteLocator | SecondLocator | YearLocator;
+export const isDateLocator = (v: unknown): v is DateLocatorHandle =>
+  v instanceof AutoDateLocator || v instanceof MonthLocator || v instanceof DayLocator || v instanceof HourLocator
+  || v instanceof MinuteLocator || v instanceof SecondLocator || v instanceof YearLocator;
 
 /** DateFormatter(fmt) — fixed strftime. */
 export class DateFormatter {
@@ -40,9 +150,9 @@ export class ConciseDateFormatter {
   readonly zeroFormats: Option<readonly string[]>;
   readonly offsetFormats: Option<readonly string[]>;
   readonly showOffset: boolean;
-  constructor(locator: AutoDateLocator, opts: ConciseDateFormatterInit = {}) {
-    if (!(locator instanceof AutoDateLocator)) {
-      throw new TypeError('ConciseDateFormatter requires an AutoDateLocator (other locators are not supported yet)');
+  constructor(locator: DateLocatorHandle, opts: ConciseDateFormatterInit = {}) {
+    if (!isDateLocator(locator)) {
+      throw new TypeError('ConciseDateFormatter requires a date locator (AutoDateLocator, YearLocator, MonthLocator, DayLocator, HourLocator, MinuteLocator or SecondLocator)');
     }
     if (!isPlainObject(opts)) {
       throw new TypeError('ConciseDateFormatter options must be a plain object');

@@ -4,7 +4,7 @@
 import { parsePaint, parseRgb } from './core/colors.ts';
 import { isNumericColorArray, mapPaints, parseColormap, parseNormKw, requireColormap, scalarToPaints } from './core/colormap.ts';
 import { date2num, fromEpochMs } from './core/dates.ts';
-import { AutoDateLocator, ConciseDateFormatter, DateFormatter, formatterSpecOf, type MajorFormatter } from './core/date-formatters.ts';
+import { ConciseDateFormatter, DateFormatter, formatterSpecOf, isDateLocator, type MajorFormatter } from './core/date-formatters.ts';
 import { MARKERS } from './core/data/markers.ts';
 import type { Fmt, FmtShape } from './core/fmt.ts';
 import { dataExtents, unionExtent, viewLimits } from './core/autoscale.ts';
@@ -29,7 +29,7 @@ import type { StyleSpec } from './core/style.ts';
 import { composeStyles } from './core/style.ts';
 import { parseFontSize, parseLegendLoc, parseTheme, scatterPointsOf } from './core/theme.ts';
 import type {
-  Artist, Aspect, AxesMeta, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
+  Artist, Aspect, AxesMeta, DateLocatorSpec, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
   AxLineArtist, AxLineThrough, Decimate, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist, StickyArtist,
   Cap, LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, TightBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, ImageArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
 } from './core/types.ts';
@@ -471,6 +471,8 @@ export class Axis {
   labels: LabelSpec = { kind: 'auto' };
   /** Major tick formatter; only meaningful for datetime axes (AutoDateFormatter by default). */
   formatter: MajorFormatter = { kind: 'auto' };
+  /** Major date locator (AutoDateLocator by default); only a date axis uses it. */
+  locator: DateLocatorSpec = { kind: 'auto' };
   /** StrCategoryConverter: strings map to 0..n-1 in first-seen order; the axis becomes categorical. */
   convert(s: Series): Float64Array {
     switch (s.kind) {
@@ -524,12 +526,17 @@ export class Axis {
     );
   }
   /**
-   * Axis.set_major_locator — AutoDateLocator only (date axes). Other locators throw.
-   * Passing AutoDateLocator is currently a no-op: date axes already use AutoDateLocator.
+   * Axis.set_major_locator — a date locator: AutoDateLocator, YearLocator, MonthLocator, DayLocator, HourLocator,
+   * MinuteLocator or SecondLocator. It replaces set_xticks' fixed ticks, and the default AutoDateFormatter picks its
+   * format from this locator's unit (Formatter._set_locator). It applies once the axis holds dates. Other locators throw.
    */
   set_major_locator(loc: unknown): this {
-    if (loc instanceof AutoDateLocator) return this;
-    throw new TypeError('set_major_locator: unsupported locator; supported: AutoDateLocator');
+    if (!isDateLocator(loc)) {
+      throw new TypeError('set_major_locator: unsupported locator; supported: AutoDateLocator, YearLocator, MonthLocator, DayLocator, HourLocator, MinuteLocator, SecondLocator');
+    }
+    this.locator = loc.spec;
+    this.ticks = { kind: 'auto' };
+    return this;
   }
 
   setScale(v: unknown): void {
@@ -559,7 +566,7 @@ export class Axis {
     switch (this.units.kind) {
       case 'numeric': return { kind: 'numeric', scale: this.scale, limits: this.limits, ticks: this.ticks, labels: this.labels };
       case 'category': return { kind: 'category', names: this.units.names, limits: this.limits, ticks: this.ticks, labels: this.labels };
-      case 'datetime': return { kind: 'datetime', limits: this.limits, ticks: this.ticks, labels: this.labels, formatter: formatterSpecOf(this.formatter) };
+      case 'datetime': return { kind: 'datetime', limits: this.limits, ticks: this.ticks, labels: this.labels, formatter: formatterSpecOf(this.formatter), locator: this.locator };
       default: return assertNever(this.units);
     }
   }

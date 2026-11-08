@@ -380,6 +380,7 @@ typecheck or CI.
 | fuzz | `MaxNLocator` + `ScalarFormatter` over seeded random intervals, 20 orders of magnitude | ticks, labels, offset | **106,000/106,000** across 5 seeds |
 | 3 | **log scales** (LogLocator major + minor, LogFormatterSciNotation with sublabels, mathtext `10^{n}` / `2×10^{n}` labels), **dates** (AutoDateLocator + AutoDateFormatter, seconds to centuries), **twinx** (shared x, right axis, log twins) | + minor ticks and minor labels on every axes | **101/101 exact, mean RMS 2.02** |
 | date fuzz | AutoDateLocator + AutoDateFormatter over random ranges, ~3 s to ~110 years, every frequency incl. microsecond | ticks, labels | **9,400/9,400** across 4 seeds |
+| locator fuzz | `YearLocator`, `MonthLocator`, `DayLocator`, `HourLocator`, `MinuteLocator`, `SecondLocator` (random intervals and by-lists, inverted views) + AutoDateFormatter. An RRuleLocator anchors its rule at vmin − relativedelta(vmax, vmin), so with interval > 1 the tick phase follows the view: `HourLocator(interval=12)` over data from 06:30 ticks at 04:00 and 16:00, and `byhour=[0, 12]` pins midnight and noon | ticks, labels | **2,600/2,600** across 2 seeds |
 
 Calibration: matplotlib's *own* SVG backend, rasterized by the same rasterizer, scores RMS **14–16** against its Agg PNG
 (it works in 72-dpi points and does not pixel-snap). mpl at ~2 is anti-aliasing fringe; the `*.cmp.png` diff panels are blank.

@@ -2,7 +2,7 @@
 // num2date / date2num, dateutil.relativedelta, AutoDateLocator (interval_multiples=True)
 // and AutoDateFormatter with the default rc formats. UTC only.
 import { pyDivmod } from './ticker.ts';
-import { assertNever, none, some, type Option } from './types.ts';
+import { assertNever, none, some, type DateLocatorSpec, type Option, type RRuleSpec } from './types.ts';
 
 const US_PER_DAY = 86_400_000_000;
 const DAYS_PER_YEAR = 365, DAYS_PER_MONTH = 30;
@@ -240,6 +240,149 @@ export function autoDateTicks(view: readonly [number, number]): { readonly locs:
   }
 }
 
+// ---------------------------------------------------------------- RRuleLocator and YearLocator
+/** A full dateutil relativedelta(dt1, dt2) for dt1 >= dt2: years, months, then the remainder _fix-ed into units. */
+type FullDelta = { readonly years: number; readonly months: number; readonly days: number; readonly hours: number; readonly minutes: number; readonly seconds: number; readonly micro: number };
+function fullRelativedelta(dt1: DT, dt2: DT): FullDelta {
+  const c1 = civil(dt1), c2 = civil(dt2);
+  let months = (c1.y - c2.y) * 12 + (c1.m - c2.m);
+  let [years, mo] = splitMonths(months);
+  let dtm = fromCivil(addMonths(c2, years, mo));
+  while (cmp(dt1, dtm) < 0) { months -= 1; [years, mo] = splitMonths(months); dtm = fromCivil(addMonths(c2, years, mo)); }
+  const totalUs = (dt1.day - dtm.day) * US_PER_DAY + (dt1.us - dtm.us);
+  const micro = totalUs % 1e6;
+  let seconds = (totalUs - micro) / 1e6;
+  let minutes = Math.floor(seconds / 60); seconds -= minutes * 60;
+  let hours = Math.floor(minutes / 60); minutes -= hours * 60;
+  const days = Math.floor(hours / 24); hours -= days * 24;
+  return { years, months: mo, days, hours, minutes, seconds, micro };
+}
+const YEAR1: DT = { day: daysFromCivil(1, 1, 1), us: 0 };
+const YEAR9999_END: DT = { day: daysFromCivil(9999, 12, 31), us: (86400 - 1) * 1e6 };
+/** dt ± relativedelta (relativedelta.__add__: years and months with the day clamped, then a timedelta); none outside years 1..9999. */
+function shiftByDelta(t: DT, d: FullDelta, sign: 1 | -1): Option<DT> {
+  const c = civil(t);
+  let y = c.y + sign * d.years, m = c.m + sign * d.months;
+  if (m > 12) { y += 1; m -= 12; } else if (m < 1) { y -= 1; m += 12; }
+  if (y < 1 || y > 9999) return none;
+  const base = fromCivil({ ...c, y, m, d: Math.min(monthDays(y, m), c.d) });
+  const us = base.us + sign * ((((d.days * 24 + d.hours) * 60 + d.minutes) * 60 + d.seconds) * 1e6 + d.micro);
+  const dd = Math.floor(us / US_PER_DAY);
+  const out: DT = { day: base.day + dd, us: us - dd * US_PER_DAY };
+  return cmp(out, YEAR1) < 0 || cmp(out, YEAR9999_END) > 0 ? none : some(out);
+}
+
+const UNIT_US = { daily: US_PER_DAY, hourly: 3.6e9, minutely: 6e7, secondly: 1e6 } as const;
+const sorted = (a: readonly number[]): number[] => [...new Set(a)].toSorted((p, q) => p - q);
+
+/**
+ * dateutil rrule(freq, interval, dtstart, until, by…) occurrences within [lo, hi]. Periods step `interval` units from
+ * dtstart's own period (microseconds dropped), so the phase follows dtstart; each period's days pass the bymonth and
+ * bymonthday filters and its times are the by-lists' product below the frequency (time(hour, minute, second)).
+ * Only occurrences >= dtstart and <= until count.
+ */
+function rruleBetween(r: RRuleSpec, dtstart0: DT, until: DT, lo: DT, hi: DT): DT[] {
+  const dtstart: DT = { day: dtstart0.day, us: dtstart0.us - (dtstart0.us % 1e6) };
+  const out: DT[] = [];
+  const end = cmp(until, hi) < 0 ? until : hi;
+  const keep = (t: DT): void => { if (cmp(t, dtstart) >= 0 && cmp(t, lo) >= 0 && cmp(t, end) <= 0) out.push(t); };
+  const dayOk = (day: number): boolean => { const [, m, d] = civilFromDays(day); return r.bymonth.includes(m) && r.bymonthday.includes(d); };
+  const H = sorted(r.byhour), Mi = sorted(r.byminute), S = sorted(r.bysecond);
+  if (r.freq === 'monthly') {
+    const c = civil(dtstart), e = civil(end);
+    const days = sorted(r.bymonthday);
+    for (let k = 0; ; k += r.interval) {
+      const mm = c.m - 1 + k, y = c.y + Math.floor(mm / 12), m = (mm % 12) + 1;
+      if (y > e.y || (y === e.y && m > e.m)) break;
+      if (!r.bymonth.includes(m)) continue;
+      for (const d of days) {
+        if (d > monthDays(y, m)) continue;
+        const day = daysFromCivil(y, m, d);
+        for (const hh of H) for (const mi of Mi) for (const ss of S) keep({ day, us: ((hh * 60 + mi) * 60 + ss) * 1e6 });
+      }
+    }
+    return out;
+  }
+  // fixed-length periods: index them from the epoch, and start at the first period that can reach `lo`
+  const unit = UNIT_US[r.freq];
+  const periodOf = (t: DT): number => t.day * (US_PER_DAY / unit) + Math.floor(t.us / unit);
+  const p0 = periodOf(dtstart), pLo = periodOf(lo), pEnd = periodOf(end);
+  const skip = pLo > p0 ? Math.floor((pLo - p0) / r.interval) * r.interval : 0;
+  const perDay = US_PER_DAY / unit;
+  for (let p = p0 + skip; p <= pEnd; p += r.interval) {
+    const day = Math.floor(p / perDay), within = p - day * perDay;
+    if (!dayOk(day)) continue;
+    switch (r.freq) {
+      case 'daily':
+        for (const hh of H) for (const mi of Mi) for (const ss of S) keep({ day, us: ((hh * 60 + mi) * 60 + ss) * 1e6 });
+        break;
+      case 'hourly':
+        if (!H.includes(within)) break;
+        for (const mi of Mi) for (const ss of S) keep({ day, us: ((within * 60 + mi) * 60 + ss) * 1e6 });
+        break;
+      case 'minutely': {
+        const hh = Math.floor(within / 60), mi = within % 60;
+        if (!H.includes(hh) || !Mi.includes(mi)) break;
+        for (const ss of S) keep({ day, us: ((hh * 60 + mi) * 60 + ss) * 1e6 });
+        break;
+      }
+      case 'secondly': {
+        const hh = Math.floor(within / 3600), mi = Math.floor(within / 60) % 60, ss = within % 60;
+        if (H.includes(hh) && Mi.includes(mi) && S.includes(ss)) keep({ day, us: within * 1e6 });
+        break;
+      }
+      default: return assertNever(r.freq);
+    }
+  }
+  return out;
+}
+
+/**
+ * RRuleLocator.tick_values: _create_rrule sets dtstart = vmin − relativedelta(vmax, vmin) and until = vmax + it
+ * (capped at the datetime range), then rule.between(vmin, vmax, inc=True); no occurrence gives [vmin, vmax].
+ */
+export function rruleTicks(r: RRuleSpec, view: readonly [number, number]): readonly number[] {
+  const vmin = Math.min(view[0], view[1]), vmax = Math.max(view[0], view[1]);
+  const dmin = num2date(vmin), dmax = num2date(vmax);
+  const delta = fullRelativedelta(dmax, dmin);
+  const s = shiftByDelta(dmin, delta, -1), u = shiftByDelta(dmax, delta, 1);
+  const start = s.kind === 'some' ? s.value : YEAR1, until = u.kind === 'some' ? u.value : YEAR9999_END;
+  const ts = rruleBetween(r, start, until, dmin, dmax);
+  return ts.length > 0 ? ts.map(date2num) : [date2num(dmin), date2num(dmax)];
+}
+
+/** YearLocator(base, month, day).tick_values: rrule YEARLY from the base multiple at or below vmin's year (month, day, 00:00). */
+export function yearTicks(base: number, month: number, day: number, view: readonly [number, number]): readonly number[] {
+  const vmin = Math.min(view[0], view[1]), vmax = Math.max(view[0], view[1]);
+  const dmin = num2date(vmin), dmax = num2date(vmax);
+  const a = civil(dmin), b = civil(dmax);
+  const ymin = Math.max(Math.floor(a.y / base) * base, 1);
+  const ymax = Math.min(Math.ceil(b.y / base) * base, 9999);
+  // start = vmin.replace(year, month, day, 0:00:00) keeps vmin's microsecond; the rule's own dtstart drops it
+  const start: DT = { day: daysFromCivil(ymin, month, Math.min(day, monthDays(ymin, month))), us: a.micro };
+  const stop: DT = { day: daysFromCivil(ymax, month, Math.min(day, monthDays(ymax, month))), us: a.micro };
+  const out: number[] = [];
+  for (let y = ymin; y <= ymax; y += base) {
+    if (day > monthDays(y, month)) continue;   // rrule skips a bymonthday the month lacks
+    const t: DT = { day: daysFromCivil(y, month, day), us: 0 };
+    if (cmp(t, start) >= 0 && cmp(t, stop) <= 0) out.push(date2num(t));
+  }
+  return out.length > 0 ? out : [vmin, vmax];
+}
+
+/** RRuleLocator.get_unit_generic(freq): the unit AutoDateFormatter picks its format by. */
+const RRULE_UNIT_DAYS = { monthly: DAYS_PER_MONTH, daily: 1, hourly: 1 / 24, minutely: 1 / 1440, secondly: 1 / 86400 } as const;
+
+/** A date axis' major tick locations and its locator's unit (days), for any DateLocatorSpec. */
+export function dateTicks(spec: DateLocatorSpec, view: readonly [number, number]): { readonly locs: readonly number[]; readonly unitDays: number } {
+  switch (spec.kind) {
+    case 'auto': { const t = autoDateTicks(view); return { locs: t.locs, unitDays: locatorUnitDays(t.locator) }; }
+    case 'rrule': return { locs: rruleTicks(spec.rule, view), unitDays: RRULE_UNIT_DAYS[spec.rule.freq] };
+    case 'year': return { locs: yearTicks(spec.base, spec.month, spec.day, view), unitDays: DAYS_PER_YEAR };
+    default: return assertNever(spec);
+  }
+}
+
 // ---------------------------------------------------------------- AutoDateFormatter (default rc formats)
 const SCALED: ReadonlyArray<readonly [number, string]> = [
   [1 / US_PER_DAY, '%M:%S.%f'], [1 / 86400, '%H:%M:%S'], [1 / 1440, '%d %H:%M'], [1 / 24, '%m-%d %H'],
@@ -248,13 +391,25 @@ const SCALED: ReadonlyArray<readonly [number, string]> = [
 const pad = (v: number, n: number): string => String(v).padStart(n, '0');
 
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+const MONTH_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
+const WEEKDAY_ABBR = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+const WEEKDAY_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;
+/** Monday 0 … Sunday 6 (1970-01-01 was a Thursday) */
+const weekday = (t: DT): number => (((t.day + 3) % 7) + 7) % 7;
 
-/** datetime.strftime for the directives AutoDateFormatter / ConciseDateFormatter / DateFormatter use (C locale). */
+/** datetime.strftime in the C locale: %Y %y %m %B %b %d %j %a %A %H %I %p %M %S %f %%; any other directive throws. */
 export function strftime(t: DT, fmt: string): string {
   const c = civil(t);
-  return fmt.replace(/%([YmdbHMSf%])/g, (_, k: string) => {
+  return fmt.replace(/%(.)/g, (_, k: string) => {
     switch (k) {
       case 'Y': return String(c.y);
+      case 'y': return pad(c.y % 100, 2);
+      case 'B': return MONTH_FULL[c.m - 1];
+      case 'a': return WEEKDAY_ABBR[weekday(t)];
+      case 'A': return WEEKDAY_FULL[weekday(t)];
+      case 'j': return pad(t.day - daysFromCivil(c.y, 1, 1) + 1, 3);
+      case 'I': return pad(c.hh % 12 === 0 ? 12 : c.hh % 12, 2);
+      case 'p': return c.hh < 12 ? 'AM' : 'PM';
       case 'm': return pad(c.m, 2);
       case 'd': return pad(c.d, 2);
       case 'b': {
@@ -272,9 +427,8 @@ export function strftime(t: DT, fmt: string): string {
   });
 }
 
-/** The first scaled format whose scale is >= the locator unit (else '%Y-%m-%d'). */
-export function autoDateFormat(locs: readonly number[], locator: DateLocator): readonly string[] {
-  const unit = locatorUnitDays(locator);
+/** AutoDateFormatter: the first scaled format whose scale is >= the locator's unit in days (else '%Y-%m-%d'). */
+export function autoDateFormat(locs: readonly number[], unit: number): readonly string[] {
   const i = SCALED.findIndex(([scale]) => scale >= unit);
   const fmt = i >= 0 ? SCALED[i][1] : '%Y-%m-%d';
   return locs.map((x) => strftime(num2date(x), fmt));
