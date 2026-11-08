@@ -216,6 +216,52 @@ The API is matplotlib-shaped (`subplots`, `plot`, `step`, `bar`/`barh`, `hist`, 
 `hlines`/`vlines`, `text`, `legend`, `grid`, `set_xlim`, `set_yscale('log')`, `twinx`, `tight_layout`, styled tick labels, date axes,
 9+ bundled styles); unknown keyword arguments are errors, as in matplotlib. Subplot grids: `subplots(nrows, ncols, …)` with sharex/sharey, width/height ratios, `subplots_adjust` and grid `tight_layout`. Out of scope so far: boxplot/violinplot/pie/stem/stairs, spanning subplots (`subplot_mosaic`, gridspec slices), general mathtext, constrained layout.
 
+## Interactive SVG (annotated)
+
+The server renders; the browser only reads. `fig.toSVG({ interactive: true })` draws exactly the same SVG (default
+output is byte-identical with the option off), wraps each Axes in `<g data-mpl-axes="k">` and puts a small JSON
+sidecar first in it, inside an inert `<metadata class="mpl-axes">`: the axes box in SVG user units, each axis' scale
+(`linear`, `log` + base, `date` as matplotlib date numbers, `cat` + names), view limits and inversion, and per artist
+its kind, label, colour, data points and matching pixel points, plus each legend entry's box. Every artist's group
+already carries `data-artist="artist/<i>/<kind>"`, which indexes the sidecar's `a[i]`. The schema is documented at the top of
+[`src/render/annotate.ts`](src/render/annotate.ts).
+
+```ts
+// server (Node, a Worker, …): the writer is opt-in, so bundles that never annotate leave it out
+import { registerSidecar } from 'mpl';
+import { sidecar } from 'mpl/annotate';
+registerSidecar(sidecar);
+const svg = fig.toSVG({ interactive: true, idPrefix: 'c1-' });   // idPrefix: several SVGs in one page
+// browser: 9.1 KiB minified, 4.0 KiB gzipped, no dependencies
+import { attach } from 'mpl/interactive';
+const detach = attach(document);              // every annotated SVG under the root
+```
+
+`attach` adds a crosshair with the cursor's data coordinates (dates as UTC dates to the resolution of one pixel,
+categories by name, log values to 4 digits), a tooltip for the nearest point (line, step and bar series snap along
+their axis, steps to the step holding the value; scatter and unordered lines by 2D distance), dims every other
+artist while one is hovered, and turns a legend entry into a toggle (click, or Tab + Enter/Space). A focused plot
+steps through points with the arrow keys (Up/Down change series, Escape hides). Pointer positions map through
+`getScreenCTM`, so the SVG can be scaled freely (drop `width`/`height`, keep `viewBox`). Pass a second argument to
+format values your way: `attach(document, (v, axis, which, exact) => …)`, falling back to the exported `formatValue`.
+
+Theming is CSS only: `--mpl-dim-opacity`, `--mpl-crosshair`, `--mpl-crosshair-opacity`, `--mpl-dot`, `--mpl-dot-fill`,
+`--mpl-legend-off`, `--mpl-legend-off-opacity`, `--mpl-focus`, `--mpl-tip-font`, `--mpl-tip-bg`, `--mpl-tip-fg`,
+`--mpl-tip-border`, `--mpl-tip-radius`, and the classes `.mpl-tip`, `.mpl-dim`, `.mpl-off`, `.mpl-cross`, `.mpl-dot`,
+`.mpl-lg`. Defaults follow the page's `color-scheme` (`Canvas`/`CanvasText`), and the dimming transition is off
+under `prefers-reduced-motion`. [`examples/interactive.ts`](examples/interactive.ts) writes a page with four charts
+(lines + scatter, steps on a date axis, log bars with a twin axis, categories and an inverted axis);
+`npm run test:interactive` drives it in headless Chromium.
+
+Limits: an artist keeps at most 2,000 points in the sidecar (ordered series keep each bucket's min and max, scatter
+every k-th point), and points outside the axes box are left out. Only line, step, bar/barh, hist bars and scatter
+carry points; fills, spans, reference lines (`axhline`/`axvline`/`axline`), segments, polygons, images and text are
+listed (kind, label, colour) so they can be highlighted and toggled, but are not hit-tested. Colorbars are Axes like
+any other and get a sidecar, but no readout of the colormap value. Nothing is zoomable: the client never re-renders. With
+`toSVG({ precision, interactive: true })` the sidecar's pixel points round like the path data (exactly on the drawn
+line vertices at precision 0–2, within 0.005 px above); marker positions are pixel-snapped by Agg, as in matplotlib,
+so a marker can sit up to 1 px from its sidecar point.
+
 ## Runs in
 
 Each runtime below renders the same 9 fixtures (both font families, log axes, a style sheet, grids,
@@ -313,6 +359,7 @@ const [fig, ax] = subplots({ style: 'pro-dark' });  // or ['pro-slate', { 'lines
 | `npm run build` | `dist/browser`: ES modules plus declarations |
 | `npm run dev` | build the browser bundle and serve the interactive demo in `tools/live` on http://localhost:8080 |
 | `npm run test:browser` | the runtime cases in headless Chromium (first `npx playwright install chromium-headless-shell`) |
+| `npm run test:interactive` | the annotated-SVG client (`mpl/interactive`) on `examples/interactive.ts`'s page in headless Chromium |
 | `npm run test:workers` | the runtime cases in workerd via `cf build` / `cf dev` (`test/workers` has its own lockfile) |
 | `npm run test:size` / `npm run size` | bundle budget check / print sizes and composition (`-- --update` rewrites the budget) |
 | `npm run bench` | warm per-span timings (see also `bench/`) |

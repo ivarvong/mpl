@@ -14,6 +14,7 @@ import type { Whis } from './core/boxplot.ts';
 import { boxplotStats, parseWhis, reshapeBoxplotData } from './core/boxplot.ts';
 import { scaleOf } from './core/ticks.ts';
 import { parseFmt, parseLinestyle, parseMarker } from './core/fmt.ts';
+import type { AxesAnnot } from './core/layout.ts';
 import { layoutFigure, supBoxes, tightBoxes, unionBox } from './core/layout.ts';
 import type { GridSpec, SubplotParams, SubplotSpec } from './core/gridspec.ts';
 import { gridSpec, subgridspec, subplotSpec } from './core/gridspec.ts';
@@ -34,7 +35,8 @@ import type {
 import { assertNever, err, none, ok, some, unwrap } from './core/types.ts';
 import { iolistToString } from './render/iolist.ts';
 import { DEFAULT_PATH_DATA, leafCount, svgChunks, svgIO, svgStream } from './render/svg.ts';
-import type { PathData } from './render/svg.ts';
+import type { PathData, SvgAxesAnnot } from './render/svg.ts';
+import { sidecarWriter } from './render/sidecar-registry.ts';
 import type { Canvas } from './render/agg.ts';
 import { renderRGBA, renderScratch } from './render/agg.ts';
 import { encodePNG, encodePNGSync, pngStream } from './render/png.ts';
@@ -2323,7 +2325,7 @@ export class Figure {
   }
   // Layout cache: compute once per figure state; invalidated by any spec change.
   // The cache key is a snapshot of FigureSpec (core/snapshot.ts): layout is pure and deterministic in it.
-  private _layoutCache: Option<{ readonly key: unknown; readonly scene: Scene; readonly meta: readonly AxesMeta[] }> = none;
+  private _layoutCache: Option<{ readonly key: unknown; readonly scene: Scene; readonly meta: readonly AxesMeta[]; readonly annot: readonly AxesAnnot[] }> = none;
   private touch(): void { this._layoutCache = none; }
   /** Figure-level text in figure coordinates (0..1). */
   text(x: unknown, y: unknown, s: unknown, kwargs: Kwargs = {}): this {
@@ -2547,31 +2549,52 @@ export class Figure {
     }
     const root = tracer.startTrace('figure.layout', { axes: this.axes.length, dpi: this.dpi });
     try {
-      const { scene, meta } = layoutFigure(spec, tracer);
+      const { scene, meta, annot } = layoutFigure(spec, tracer);
       this.meta = meta;
       root.setAttribute('nodes', scene.nodes.length);
-      this._layoutCache = some({ key: snapshot(spec), scene, meta });
+      this._layoutCache = some({ key: snapshot(spec), scene, meta, annot });
       return scene;
     } catch (e) { root.recordException(e); throw e; } finally { root.end(); }
   }
+  /** toSVG's keywords: the id prefix, path data precision, and the annotated-SVG parts of the current layout (none for plain SVG). */
+  private svgOptions(kwargs: Kwargs, fn: string): { readonly prefix: string; readonly pd: PathData; readonly annot: readonly SvgAxesAnnot[] } {
+    const kw = new KwReader(kwargs, fn);
+    const pd = kw.read(['precision'], (v): Result<PathData> => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 4
+      ? ok({ kind: 'compact', decimals: v }) : err(`precision must be an integer from 0 to 4, got ${JSON.stringify(v)}`)), () => DEFAULT_PATH_DATA);
+    const interactive = kw.read(['interactive'], bool('interactive'), () => false);
+    const prefix = kw.read(['idPrefix'], (v): Result<string> => (typeof v === 'string' && /^[A-Za-z_][\w.-]*$|^$/.test(v) ? ok(v) : err(`idPrefix must be an XML name (letters, digits, _ . -), got ${JSON.stringify(v)}`)), () => '');
+    kw.done();
+    if (!interactive) return { prefix, pd, annot: [] };
+    this.toScene();
+    if (this._layoutCache.kind !== 'some') return { prefix, pd, annot: [] };
+    // sidecar pixels at the path data's own rounding when it is coarser than their 0.01 px, so they land on drawn vertices
+    const spec = this.spec(), annot = this._layoutCache.value.annot, write = sidecarWriter(), dp = Math.min(2, pd.kind === 'compact' ? pd.decimals : 4);
+    return { prefix, pd, annot: tracer.span('render.annotate', { axes: annot.length }, () => annot.map((a, k) => ({ nodes: a.nodes, sidecar: write(spec.axes[k], a, dp) }))) };
+  }
   /**
-   * The figure as an SVG document string, as matplotlib's SVG backend writes it. Optional { precision }, mpl's own:
-   * path coordinates (line and path `d`, marker positions) rounded to 0–4 decimals, a repeated command letter written
-   * once, and line vertices that round onto the previous one dropped. Omitted, the output is unchanged (4 decimals).
+   * toSVG({ precision, interactive, idPrefix }) — the figure as an SVG document string, as matplotlib's SVG backend writes it.
+   * precision (mpl's own, 0–4): path coordinates (line and path `d`, marker positions) rounded to that many decimals, a
+   * repeated command letter written once, and line vertices that round onto the previous one dropped. Omitted, the
+   * output is unchanged (4 decimals).
+   * interactive: true (default false) also wraps each Axes in <g data-mpl-axes="k"> with a JSON sidecar in
+   * <metadata class="mpl-axes"> (axes box, scales, limits, each artist's data and pixel points, legend boxes) for
+   * the mpl/interactive client: hover readouts, tooltips, highlighting and legend toggles. Drawing is unchanged.
+   * The writer is opt-in code: registerSidecar(sidecar) with `sidecar` from mpl/annotate first, or this throws.
+   * idPrefix (default '') prefixes every element id, so several SVGs can be inlined in one HTML page.
    */
   toSVG(kwargs: Kwargs = {}): string {
-    const pd = svgPathData(kwargs, 'toSVG');
+    const o = this.svgOptions(kwargs, 'toSVG');
     const scene = this.toScene();
     return tracer.span('render.svg', { topNodes: scene.nodes.length }, (sp) => {
-      const out = iolistToString(svgIO(scene, tracer, this.theme.svgText, '', pd));
+      const out = iolistToString(svgIO(scene, tracer, this.theme.svgText, o.prefix, o.pd, o.annot));
       sp.setAttribute('bytes', out.length).setAttribute('leaves', scene.nodes.reduce((a, n) => a + leafCount(n), 0));
       return out;
     });
   }
-  /** The SVG as a generator of string chunks. Optional { precision } as in toSVG. */
-  svgChunks(kwargs: Kwargs = {}): Generator<string> { const pd = svgPathData(kwargs, 'svgChunks'); return svgChunks(this.toScene(), tracer, 'text', '', pd); }
-  /** The SVG as a byte stream (Workers, browsers, Node). Optional { precision } as in toSVG. */
-  svgStream(kwargs: Kwargs = {}): ReadableStream<Uint8Array> { const pd = svgPathData(kwargs, 'svgStream'); return svgStream(this.toScene(), tracer, 'text', '', pd); }
+  /** svgChunks({ precision, interactive, idPrefix }) — the SVG as a generator of string chunks (keywords as in toSVG). */
+  svgChunks(kwargs: Kwargs = {}): Generator<string> { const o = this.svgOptions(kwargs, 'svgChunks'); return svgChunks(this.toScene(), tracer, 'text', o.prefix, o.pd, o.annot); }
+  /** svgStream({ precision, interactive, idPrefix }) — the SVG as a byte stream (Workers, browsers, Node; keywords as in toSVG). */
+  svgStream(kwargs: Kwargs = {}): ReadableStream<Uint8Array> { const o = this.svgOptions(kwargs, 'svgStream'); return svgStream(this.toScene(), tracer, 'text', o.prefix, o.pd, o.annot); }
 
   /**
    * Layout at a savefig dpi (matplotlib Figure.savefig(dpi=…)). Default is this.dpi
@@ -2668,14 +2691,6 @@ const paletteColors = (v: unknown): Result<Option<number>> =>
 
 /** savefig dpi: finite and > 0, capped so a canvas stays below ~100 MP at typical figsizes. */
 const MAX_SAVE_DPI = 10_000;
-/** toSVG / svgChunks / svgStream { precision }: an integer 0–4 selects compact path data (render/svg.ts PathData). */
-function svgPathData(kwargs: Kwargs, fn: string): PathData {
-  const kw = new KwReader(kwargs, fn);
-  const pd = kw.read(['precision'], (v): Result<PathData> => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 4
-    ? ok({ kind: 'compact', decimals: v }) : err(`precision must be an integer from 0 to 4, got ${JSON.stringify(v)}`)), () => DEFAULT_PATH_DATA);
-  kw.done();
-  return pd;
-}
 
 function saveDpiOf(v: unknown, what: string): number {
   if (typeof v !== 'number' || !Number.isFinite(v) || !(v > 0)) {

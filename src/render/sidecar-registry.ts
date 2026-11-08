@@ -1,0 +1,20 @@
+// The annotated-SVG sidecar writer is opt-in code: Figure reaches it only through this registry, so a bundle that never
+// imports mpl/annotate leaves src/render/annotate.ts out (like faces and colormaps, which register the same way).
+import type { AxesAnnot } from '../core/layout.ts';
+import type { AxesSpec, Option } from '../core/types.ts';
+import { none, some } from '../core/types.ts';
+
+/** Writes one Axes' sidecar (XML-escaped JSON) with pixel points at `dp` decimals; mpl/annotate exports the one mpl ships. */
+export type SidecarWriter = (ax: AxesSpec, an: AxesAnnot, dp: number) => string;
+
+let writer: Option<SidecarWriter> = none;
+
+/** Enable fig.toSVG({ interactive: true }): `import { sidecar } from 'mpl/annotate'; registerSidecar(sidecar);` */
+export function registerSidecar(w: SidecarWriter): void { writer = some(w); }
+
+/** The registered writer; throws, naming the import, when there is none. */
+export function sidecarWriter(): SidecarWriter {
+  if (writer.kind === 'some') return writer.value;
+  throw new Error("toSVG({ interactive: true }) needs the sidecar writer, which is not bundled by default:\n"
+    + "  import { registerSidecar } from 'mpl';\n  import { sidecar } from 'mpl/annotate';\n  registerSidecar(sidecar);");
+}

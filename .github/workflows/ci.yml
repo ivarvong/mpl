@@ -47,6 +47,7 @@ jobs:
       - if: steps.pw-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium-headless-shell
       - run: npm run test:browser
+      - run: npm run test:interactive
 
   # the same cases in workerd, built and served by the Cloudflare CLI `cf` (no wrangler)
   workers:

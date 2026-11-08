@@ -288,16 +288,36 @@ function background(p: Paint, W: number, H: number): string {
 }
 
 /**
+ * An annotated SVG's per-Axes part: how many top-level scene nodes the Axes drew (an Axes' nodes are contiguous,
+ * in axes order, from the first node) and its sidecar (src/render/annotate.ts), already escaped for XML text.
+ */
+export type SvgAxesAnnot = { readonly nodes: number; readonly sidecar: string };
+
+/** Wrap each Axes' nodes in <g data-mpl-axes="k">, its sidecar first as <metadata class="mpl-axes">. */
+function annotated(body: readonly IOList[], annot: readonly SvgAxesAnnot[]): IOList {
+  const out: IOList[] = [];
+  let at = 0;
+  annot.forEach((a, k) => {
+    out.push(`<g data-mpl-axes="${k}">` + NL + `<metadata class="mpl-axes">${a.sidecar}</metadata>` + NL, body.slice(at, at + a.nodes), '</g>' + NL);
+    at += a.nodes;
+  });
+  out.push(body.slice(at));
+  return out;
+}
+
+/**
  * Scene -> IOList; one span per top-level node. Element ids are per render, so output is deterministic;
  * `prefix` keeps them unique when several SVGs share one HTML document (ids are document-global).
+ * `annot` (empty by default, which leaves the output byte-identical) makes it an annotated SVG for mpl/interactive.
  */
-export function svgIO(scene: Scene, tracer: Tracer, text: SvgText = 'text', prefix = '', pd: PathData = DEFAULT_PATH_DATA): IOList {
+export function svgIO(scene: Scene, tracer: Tracer, text: SvgText = 'text', prefix = '', pd: PathData = DEFAULT_PATH_DATA, annot: readonly SvgAxesAnnot[] = []): IOList {
   const ids: Ids = { next: 0, glyphs: new Map(), text, dpi: scene.dpi, prefix, pd };
-  const body = scene.nodes.map((n, i) => tracer.span('render.node', { i, kind: n.kind, leaves: leafCount(n) }, (sp) => {
+  const nodes = scene.nodes.map((n, i) => tracer.span('render.node', { i, kind: n.kind, leaves: leafCount(n) }, (sp) => {
     const io = nodeIO(n, ids);
     sp.setAttribute('bytes', iolistSize(io));
     return io;
   }));
+  const body: IOList = annot.length > 0 ? annotated(nodes, annot) : nodes;
   const W = scene.width, H = scene.height;
   // <image> uses xlink:href (matplotlib's form, readable by SVG 1.1 tools), so the prefix must be bound or
   // standalone viewers (browsers' <img>, GitHub) reject the whole file as malformed XML.
@@ -306,6 +326,6 @@ export function svgIO(scene: Scene, tracer: Tracer, text: SvgText = 'text', pref
           background(scene.background, W, H), body, '</svg>' + NL];
 }
 
-export const svgChunks = (scene: Scene, tracer: Tracer, text: SvgText = 'text', prefix = '', pd: PathData = DEFAULT_PATH_DATA): Generator<string> => iolistChunks(svgIO(scene, tracer, text, prefix, pd));
-export const toSVG = (scene: Scene, tracer: Tracer, text: SvgText = 'text', prefix = '', pd: PathData = DEFAULT_PATH_DATA): string => iolistToString(svgIO(scene, tracer, text, prefix, pd));
-export const svgStream = (scene: Scene, tracer: Tracer, text: SvgText = 'text', prefix = '', pd: PathData = DEFAULT_PATH_DATA): ReadableStream<Uint8Array> => iolistToStream(svgIO(scene, tracer, text, prefix, pd));
+export const svgChunks = (scene: Scene, tracer: Tracer, text: SvgText = 'text', prefix = '', pd: PathData = DEFAULT_PATH_DATA, annot: readonly SvgAxesAnnot[] = []): Generator<string> => iolistChunks(svgIO(scene, tracer, text, prefix, pd, annot));
+export const toSVG = (scene: Scene, tracer: Tracer, text: SvgText = 'text', prefix = '', pd: PathData = DEFAULT_PATH_DATA, annot: readonly SvgAxesAnnot[] = []): string => iolistToString(svgIO(scene, tracer, text, prefix, pd, annot));
+export const svgStream = (scene: Scene, tracer: Tracer, text: SvgText = 'text', prefix = '', pd: PathData = DEFAULT_PATH_DATA, annot: readonly SvgAxesAnnot[] = []): ReadableStream<Uint8Array> => iolistToStream(svgIO(scene, tracer, text, prefix, pd, annot));
