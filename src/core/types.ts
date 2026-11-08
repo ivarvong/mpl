@@ -125,6 +125,8 @@ export type LineArtist = {
   readonly clip: boolean; readonly drawstyle: DrawStyle; readonly coords: LineCoords;
   /** Artist zorder: 2 for Line2D; errorbar's data line is 2.1 (1.9 with barsabove) */
   readonly zorder: number;
+  /** Override lines.solid_capstyle / dash_capstyle; none = theme default (boxplot medians use butt). */
+  readonly cap: Option<Cap>;
 };
 /** axline: an infinite straight line through p1 and p2, or through p1 with a slope (linear scales only),
  *  clipped to the view limits at draw time (lines.AxLine.get_transform). */
@@ -141,11 +143,11 @@ export type SegmentsArtist = {
   readonly label: Label; readonly clip: boolean; readonly zorder: number;
 };
 /** A Polygon patch (hist's step and stepfilled outlines): closed or open, filled or not.
- *  `stickyBase` is the value appended to sticky_edges along the value axis (orientation). */
+ *  `stickyBase` is appended to sticky_edges on that axis (hist uses y=0 / x=0); none = no sticky. */
 export type PolygonArtist = {
   readonly kind: 'polygon'; readonly x: Float64Array; readonly y: Float64Array; readonly closed: boolean;
   readonly face: Paint; readonly edge: BarEdge; readonly label: Label; readonly clip: boolean; readonly zorder: number;
-  readonly orientation: Orientation;
+  readonly stickyBase: Option<{ readonly axis: 'x' | 'y'; readonly value: number }>;
   /** matplotlib Patch.antialiased; false → Agg mono binary coverage (colorbar extend triangles). */
   readonly antialiased: boolean;
 };
@@ -243,8 +245,16 @@ export type ImageArtist = {
   readonly interpolation: 'nearest' | 'none' | 'antialiased' | 'auto' | 'hanning' | 'bilinear';
   readonly alpha: number; readonly label: Label; readonly clip: boolean; readonly zorder: number;
 };
+/** Invisible extent + sticky edges (boxplot manage_ticks pads positions by ±0.5). Draws nothing. */
+export type StickyArtist = {
+  readonly kind: 'sticky';
+  readonly xs: readonly number[];
+  readonly ys: readonly number[];
+  readonly label: Label;
+  readonly clip: boolean;
+};
 export type Artist = LineArtist | BarArtist | FillArtist | TextArtist | ScatterArtist | AnnotationArtist | SpanArtist
-  | AxLineArtist | SegmentsArtist | PolygonArtist | ErrorbarArtist | ImageArtist;
+  | AxLineArtist | SegmentsArtist | PolygonArtist | ErrorbarArtist | ImageArtist | StickyArtist;
 
 /** What a legend entry draws. */
 export type Handle =
@@ -419,6 +429,36 @@ export type Theme = {
   /** scatter.edgecolors: 'face' (each marker's edge is its face colour) or one colour */
   readonly scatterEdge: { readonly kind: 'face' } | { readonly kind: 'paint'; readonly paint: Paint };
   readonly histBins: { readonly kind: 'count'; readonly n: number } | { readonly kind: 'estimator'; readonly name: string };
+  /** boxplot.* rc: whiskers, flags, and per-part Line2D/Patch defaults */
+  readonly boxplot: {
+    readonly whiskers: WhisRc;
+    readonly notch: boolean;
+    readonly patchArtist: boolean;
+    readonly showMeans: boolean;
+    readonly showCaps: boolean;
+    readonly showBox: boolean;
+    readonly showFliers: boolean;
+    readonly meanline: boolean;
+    readonly box: BoxplotLineRc;
+    readonly whisker: BoxplotLineRc;
+    readonly cap: BoxplotLineRc;
+    readonly median: BoxplotLineRc;
+    readonly mean: BoxplotMeanRc;
+    readonly flier: BoxplotFlierRc;
+  };
+};
+/** boxplot.whiskers: a float (IQR multiple) or a percentile pair. */
+export type WhisRc = { readonly kind: 'iqr'; readonly coef: number } | { readonly kind: 'percentiles'; readonly lo: number; readonly hi: number };
+export type BoxplotLineRc = {
+  readonly color: Rgb; readonly linewidthPt: number; readonly style: LineStyleName;
+};
+export type BoxplotMeanRc = BoxplotLineRc & {
+  readonly marker: MarkerName; readonly markerFace: Rgb; readonly markerEdge: Rgb; readonly markerSizePt: number;
+};
+export type BoxplotFlierRc = {
+  readonly color: Rgb; readonly linewidthPt: number; readonly style: Option<LineStyleName>;
+  readonly marker: MarkerName; readonly markerFace: Paint; readonly markerEdge: Rgb;
+  readonly markerEdgeWidthPt: number; readonly markerSizePt: number;
 };
 
 // ---------------------------------------------------------------- layout output

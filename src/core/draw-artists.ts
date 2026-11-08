@@ -41,6 +41,7 @@ export function handleOf(a: Artist): Option<Handle> {
     case 'errorbar': return some({ kind: 'errorbar', errorbar: a.handle });
     case 'image': return none;
     case 'text': case 'annotation': return none;
+    case 'sticky': return none;
     default: return assertNever(a);
   }
 }
@@ -145,7 +146,7 @@ export function drawLine(a: LineArtist, f: Frame, theme: Theme, k: number, clip:
   const drawn = whole ? line : (() => { const p = stepped(ax, ay, a.drawstyle); return transform(p.x, p.y, a.coords, f); })();
   const pts = a.drawstyle === 'default' ? drawn : transform(ax, ay, a.coords, f);
   const nodes: Node[] = [];
-  if (a.stroke.kind === 'on') nodes.push(...strokeNodes(drawn.xs, drawn.ys, lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k), theme, f, span));
+  if (a.stroke.kind === 'on') nodes.push(...strokeNodes(drawn.xs, drawn.ys, lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k, a.cap), theme, f, span));
   if (a.markers.kind === 'on') {
     const m = markersNode(a.markers, pts.xs, pts.ys, k);
     if (m.kind === 'some') { nodes.push(m.value); span.setAttribute('markerCount', m.value.kind === 'markers' ? m.value.xs.length : 0); }
@@ -185,7 +186,7 @@ export function drawAxLine(a: AxLineArtist, f: Frame, theme: Theme, k: number, c
   const xs = Float64Array.of(start[0] * f.ax + f.cx, stop[0] * f.ax + f.cx);
   const ys = Float64Array.of(start[1] * -f.ay + (f.H - f.cy), stop[1] * -f.ay + (f.H - f.cy));
   const up = Float64Array.of(start[1] * f.ay + f.cy, stop[1] * f.ay + f.cy);
-  const nodes = a.stroke.kind === 'on' ? strokeNodes(xs, ys, lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k), theme, f, span) : [];
+  const nodes = a.stroke.kind === 'on' ? strokeNodes(xs, ys, lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k, none), theme, f, span) : [];
   return { nodes: nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [], lines: [{ xs, ys: up }], boxes: [], points: [], handle };
 }
 

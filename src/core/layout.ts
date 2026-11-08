@@ -88,6 +88,7 @@ function drawArtist(a: Artist, f: Frame, theme: Theme, k: number, clip: Clip, tr
       case 'axline': return tracer.span('artist.axline', { through: a.through.kind }, (sp) => drawAxLine(a, f, theme, k, clip, sp));
       case 'segments': return tracer.span('artist.segments', { segments: a.x0.length }, () => drawSegments(a, f, theme, k, clip));
       case 'polygon': return tracer.span('artist.polygon', { vertices: a.x.length, closed: a.closed }, () => drawPolygon(a, f, k, clip));
+      case 'sticky': return { nodes: [], lines: [], boxes: [], points: [], handle: none };
       case 'image': return tracer.span('artist.image', { rows: a.rows, cols: a.cols }, () => drawImage(a, f, clip));
       case 'errorbar': return { nodes: [], lines: [], boxes: [], points: [], handle: handleOf(a) };
       default: return assertNever(a);
@@ -103,6 +104,7 @@ function zorder(a: Artist): number {
     case 'axline': return 2;
     case 'line': case 'segments': case 'polygon': return a.zorder;
     case 'text': case 'annotation': case 'errorbar': return 3;
+    case 'sticky': return 0;
     default: return assertNever(a);
   }
 }
@@ -121,6 +123,7 @@ function legendEntries(ax: AxesSpec, drawn: readonly Drawn[]): readonly LegendEn
       case 'line': case 'fill': case 'scatter': case 'axline': case 'segments': case 'polygon': children.push(e); break;
       case 'bar': (a.legend === 'child' ? children : containers).push(e); break;
       case 'span': case 'errorbar': case 'image': containers.push(e); break;
+      case 'sticky': break;
       default: assertNever(a);
     }
   });

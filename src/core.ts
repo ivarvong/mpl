@@ -1,5 +1,5 @@
 export { Axes, Axis, Figure, subplots } from './api.ts';
-export type { AxesGrid2D, ErrorbarContainer, HistPatches, HistResult, HistResultMulti, HistType, Kwargs, XY, SubplotsAxes, SubplotsKwargs, SubplotsResult, TickLabelText, TransformRef } from './api.ts';
+export type { AxesGrid2D, BoxplotBox, BoxplotResult, ErrorbarContainer, HistPatches, HistResult, HistResultMulti, HistType, Kwargs, XY, SubplotsAxes, SubplotsKwargs, SubplotsResult, TickLabelText, TransformRef } from './api.ts';
 export type { BinEstimator, Bins } from './core/histogram.ts';
 export type { GridSpec, SubplotParams, SubplotSpec } from './core/gridspec.ts';
 export { availableStyles, composeStyles, parseStyle } from './core/style.ts';

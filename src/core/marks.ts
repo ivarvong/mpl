@@ -19,10 +19,10 @@ export function dashFor(theme: Theme, style: LineStyleName, widthPt: number, k: 
 }
 
 /** Line2D stroke: solid lines use the solid cap/join, dashed ones the dash cap/join. */
-export function lineStroke(theme: Theme, color: Rgb, widthPt: number, style: LineStyleName, k: number): Stroke {
+export function lineStroke(theme: Theme, color: Rgb, widthPt: number, style: LineStyleName, k: number, capOverride: Option<Cap> = none): Stroke {
   const dash = dashFor(theme, style, widthPt, k);
   const solid = dash.kind === 'solid';
-  const cap: Cap = solid ? theme.lines.solidCap : theme.lines.dashCap;
+  const cap: Cap = capOverride.kind === 'some' ? capOverride.value : (solid ? theme.lines.solidCap : theme.lines.dashCap);
   const join: Join = solid ? theme.lines.solidJoin : theme.lines.dashJoin;
   return { color, width: strokePx(widthPt, k), cap, join, dash };
 }
