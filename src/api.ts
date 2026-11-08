@@ -39,7 +39,8 @@ import { DEFAULT_PATH_DATA, leafCount, svgChunks, svgIO, svgStream } from './ren
 import type { PathData, SvgAxesAnnot } from './render/svg.ts';
 import { sidecarWriter } from './render/sidecar-registry.ts';
 import type { Canvas } from './render/agg.ts';
-import { renderRGBA, renderScratch } from './render/agg.ts';
+import { renderRGBA, renderRGBAInto, renderScratch } from './render/agg.ts';
+import { parseCanvas } from './render/agg/canvas.ts';
 import { encodePNG, encodePNGSync, pngStream } from './render/png.ts';
 import { tracer } from './trace.ts';
 
@@ -2685,13 +2686,20 @@ export class Figure {
     return this.dpi;
   }
 
-  /** RGBA8 pixels (straight alpha), rasterized like matplotlib's Agg backend. Optional { dpi | scale }. */
+  /**
+   * toRGBA({ dpi | scale, out }) — RGBA8 pixels (straight alpha), rasterized like matplotlib's Agg backend.
+   * out: a canvas from an earlier toRGBA that the caller no longer needs (e.g. the previous frame's, after
+   * putImageData). When it has this render's size it is cleared and drawn into, and the result shares its buffers;
+   * otherwise a new canvas is returned. Without out, every call returns a new canvas that nothing else touches.
+   */
   toRGBA(kwargs: Kwargs = {}): Canvas {
     const kw = new KwReader(kwargs, 'toRGBA');
     const dpi = this.saveDpi(kw, 'toRGBA');
+    const out = kw.read(['out'], (v): Result<Option<Canvas>> => { const c = parseCanvas(v); return c.ok ? ok(some(c.value)) : err(c.error); }, (): Option<Canvas> => none);
     kw.done();
     const scene = this.sceneAtDpi(dpi);
-    return tracer.span('render.raster', { w: scene.width, h: scene.height, dpi }, () => renderRGBA(scene, tracer));
+    return tracer.span('render.raster', { w: scene.width, h: scene.height, dpi },
+      () => (out.kind === 'some' ? renderRGBAInto(out.value, scene, tracer) : renderRGBA(scene, tracer)));
   }
   /**
    * toPNG({ colors, dpi, scale }) — PNG bytes via CompressionStream. dpi is matplotlib savefig dpi

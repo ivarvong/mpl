@@ -1,6 +1,9 @@
 // RGBA8 pixel buffer (straight alpha, row-major, top-left origin) and matplotlib's
 // blender: fixed_comp_op_adaptor_rgba8_plain / fixed_blender_rgba_plain from
 // src/agg_workaround.h, in the same integer arithmetic.
+import type { Result } from '../../core/types.ts';
+import { err, ok } from '../../core/types.ts';
+import { isPlainObject, prop } from '../../core/std.ts';
 import type { Coverage, IBox } from './raster.ts';
 
 /**
@@ -46,6 +49,25 @@ export function newCanvas(w: number, h: number, dpi: number): Canvas {
 export function clearCanvas(c: Canvas): void {
   const clear = pack(255, 255, 255, 0);
   c.u32.fill(clear); c.blk.fill(clear); c.mix.fill(0);
+}
+
+/** Two views starting at the same byte of the same buffer. */
+const over = (a: ArrayBufferView, b: ArrayBufferView): boolean => a.buffer === b.buffer && a.byteOffset === b.byteOffset;
+/**
+ * A caller's canvas (a previous toRGBA result) to render into again: every view must be the one newCanvas makes, at
+ * its size and over its own buffer, so the block state and the pixels can't disagree.
+ */
+export function parseCanvas(v: unknown): Result<Canvas> {
+  const bad = err<Canvas>('out must be a canvas returned by toRGBA');
+  if (!isPlainObject(v)) return bad;
+  const g = (k: string): unknown => { const o = prop(v, k); return o.kind === 'some' ? o.value : 0; };
+  const w = g('w'), h = g('h'), dpi = g('dpi'), nb = g('nb'), px = g('px'), u32 = g('u32'), i32 = g('i32'), blk = g('blk'), blkI32 = g('blkI32'), mix = g('mix');
+  if (typeof w !== 'number' || typeof h !== 'number' || typeof dpi !== 'number' || !Number.isInteger(w) || !Number.isInteger(h) || w < 0 || h < 0) return bad;
+  if (!(px instanceof Uint8Array && u32 instanceof Uint32Array && i32 instanceof Int32Array && blk instanceof Uint32Array && blkI32 instanceof Int32Array && mix instanceof Uint8Array)) return bad;
+  const n = w * h, nbw = (w + BLOCK - 1) >> BLOCK_SHIFT;
+  if (nb !== nbw || px.length !== 4 * n || u32.length !== n || i32.length !== n || !over(u32, px) || !over(i32, px)
+      || blk.length !== nbw * h || blkI32.length !== nbw * h || !over(blkI32, blk) || mix.length !== nbw * h) return bad;
+  return ok({ w, h, dpi, px, u32, i32, nb: nbw, blk, blkI32, mix });
 }
 
 /** Wrap RGBA pixels written elsewhere (byteOffset must be a multiple of 4); block state is scanned. */

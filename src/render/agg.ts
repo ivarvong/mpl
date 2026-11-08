@@ -240,6 +240,19 @@ export function renderRGBA(scene: Scene, tracer: Tracer): Canvas {
   return renderInto(newCanvas(Math.trunc(scene.width), Math.trunc(scene.height), scene.dpi), scene, tracer);
 }
 
+/**
+ * Rasterize a Scene into `out` (a canvas the caller owns and is done with, e.g. the previous frame's) when it has the
+ * scene's size: its pixels are cleared and overwritten, and the result shares its buffers. Any other size renders
+ * into a fresh canvas, as renderRGBA. A re-render loop (pan, zoom, animation) then skips allocating and first-touching
+ * a new buffer every frame.
+ */
+export function renderRGBAInto(out: Canvas, scene: Scene, tracer: Tracer): Canvas {
+  if (out.w !== Math.trunc(scene.width) || out.h !== Math.trunc(scene.height)) return renderRGBA(scene, tracer);
+  const c = out.dpi === scene.dpi ? out : { ...out, dpi: scene.dpi };
+  clearCanvas(c);
+  return renderInto(c, scene, tracer);
+}
+
 // toPNGSync throws its canvas away once encoded, so it renders into one kept scratch canvas
 // (synchronous: nothing else can hold it meanwhile). A fresh 11 MB buffer costs ~8 ms in first-touch
 // page faults plus GC pressure; clearing a reused one costs ~1.5 ms. Only the latest size is kept.
