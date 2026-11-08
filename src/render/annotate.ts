@@ -2,11 +2,13 @@
 // (src/interactive/client.ts) can do hover readouts, nearest-point tooltips, highlighting and legend toggles over
 // the server-rendered SVG without re-rendering anything. Schema (v1), all pixel values in SVG user units, y down:
 //   { v: 1, box: [x0, yTop, x1, yBot],
-//     x | y: { s: 'linear' | 'log' | 'date' | 'cat', lim: [lo, hi], inv: bool, b?: log base, names?: categories },
+//     x | y: { s: 'linear' | 'log' | 'date' | 'cat', lim: [lo, hi], inv: bool, g: share group, b?: log base, names?: categories },
+//     cb?: 1 (a colorbar's Axes),
 //     a: [ { k: kind, l?: label, c?: color, s?: 'x' | 'y' | 'xy' (how the pointer snaps), ds?: 'pre' | 'mid' | 'post',
 //            o?: 'h' (horizontal bars), d?: [x0, y0, x1, y1, …] data, p?: [px0, py0, …] pixels, b?: bar bases, n?: points before decimation } ],
 //     lg: [ [artist, x0, y0, x1, y1], … ] legend entry boxes }
-// `a[i]` is the artist tagged data-artist="artist/i/<kind>". Date values are matplotlib date numbers (days since
+// `g` is the index of the first Axes holding this axis: Axes that share an axis (sharex/sharey, twinx) have the same `g`,
+// and their limits move together (mpl/zoom relies on it). `a[i]` is the artist tagged data-artist="artist/i/<kind>". Date values are matplotlib date numbers (days since
 // 1970-01-01 UTC). Points whose snap coordinates fall outside the axes box, or that are not finite, are left out; an
 // artist with more than MAX_POINTS points is decimated (see `decimate`).
 // Pixel points `p` are rounded to 0.01 px, or to the path data's own decimals under toSVG({ precision: 0 | 1 }), so they
@@ -32,8 +34,8 @@ const px = pxAt(2);
 const num = (v: number): number => Number(v.toPrecision(12));
 const xmlText = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-function axisJson(spec: AxisSpec, sc: Scale, lim: readonly [number, number]): Json {
-  const base = { lim: [num(lim[0]), num(lim[1])], inv: lim[0] > lim[1] };
+function axisJson(spec: AxisSpec, sc: Scale, lim: readonly [number, number], g: number): Json {
+  const base = { lim: [num(lim[0]), num(lim[1])], inv: lim[0] > lim[1], g };
   switch (spec.kind) {
     case 'datetime': return { s: 'date', ...base };
     case 'category': return { s: 'cat', ...base, names: spec.names };
@@ -142,7 +144,8 @@ export function axesSidecar(ax: AxesSpec, an: AxesAnnot, dp = 2): string {
   const j = {
     // the box to the SVG's own 1e-4 (points are 0.01 px): the client's pixel → data mapping rests on it
     v: 1, box: [b.x0, b.yTop, b.x1, b.yBot].map((v) => Math.round(v * 1e4) / 1e4),
-    x: axisJson(ax.x, f.xscale, f.xlim), y: axisJson(ax.y, f.yscale, f.ylim),
+    x: axisJson(ax.x, f.xscale, f.xlim, ax.xShare), y: axisJson(ax.y, f.yscale, f.ylim, ax.yShare),
+    ...(ax.role.kind === 'colorbar' ? { cb: 1 } : {}),
     a: ax.artists.map((a) => artistJson(a, f, pxAt(Math.max(0, Math.min(2, dp))))),
     lg: an.legend.map((e) => [e.artist, px(e.box.x0), px(e.box.y0), px(e.box.x1), px(e.box.y1)]),
   };

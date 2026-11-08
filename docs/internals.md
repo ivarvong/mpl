@@ -172,6 +172,7 @@ Things that had to be verified against Agg rather than reasoned about:
 | `npm run dev` | build the browser bundle and serve the interactive demo in `tools/live` on http://localhost:8080 |
 | `npm run test:browser` | the runtime cases in headless Chromium (first `npx playwright install chromium-headless-shell`) |
 | `npm run test:interactive` | the annotated-SVG client (`mpl/interactive`) on `examples/interactive.ts`'s page in headless Chromium |
+| `npm run test:zoom` | zoom and pan (`mpl/zoom`) on `examples/zoom.ts`'s page in headless Chromium; every frame checked against Node |
 | `npm run test:workers` | the runtime cases in workerd via `cf build` / `cf dev` (`test/workers` has its own lockfile) |
 | `npm run test:size` / `npm run size` | bundle budget check / print sizes and composition (`-- --update` rewrites the budget) |
 | `npm run bench` | warm per-span timings (see also `bench/`) |

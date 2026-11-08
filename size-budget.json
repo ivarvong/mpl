@@ -18,11 +18,15 @@
     "gzip": 419333
   },
   "main+annotate": {
-    "min": 521751,
-    "gzip": 185281
+    "min": 525376,
+    "gzip": 186515
   },
   "interactive": {
-    "min": 9310,
-    "gzip": 4116
+    "min": 9904,
+    "gzip": 4322
+  },
+  "zoom": {
+    "min": 22198,
+    "gzip": 8756
   }
 }

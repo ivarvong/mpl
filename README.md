@@ -195,7 +195,9 @@ Unknown keyword arguments throw, as in matplotlib. Not yet: `violinplot`, `pie`,
 
 `fig.toSVG({ interactive: true })` draws the same SVG plus a small JSON sidecar of each artist's data. The
 `mpl/interactive` client (4.0 KiB gzipped, no dependencies) turns it into a crosshair, a nearest-point tooltip,
-series highlighting, legend toggles and arrow-key navigation, with no re-render.
+series highlighting, legend toggles and arrow-key navigation, with no re-render. `mpl/zoom` (8.6 KiB gzipped with
+the client) adds wheel, drag, box, pinch and keyboard zoom and pan, where every frame is a real mpljs render loaded on
+the first gesture ([guide](docs/guide.md#zoom-and-pan-mplzoom)).
 
 <p align="center">
   <img src="docs/images/readme/interactive.png" width="640" alt="An annotated mpljs SVG in Chromium: hovering the sin line shows a crosshair, a ring on the nearest point and a tooltip with its x and y; the other series are dimmed">

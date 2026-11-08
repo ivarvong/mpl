@@ -3,19 +3,22 @@
 // sidecar (<g data-mpl-axes="k"><metadata class="mpl-axes">, schema in src/render/annotate.ts), maps the pointer
 // with getScreenCTM (so scaled, responsive and several inlined SVGs all work), and only toggles classes and draws a
 // small overlay. Theming is CSS custom properties (--mpl-*) and classes (.mpl-*); see README, "Interactive SVG".
+// When the SVG's content is replaced (mpl/zoom re-renders it), an `mpl:render` event on the <svg> re-reads the new
+// sidecars; legend toggles carry over.
 //
 //   import { attach } from 'mpl/interactive';
 //   const detach = attach(document);      // every annotated SVG under the root
 
-/** One axis of an Axes as the sidecar describes it. `lim` is the view interval (inverted when lim[0] > lim[1]). */
-export type AxisInfo = { readonly s: string; readonly lim: readonly [number, number]; readonly b: number; readonly names: readonly string[]; readonly px: number };
+/** One axis of an Axes as the sidecar describes it. `lim` is the view interval (inverted when lim[0] > lim[1]); `g` the
+ *  index of the Axes that leads its share group (sharex/sharey/twinx), -1 when the sidecar predates it. */
+export type AxisInfo = { readonly s: string; readonly lim: readonly [number, number]; readonly b: number; readonly names: readonly string[]; readonly px: number; readonly g: number };
 /** One artist: its kind, label, colour and points (data `d` and pixel `p`, flat x/y pairs), as the sidecar has them. */
 export type ArtistInfo = {
   readonly i: number; readonly k: string; readonly l: string; readonly c: string; readonly s: string; readonly ds: string;
   readonly d: readonly number[]; readonly p: readonly number[]; readonly b: readonly number[];
 };
 export type AxesInfo = {
-  readonly box: readonly [number, number, number, number]; readonly x: AxisInfo; readonly y: AxisInfo;
+  readonly box: readonly [number, number, number, number]; readonly x: AxisInfo; readonly y: AxisInfo; readonly cb: boolean;
   readonly a: readonly ArtistInfo[]; readonly lg: readonly (readonly number[])[];
 };
 /** Formats a value on an axis for display (`exact`: a data point, not the cursor); the default is formatValue. */
@@ -29,9 +32,9 @@ const nums = (v: unknown): number[] => (Array.isArray(v) ? v.filter((n): n is nu
 const str = (v: unknown, d = ''): string => (typeof v === 'string' ? v : d);
 
 function axisOf(o: unknown, px: number): AxisInfo {
-  const lim = nums(field(o, 'lim')), b = field(o, 'b'), names = field(o, 'names');
+  const lim = nums(field(o, 'lim')), b = field(o, 'b'), names = field(o, 'names'), g = field(o, 'g');
   return { s: str(field(o, 's'), 'linear'), lim: [lim[0] || 0, lim.length > 1 ? lim[1] : 1], b: typeof b === 'number' ? b : 10,
-           names: Array.isArray(names) ? names.map((n) => String(n)) : [], px };
+           names: Array.isArray(names) ? names.map((n) => String(n)) : [], px, g: typeof g === 'number' && Object.hasOwn(Object(o), 'g') ? g : -1 };
 }
 
 /** The sidecar JSON of one Axes, parsed. Throws on text that is not JSON. */
@@ -41,7 +44,7 @@ export function parseSidecar(text: string): AxesInfo {
   const box: [number, number, number, number] = [bx[0] || 0, bx[1] || 0, bx[2] || 0, bx[3] || 0];
   const arts = field(j, 'a'), lg = field(j, 'lg');
   return {
-    box, x: axisOf(field(j, 'x'), box[2] - box[0]), y: axisOf(field(j, 'y'), box[3] - box[1]),
+    box, x: axisOf(field(j, 'x'), box[2] - box[0]), y: axisOf(field(j, 'y'), box[3] - box[1]), cb: field(j, 'cb') === 1,
     a: (Array.isArray(arts) ? arts : []).map((o: unknown, i): ArtistInfo => ({
       i, k: str(field(o, 'k')), l: str(field(o, 'l')), c: str(field(o, 'c'), 'currentColor'), s: str(field(o, 's'), 'xy'), ds: str(field(o, 'ds')),
       d: nums(field(o, 'd')), p: nums(field(o, 'p')), b: nums(field(o, 'b')),
@@ -150,8 +153,18 @@ const inside = (b: AxesInfo['box'], x: number, y: number): boolean => x >= b[0] 
 
 type Live = { readonly k: number; readonly info: AxesInfo; readonly groups: ReadonlyMap<number, readonly Element[]>; readonly off: Set<number> };
 
-/** Wire one annotated SVG; returns its detach function. */
+/** Wire one annotated SVG, and again whenever its content is re-rendered (`mpl:render`); returns its detach function. */
 function wire(svg: SVGSVGElement, tip: HTMLDivElement, format: Format): () => void {
+  const offs = new Map<number, Set<number>>();   // legend toggles by Axes index: they survive a re-render
+  const at: number[] = [];                        // the pointer's last client position while it is over the SVG
+  let undo = wireContent(svg, tip, format, offs, at, false);
+  // the readout stays up when it was (a wheel zoom under a resting pointer); whoever replaced the content keeps focus
+  const rerender = (): void => { const shown = !tip.hidden; undo(); undo = wireContent(svg, tip, format, offs, at, shown); };
+  svg.addEventListener('mpl:render', rerender);
+  return () => { svg.removeEventListener('mpl:render', rerender); undo(); };
+}
+
+function wireContent(svg: SVGSVGElement, tip: HTMLDivElement, format: Format, offs: Map<number, Set<number>>, at: number[], shown: boolean): () => void {
   const axes: Live[] = [];
   for (const g of Array.from(svg.querySelectorAll('g[data-mpl-axes]'))) {
     const md = Array.from(g.children).filter((c) => c.tagName.toLowerCase() === 'metadata');
@@ -161,9 +174,12 @@ function wire(svg: SVGSVGElement, tip: HTMLDivElement, format: Format): () => vo
       const i = Number(str(e.getAttribute('data-artist')).split('/')[1]);
       groups.set(i, [...(groups.get(i) || []), e]);
     }
-    axes.push({ k: Number(g.getAttribute('data-mpl-axes')), info: parseSidecar(str(md[0].textContent)), groups, off: new Set() });
+    const k = Number(g.getAttribute('data-mpl-axes')), off = offs.get(k) || new Set<number>();
+    offs.set(k, off);
+    for (const i of off) for (const e of groups.get(i) || []) e.classList.add('mpl-off');
+    axes.push({ k, info: parseSidecar(str(md[0].textContent)), groups, off });
   }
-  if (axes.length === 0) return () => {};
+  if (axes.length === 0) { tip.hidden = true; return () => {}; }
   const layer = el('g', { class: 'mpl-overlay', 'pointer-events': 'none' });
   const cross = el('g', { class: 'mpl-cross' }), vx = el('line', {}), hy = el('line', {}), dot = el('circle', { class: 'mpl-dot', r: 3.5 });
   cross.append(vx, hy, dot);
@@ -225,15 +241,21 @@ function wire(svg: SVGSVGElement, tip: HTMLDivElement, format: Format): () => vo
     return [p.x, p.y];
   };
 
-  let frame = 0, last: readonly number[] = [];
+  let frame = 0;
+  const showAt = (): void => { const p = toSvg(at[0], at[1]); if (p.length === 2) show(p[0], p[1], at[0], at[1], []); };
   const move = (e: PointerEvent): void => {
-    last = [e.clientX, e.clientY];
+    at.splice(0, 2, e.clientX, e.clientY);
+    // under mpl/zoom a pressed pointer pans or zooms: no readout until it lifts
+    if (e.buttons !== 0 && svg.hasAttribute('data-mpl-zoom')) { hide(); return; }
     if (frame !== 0) return;
-    frame = requestAnimationFrame(() => { frame = 0; const p = toSvg(last[0], last[1]); if (p.length === 2) show(p[0], p[1], last[0], last[1], []); });
+    frame = requestAnimationFrame(() => { frame = 0; showAt(); });
   };
+  const leave = (): void => { at.splice(0); hide(); };
   svg.addEventListener('pointermove', move);
   svg.addEventListener('pointerdown', move);
-  svg.addEventListener('pointerleave', hide);
+  svg.addEventListener('pointerleave', leave);
+  // re-rendered under a resting pointer (a wheel zoom): the readout follows the new view
+  if (at.length === 2 && shown) showAt();
 
   // legend toggles and keyboard stepping through points
   for (const a of axes) {
@@ -256,14 +278,14 @@ function wire(svg: SVGSVGElement, tip: HTMLDivElement, format: Format): () => vo
     }
     const series = a.info.a.filter((s) => s.p.length > 0);
     if (series.length === 0) continue;
-    const b = a.info.box, kb = el('rect', { class: 'mpl-kb', x: b[0], y: b[1], width: b[2] - b[0], height: b[3] - b[1], tabindex: 0, role: 'application' });
+    const b = a.info.box, kb = el('rect', { class: 'mpl-kb', x: b[0], y: b[1], width: b[2] - b[0], height: b[3] - b[1], tabindex: 0, role: 'application', 'data-mpl-k': a.k });
     kb.setAttribute('aria-label', `Plot ${a.k + 1}: arrow keys move between points, up and down between series`);
     kb.setAttribute('pointer-events', 'none');
     let si = 0, pj = -1;
     kb.addEventListener('keydown', (e) => {
       const dir = KEYS[e.key];
       if (e.key === 'Escape') { hide(); pj = -1; return; }
-      if (typeof dir !== 'number') return;
+      if (typeof dir !== 'number' || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;   // Shift+arrows: mpl/zoom pans
       e.preventDefault();
       const vis = series.filter((s) => !a.off.has(s.i));
       if (vis.length === 0) return;
@@ -278,7 +300,7 @@ function wire(svg: SVGSVGElement, tip: HTMLDivElement, format: Format): () => vo
     hits.append(kb);
   }
   return () => {
-    svg.removeEventListener('pointermove', move); svg.removeEventListener('pointerdown', move); svg.removeEventListener('pointerleave', hide);
+    svg.removeEventListener('pointermove', move); svg.removeEventListener('pointerdown', move); svg.removeEventListener('pointerleave', leave);
     if (frame !== 0) cancelAnimationFrame(frame);
     hide(); layer.remove();
     for (const a of axes) for (const es of a.groups.values()) for (const e of es) e.classList.remove('mpl-off');
