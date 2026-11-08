@@ -23,7 +23,7 @@ import { parseWeight } from './core/fonts.ts';
 import type { RcLayer, RcValue } from './core/rc.ts';
 import { DEFAULTS } from './core/rc.ts';
 import { isNullish, isPlainObject, lookup, prop } from './core/std.ts';
-import { sameSpec, snapshot } from './core/snapshot.ts';
+import { NO_SNAPSHOT, resnapshot } from './core/snapshot.ts';
 import type { StyleSpec } from './core/style.ts';
 import { composeStyles } from './core/style.ts';
 import { parseFontSize, parseLegendLoc, parseTheme, scatterPointsOf } from './core/theme.ts';
@@ -2540,9 +2540,11 @@ export class Figure {
   }
   /** Run layout; one trace per run. */
   toScene(): Scene {
-    // Cache by a FigureSpec snapshot: typed arrays are copied, not serialized.
+    // Cache by a FigureSpec snapshot: typed arrays are copied, not serialized. One walk compares and re-snapshots,
+    // sharing the unchanged subtrees, so a miss (every frame of a pan) costs no deep copy.
     const spec = this.spec();
-    if (this._layoutCache.kind === 'some' && sameSpec(this._layoutCache.value.key, spec)) {
+    const prev = this._layoutCache.kind === 'some' ? this._layoutCache.value.key : NO_SNAPSHOT, key = resnapshot(prev, spec);
+    if (this._layoutCache.kind === 'some' && key === prev) {
       // Keep meta in sync with the last produced layout
       this.meta = this._layoutCache.value.meta;
       return this._layoutCache.value.scene;
@@ -2552,7 +2554,7 @@ export class Figure {
       const { scene, meta, annot } = layoutFigure(spec, tracer);
       this.meta = meta;
       root.setAttribute('nodes', scene.nodes.length);
-      this._layoutCache = some({ key: snapshot(spec), scene, meta, annot });
+      this._layoutCache = some({ key, scene, meta, annot });
       return scene;
     } catch (e) { root.recordException(e); throw e; } finally { root.end(); }
   }
