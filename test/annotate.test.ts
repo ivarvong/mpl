@@ -194,28 +194,28 @@ function roundTrip(name: string, fig: Figure, k: number): AxesInfo {
 }
 // ---- 4. composes with toSVG({ precision }): the annotated SVG is the precision SVG plus inserted lines, and the
 // sidecar's pixel points sit on the precision-rounded vertices (exactly at precision 0–2, within 0.005 px at 3–4)
+/** Absolute vertices of compact or default path data (M, L, relative l; '-' and '.5' number forms), in integer units of 10^-dp. */
+const verts = (dd: string, dp: number): string[] => {
+  const p = 10 ** dp, out: string[] = [];
+  let cmd = 'M', x = 0, y = 0;
+  const toks = dd.match(/[MLl]|-?(?:\d+\.?\d*|\.\d+)/g) ?? [];
+  for (let i = 0; i < toks.length;) {
+    if (/[MLl]/.test(toks[i])) { cmd = toks[i]; i++; continue; }
+    const a = Math.round(Number(toks[i]) * p), b = Math.round(Number(toks[i + 1]) * p);
+    i += 2;
+    if (cmd === 'l') { x += a; y += b; } else { x = a; y = b; }
+    out.push(`${x},${y}`);
+  }
+  return out;
+};
+const make = (): Figure => {
+  const [fig, ax] = subplots();
+  const t = Array.from({ length: 100 }, (_, i) => i / 3.3);   // < 128 vertices: no PathSimplifier, every point is drawn
+  ax.plot(t, t.map((v) => Math.sin(v) * 3.3 + v / 7));
+  ax.plot([1, 2, 5, 9], [1, 4, 2, 6], 'o', { color: 'C3' });
+  return fig;
+};
 {
-  /** Absolute vertices of compact or default path data (M, L, relative l; '-' and '.5' number forms), in integer units of 10^-dp. */
-  const verts = (dd: string, dp: number): string[] => {
-    const p = 10 ** dp, out: string[] = [];
-    let cmd = 'M', x = 0, y = 0;
-    const toks = dd.match(/[MLl]|-?(?:\d+\.?\d*|\.\d+)/g) ?? [];
-    for (let i = 0; i < toks.length;) {
-      if (/[MLl]/.test(toks[i])) { cmd = toks[i]; i++; continue; }
-      const a = Math.round(Number(toks[i]) * p), b = Math.round(Number(toks[i + 1]) * p);
-      i += 2;
-      if (cmd === 'l') { x += a; y += b; } else { x = a; y = b; }
-      out.push(`${x},${y}`);
-    }
-    return out;
-  };
-  const make = (): Figure => {
-    const [fig, ax] = subplots();
-    const t = Array.from({ length: 100 }, (_, i) => i / 3.3);   // < 128 vertices: no PathSimplifier, every point is drawn
-    ax.plot(t, t.map((v) => Math.sin(v) * 3.3 + v / 7));
-    ax.plot([1, 2, 5, 9], [1, 4, 2, 6], 'o', { color: 'C3' });
-    return fig;
-  };
   for (const precision of [0, 1, 2, 3, 4]) {
     const fig = make(), plain = fig.toSVG({ precision }), rich = fig.toSVG({ precision, interactive: true });
     assert.equal(insertedOnly(plain, rich), 1, `precision ${precision}: annotated = precision SVG + inserted lines`);
