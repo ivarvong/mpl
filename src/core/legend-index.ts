@@ -24,46 +24,61 @@ const segCrossesBox = (x1: number, y1: number, x2: number, y2: number, r: Box): 
 
 const ok = (L: XY, i: number): boolean => Number.isFinite(L.xs[i]) && Number.isFinite(L.ys[i]);
 
+/** Grid cell of coordinate v, clamped to [0, n). */
+const cellOf = (v: number, cell: number, n: number): number => Math.min(n - 1, Math.max(0, Math.floor(v / cell)));
+
+/** Pass 1 over one line: vertices per cell into vCount, segment-cell incidences (each segment's cell bbox) into sCount. */
+function countLine(L: XY, cols: number, rows: number, cell: number, vCount: Int32Array, sCount: Int32Array): void {
+  const xs = L.xs, ys = L.ys;
+  for (let i = 0; i < xs.length; i++) {
+    if (!ok(L, i)) continue;
+    vCount[cellOf(ys[i], cell, rows) * cols + cellOf(xs[i], cell, cols)]++;
+    if (i > 0 && ok(L, i - 1)) {
+      const ax0 = cellOf(Math.min(xs[i], xs[i - 1]), cell, cols), ax1 = cellOf(Math.max(xs[i], xs[i - 1]), cell, cols);
+      const ay0 = cellOf(Math.min(ys[i], ys[i - 1]), cell, rows), ay1 = cellOf(Math.max(ys[i], ys[i - 1]), cell, rows);
+      for (let y = ay0; y <= ay1; y++) for (let x = ax0; x <= ax1; x++) sCount[y * cols + x]++;
+    }
+  }
+}
+
+/** Pass 2 over line li, in pass 1's order: vertices and segment indices into their cells' CSR slots. */
+function fillLine(L: XY, li: number, cols: number, rows: number, cell: number, vFill: Int32Array, vX: Float64Array, vY: Float64Array,
+                  vLine: Int32Array, sFill: Int32Array, sLine: Int32Array, sIdx: Int32Array): void {
+  const xs = L.xs, ys = L.ys;
+  for (let i = 0; i < xs.length; i++) {
+    if (!ok(L, i)) continue;
+    const k = vFill[cellOf(ys[i], cell, rows) * cols + cellOf(xs[i], cell, cols)]++;
+    vX[k] = xs[i]; vY[k] = ys[i]; vLine[k] = li;
+    if (i > 0 && ok(L, i - 1)) {
+      const ax0 = cellOf(Math.min(xs[i], xs[i - 1]), cell, cols), ax1 = cellOf(Math.max(xs[i], xs[i - 1]), cell, cols);
+      const ay0 = cellOf(Math.min(ys[i], ys[i - 1]), cell, rows), ay1 = cellOf(Math.max(ys[i], ys[i - 1]), cell, rows);
+      for (let y = ay0; y <= ay1; y++) for (let x = ax0; x <= ax1; x++) { const kk = sFill[y * cols + x]++; sLine[kk] = li; sIdx[kk] = i; }
+    }
+  }
+}
+
+// The build passes are module functions, not closures made per call, so V8 keeps their feedback and optimized
+// code from one legend to the next (a cold render builds one index per legend, twice with tight_layout).
 export function buildObstacleIndex(lines: readonly XY[], points: readonly XY[], bboxes: readonly Box[], W: number, H: number, cell: number): ObstacleIndex {
   const cols = Math.max(1, Math.ceil(W / cell)), rows = Math.max(1, Math.ceil(H / cell));
-  const cx = (x: number): number => Math.min(cols - 1, Math.max(0, Math.floor(x / cell)));
-  const cy = (y: number): number => Math.min(rows - 1, Math.max(0, Math.floor(y / cell)));
   const nCells = cols * rows;
 
   // pass 1: counts
   const vCount = new Int32Array(nCells), sCount = new Int32Array(nCells);
-  let totalV = 0, totalS = 0;
-  const forSegCells = (L: XY, i: number, f: (c: number) => void): void => {
-    const ax0 = cx(Math.min(L.xs[i], L.xs[i - 1])), ax1 = cx(Math.max(L.xs[i], L.xs[i - 1]));
-    const ay0 = cy(Math.min(L.ys[i], L.ys[i - 1])), ay1 = cy(Math.max(L.ys[i], L.ys[i - 1]));
-    for (let y = ay0; y <= ay1; y++) for (let x = ax0; x <= ax1; x++) f(y * cols + x);
-  };
-  for (const L of lines) {
-    for (let i = 0; i < L.xs.length; i++) {
-      if (!ok(L, i)) continue;
-      vCount[cy(L.ys[i]) * cols + cx(L.xs[i])]++; totalV++;
-      if (i > 0 && ok(L, i - 1)) forSegCells(L, i, (c) => { sCount[c]++; totalS++; });
-    }
-  }
-  for (const P of points) for (let i = 0; i < P.xs.length; i++) if (ok(P, i)) { vCount[cy(P.ys[i]) * cols + cx(P.xs[i])]++; totalV++; }
+  for (const L of lines) countLine(L, cols, rows, cell, vCount, sCount);
+  for (const P of points) for (let i = 0; i < P.xs.length; i++) if (ok(P, i)) vCount[cellOf(P.ys[i], cell, rows) * cols + cellOf(P.xs[i], cell, cols)]++;
   // CSR layout
   const vStart = new Int32Array(nCells + 1), sStart = new Int32Array(nCells + 1);
   for (let c = 0; c < nCells; c++) { vStart[c + 1] = vStart[c] + vCount[c]; sStart[c + 1] = sStart[c] + sCount[c]; }
+  const totalV = vStart[nCells], totalS = sStart[nCells];
   const vX = new Float64Array(totalV), vY = new Float64Array(totalV), vLine = new Int32Array(totalV);
   const sLine = new Int32Array(totalS), sIdx = new Int32Array(totalS);
   const vFill = vStart.slice(0, nCells), sFill = sStart.slice(0, nCells);
-  lines.forEach((L, li) => {
-    for (let i = 0; i < L.xs.length; i++) {
-      if (!ok(L, i)) continue;
-      const k = vFill[cy(L.ys[i]) * cols + cx(L.xs[i])]++;
-      vX[k] = L.xs[i]; vY[k] = L.ys[i]; vLine[k] = li;
-      if (i > 0 && ok(L, i - 1)) forSegCells(L, i, (c) => { const kk = sFill[c]++; sLine[kk] = li; sIdx[kk] = i; });
-    }
-  });
+  for (let li = 0; li < lines.length; li++) fillLine(lines[li], li, cols, rows, cell, vFill, vX, vY, vLine, sFill, sLine, sIdx);
   for (const P of points) {
     for (let i = 0; i < P.xs.length; i++) {
       if (!ok(P, i)) continue;
-      const k = vFill[cy(P.ys[i]) * cols + cx(P.xs[i])]++;
+      const k = vFill[cellOf(P.ys[i], cell, rows) * cols + cellOf(P.xs[i], cell, cols)]++;
       vX[k] = P.xs[i]; vY[k] = P.ys[i]; vLine[k] = -1;   // an offset: counted, never a line hit
     }
   }
