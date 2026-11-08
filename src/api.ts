@@ -209,6 +209,28 @@ const pyRepr = (v: unknown): string => {
   if (Array.isArray(v)) return `[${v.map(pyRepr).join(', ')}]`;
   return typeof v === 'number' ? String(v) : JSON.stringify(v);
 };
+/** Python `str(float)` / `str(np.float64)`: wholes get '.0'; NaN/±inf as 'nan'/'inf'/'-inf'. */
+const pyFloatStr = (v: number): string => {
+  if (Number.isNaN(v)) return 'nan';
+  if (v === Infinity) return 'inf';
+  if (v === -Infinity) return '-inf';
+  if (Object.is(v, -0)) return '-0.0';
+  if (Number.isInteger(v)) return `${v}.0`;
+  return String(v);
+};
+/**
+ * Default boxplot tick label for a position. Matplotlib uses str() on numpy-array elements:
+ * all-int → '1','2'; any float → every value as str(float) ('2.0' for wholes).
+ * JS cannot distinguish [1.0,2.0] from [1,2], so all-integral float positions render like Python ints.
+ */
+const boxplotPositionLabel = (positions: ArrayLike<number>, i: number): string => {
+  let allIntegral = true;
+  for (let j = 0; j < positions.length; j++) {
+    if (!Number.isInteger(positions[j])) { allIntegral = false; break; }
+  }
+  const v = positions[i];
+  return allIntegral ? String(v) : pyFloatStr(v);
+};
 const unwrapErr = <T>(r: Result<T>): string => (r.ok ? '' : r.error);
 const mapResult = <T, U>(r: Result<T>, f: (t: T) => U): Result<U> => (r.ok ? ok(f(r.value)) : r);
 const parseDrawStyle = (v: unknown): Result<DrawStyle> => {
@@ -1099,6 +1121,11 @@ export class Axes {
    * Tukey's box-and-whisker plot. Quartiles match numpy.percentile linear. bootstrap / usermedians /
    * conf_intervals / capwidths / sym are unsupported and throw. Returns { boxes, medians, whiskers,
    * caps, fliers, means } as matplotlib does.
+   *
+   * Default tick labels (when `tick_labels`/`labels` are omitted): if every `positions` value is
+   * integral, labels are `'1'`,`'2'`,…; otherwise each is Python `str(float)` (wholes get `'.0'`,
+   * e.g. positions `[0.5, 2, 4.5]` → `'0.5'`,`'2.0'`,`'4.5'`). JS cannot distinguish `[1.0, 2.0]`
+   * from `[1, 2]`, so all-integral float positions render like Python ints.
    */
   boxplot(xRaw: unknown, kwargs: Kwargs = {}): BoxplotResult {
     const kw = new KwReader(kwargs, 'boxplot');
@@ -1162,7 +1189,7 @@ export class Axes {
     const N = datasets.length;
     const stats = unwrap(boxplotStats(datasets, whis, tickLabels, autorange));
     const positions = positionsK.kind === 'some' ? positionsK.value : Float64Array.from({ length: N }, (_, i) => i + 1);
-    if (positions.length !== N) throw new RangeError('List of boxplot statistics and `positions` values must have same the length');
+    if (positions.length !== N) throw new Error('List of boxplot statistics and `positions` values must have same the length');
     for (const p of positions) if (typeof p !== 'number' || Number.isNaN(p)) throw new TypeError('positions should be an iterable of numbers');
 
     const widths: Float64Array = ((): Float64Array => {
@@ -1178,7 +1205,7 @@ export class Axes {
         const s = wspec.value;
         return Float64Array.from({ length: N }, () => s);
       }
-      if (wspec.values.length !== N) throw new RangeError('List of boxplot statistics and `widths` values must have same the length');
+      if (wspec.values.length !== N) throw new Error('List of boxplot statistics and `widths` values must have same the length');
       return wspec.values;
     })();
     const capwidths = Float64Array.from(widths, (w) => 0.5 * w);
@@ -1285,7 +1312,7 @@ export class Axes {
         : { kind: 'sticky', xs: [], ys: sticky, label: { kind: 'none' }, clip: false };
       this.artists.push(art);
       // FixedLocator + FixedFormatter: positions, labels from tick_labels or the numeric position
-      const labels = stats.map((s, i) => (s.label.kind === 'some' ? s.label.value : str(positions[i])));
+      const labels = stats.map((s, i) => (s.label.kind === 'some' ? s.label.value : boxplotPositionLabel(positions, i)));
       axis.ticks = { kind: 'fixed', locs: [...positions] };
       axis.labels = { kind: 'fixed', labels };
     }

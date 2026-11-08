@@ -172,6 +172,36 @@ for (const c of oracle.cases) {
   if (patch.boxes[0].kind !== 'polygon') fail('patch_artist boxes should be polygons');
   try { ax.boxplot([1, 2, 3], { bootstrap: 500 }); fail('bootstrap must throw'); }
   catch (e) { if (!(e instanceof TypeError)) fail(`bootstrap: ${String(e)}`); }
+  // positions/widths length mismatch: matplotlib ValueError → plain Error (mpl-web 400), not RangeError (500)
+  try { ax.boxplot([[1, 2], [3, 4]], { positions: [1] }); fail('positions length must throw'); }
+  catch (e) {
+    if (!(e instanceof Error) || e instanceof RangeError || e instanceof TypeError)
+      fail(`positions length: want Error, got ${e instanceof Error ? e.name : typeof e}`);
+    if (e instanceof Error && e.message !== 'List of boxplot statistics and `positions` values must have same the length')
+      fail(`positions length message: ${e.message}`);
+  }
+  try { ax.boxplot([[1, 2], [3, 4]], { widths: [0.1] }); fail('widths length must throw'); }
+  catch (e) {
+    if (!(e instanceof Error) || e instanceof RangeError || e instanceof TypeError)
+      fail(`widths length: want Error, got ${e instanceof Error ? e.name : typeof e}`);
+    if (e instanceof Error && e.message !== 'List of boxplot statistics and `widths` values must have same the length')
+      fail(`widths length message: ${e.message}`);
+  }
+  // Mixed float positions → Python float str labels ('2.0'); all-integral → int-like ('1','2')
+  {
+    const [, ax2] = subplots();
+    ax2.boxplot([[1, 2, 3, 4, 5], [2, 3, 4, 5, 6], [0, 1, 2, 3, 4]], { positions: [0.5, 2.0, 4.5] });
+    ax2.fig.toScene();
+    const labs = ax2.fig.meta[0].x.labels;
+    if (labs.join('|') !== '0.5|2.0|4.5') fail(`float positions labels: ${JSON.stringify(labs)}`);
+  }
+  {
+    const [, ax3] = subplots();
+    ax3.boxplot([[1, 2, 3], [4, 5, 6]], { positions: [1, 2] });
+    ax3.fig.toScene();
+    const labs = ax3.fig.meta[0].x.labels;
+    if (labs.join('|') !== '1|2') fail(`integral positions labels: ${JSON.stringify(labs)}`);
+  }
 }
 
 if (fails > 0) { console.log(`boxplot: ${fails} failure(s)`); process.exit(1); }

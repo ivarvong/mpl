@@ -717,6 +717,8 @@ case("boxplot_patch_horiz", ("boxplot", [[BA, BB]], {"patch_artist": True, "orie
 case("boxplot_whis_fliers", ("boxplot", [[BB]], {"whis": [5, 95], "flierprops": {"marker": "x", "markersize": 8}}))
 case("boxplot_meanline", ("boxplot", [[BA, BC]], {"showmeans": True, "meanline": True, "widths": 0.4,
      "positions": [1, 2], "showfliers": False}))
+# Mixed float positions: tick labels must be str(np.float64) ('0.5','2.0','4.5'), not JS String() ('0.5','2','4.5')
+case("boxplot_positions_float", ("boxplot", [[BA, BB, BC]], {"positions": [0.5, 2.0, 4.5], "widths": [0.3, 0.8, 1.2]}))
 
 def main():
     check_no_literal_newlines(CASES)
