@@ -614,6 +614,25 @@ for i in range(0, 3000, 397): CY[i] += 40
 for i in range(0, 3000, 211): CY[i] -= 25
 case("simplify_clip_spikes", ("plot", [{"$arange": [3000, 1]}, CY], {"lw": 1}), ("set_ylim", [-2, 2.5]))
 
+# NaN in plot() data: PathNanRemover breaks the line (a MOVETO after each gap), dataLim skips a vertex when either
+# coordinate is non-finite (update_path_extents), markers skip NaN points, and legend 'best' bridges a gap.
+NAN = {"$float": "nan"}
+case("plot_nan_gaps",
+     ("plot", [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [NAN, 1, 2, NAN, 4, 5, NAN, NAN, 8, NAN]], {"marker": "o", "label": "y gaps"}),
+     ("plot", [[0, 1, NAN, 3, 4, 5, 6, 7, 8, 9.5], [2, 3, 4, 5, NAN, 7, 6, 5, 4, 3]], {"drawstyle": "steps-mid", "label": "x gap, steps"}),
+     ("plot", [[NAN, 2, 4, 6, 12], [1, 1.5, 2, 2.5, NAN]], {"ls": "--", "lw": 2, "label": "NaN ends"}),
+     ("legend", [], {"loc": "best"}))
+# legend 'best' tests lines through PathNanRemover and ignores MOVETOs: the NaN gap below is one segment across the
+# top of the axes (both finite points lie outside them), so upper right and upper left count as hit
+case("plot_nan_legend_best", ("plot", [[-5, 0, 15], [9.5, NAN, 9.5]], {"label": "gap across the top"}),
+     ("plot", [[1, 9], [5, 5]], {"label": "middle"}), ("set_xlim", [0, 10]), ("set_ylim", [0, 10]), ("legend", [], {"loc": "best"}))
+NR = np.random.default_rng(20261108)
+NX = [float(i) for i in range(5000)]; NY = [round(float(v), 3) for v in np.sin(np.arange(5000) / 400) * 5 + NR.uniform(0, 2, 5000)]
+for a, b in [(0, 3), (700, 701), (1500, 1505), (2600, 2640), (3333, 3334), (4990, 5000)]:
+    for i in range(a, b): NY[i] = NAN
+for i in (1200, 2000, 2001, 3900): NX[i] = NAN
+case("plot_nan_dense", ("plot", [NX, NY], {"lw": 1}), ("set_xlim", [800, 4200]))
+
 def run_case(name, calls):
     style = STYLES.get(name)
     rc_layer = {}

@@ -69,11 +69,24 @@ function strokeNodes(xs: Float64Array, ys: Float64Array, stroke: Stroke, theme: 
   if (xs.length === 0 || stroke.color.alpha <= 0) return [];
   const p = cleanupStroke(xs, ys, Math.trunc(f.W), Math.trunc(f.H), stroke.width, theme.simplify);
   if (p.xs.length !== xs.length) span.setAttribute('simplified', p.xs.length);
+  if (p.xs.length === 0) return [];   // nothing finite on the canvas (matplotlib writes a path without d)
   return [{ kind: 'polyline', xs: p.xs, ys: p.ys, moves: p.moves, stroke }];
 }
 
 const clip01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 const byteTrunc01 = (x: number): number => (clip01(x) * 255) | 0;
+
+/** The finite vertices in order: legend 'best' tests a line through PathNanRemover and ignores its MOVETOs
+ *  (_path.path_intersects_rectangle), so a NaN gap counts as one segment joining its two sides. */
+function finitePairs(xs: Float64Array, ys: Float64Array): XY {
+  let bad = 0;
+  for (let i = 0; i < xs.length; i++) if (!(xs[i] - xs[i] === 0 && ys[i] - ys[i] === 0)) bad++;
+  if (bad === 0) return { xs, ys };
+  const ox = new Float64Array(xs.length - bad), oy = new Float64Array(xs.length - bad);
+  let m = 0;
+  for (let i = 0; i < xs.length; i++) if (xs[i] - xs[i] === 0 && ys[i] - ys[i] === 0) { ox[m] = xs[i]; oy[m] = ys[i]; m++; }
+  return { xs: ox, ys: oy };
+}
 
 /** numpy searchsorted on an ascending, NaN-free array: the first i with v[i] >= x ('left') or v[i] > x ('right'). */
 function searchsorted(v: Float64Array, x: number, side: 'left' | 'right'): number {
@@ -139,7 +152,7 @@ export function drawLine(a: LineArtist, f: Frame, theme: Theme, k: number, clip:
   }
   return {
     nodes: nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [],
-    lines: [{ xs: line.xs, ys: line.ysUp }], boxes: [], points: [],
+    lines: [finitePairs(line.xs, line.ysUp)], boxes: [], points: [],
     handle: handleOf(a),
   };
 }
