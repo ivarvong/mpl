@@ -448,25 +448,29 @@ same frame in Node. `npm run test:zoom` proves that frame by frame. It drives
 keys and two-finger touch. Every SVG frame must equal Node's `toSVG` text for its view, and the DOM must equal parsing it.
 Every canvas frame must hold Node's `toRGBA` bytes at its scale.
 
-Measured in headless Chrome (Playwright's chromium-headless-shell) on an M3 Max, bench run `zoom-2026-11-08c` (this branch at
-97f4f9c), scripted zoom + pan, 119 warm frames per load, 3 loads. Times are ms per frame (mpl render + DOM update; paint not
-included), p50 / p99, the median over loads:
+Measured in headless Chrome (Playwright's chromium-headless-shell) on an M3 Max, bench run `zoom-2026-11-08d` (this change
+on 5def436, so scatter SVG uses `<defs>` + `<use>` and canvas frames reuse the previous raster through `toRGBA({ out })`),
+scripted zoom + pan, 119 warm frames per load, 3 loads. Times are ms per frame (mpl render + DOM update; paint not included),
+p50 / p99, the median over loads. The last column counts animation-frame intervals over 17.5 ms, out of about 120:
 
-| chart | SVG elements | SVG frame | canvas 1× | canvas 2× (DPR 2) |
-|---|---|---|---|---|
-| lines, log y, dates, sharex + twinx (the demo) | 172–265 | 1.5–2.2 / 2.2–4.2 | 1.7–2.3 / 2.4–3.9 | 3.6–5.3 / 4.7–6.6 |
-| scatter, 250 points | 692 | 4.7 / 6.8 | 2.5 / 4.7 | 4.3 / 6.6 |
-| scatter, 1,000 points | 1,426 | 10.6 / 14.4 | 5.3 / 5.8 | 8.5 / 9.6 |
-| scatter, 2,000 points + colorbar | 2,428 | 19.2 / 27.8 | 9.7 / 13.0 | 14.7 / 17.7 |
-| scatter, 4,000 points | 4,437 | 33.0 / 43.3 | 16.7 / 17.7 | 26.4 / 28.0 |
+| chart | SVG elements | SVG frame | canvas 1× | canvas 2× (DPR 2) | long rAF intervals, SVG |
+|---|---|---|---|---|---|
+| lines, log y, dates, sharex + twinx (the demo) | 172–265 | 1.5–2.2 / 2.2–4.1 | 1.7–2.2 / 2.3–4.0 | 3.1–4.6 / 4.1–6.4 | 0 |
+| scatter, 250 points | 694 | 3.6 / 10.2 | 2.3 / 5.4 | 3.7 / 6.1 | 3–8 |
+| scatter, 500 points | 944 | 4.6 / 11.0 | 3.1 / 3.8 | 5.2 / 5.9 | 0–1 |
+| scatter, 1,000 points | 1,428 | 6.7 / 20.3 | 4.8 / 5.4 | 7.8 / 9.3 | 2–44 |
+| scatter, 2,000 points + colorbar | 2,430 | 12.1 / 26.3 | 9.1 / 12.1 | 14.2 / 17.4 | 1–6 (demo), 63–75 (sweep) |
+| scatter, 4,000 points | 4,439 | 18.4 / 78.6 | 15.2 / 16.3 | 24.9 / 26.6 | 121–126 |
 
-SVG frames cost about 7–8 µs per element, more than half of it in the browser's DOM work. Canvas frames cost by pixels,
-plus about 4 µs per marker. Under about 1,200 elements, SVG frames stay under 11 ms p50 and keep vector text, hover and
-selection during the gesture, so that is the default `threshold`.
+mpl's SVG render is cheap: 2.8 ms for 2,000 markers as `<use>`. The cost is the browser's, in the DOM update and then in
+style and paint, which shows up in the p99 and in long animation frames rather than in the p50. Canvas frames cost by
+pixels, plus about 3 µs per marker, and stay smooth. From about 1,400 elements, SVG frames stutter: scatter-1000 ran long
+in up to 44 of 120 intervals, while scatter-500 stayed smooth. So the default `threshold` is 1,200 elements, and canvas
+is used above it.
 
-The first frame after the first gesture took 32–36 ms on a light chart: chunk import, the figure build, first-use font
-decode and the render. The first chart on the page took 79–92 ms, because that one also parses and evaluates the 514 KB
-lazy chunk. No run drew two frames of a chart in one animation frame.
+The first frame after the first gesture took 31–37 ms on a light chart: chunk import, the figure build, first-use font
+decode and the render. The first chart on the page took 70–85 ms, because that one also parses and evaluates the lazy
+chunk (about 0.5 MB). No run drew two frames of a chart in one animation frame.
 
 ## Tracing
 
