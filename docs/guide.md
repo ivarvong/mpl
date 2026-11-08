@@ -369,7 +369,7 @@ import { registerSidecar } from 'mpl';
 import { sidecar } from 'mpl/annotate';
 registerSidecar(sidecar);
 const svg = fig.toSVG({ interactive: true, idPrefix: 'c1-' });   // idPrefix: several SVGs in one page
-// browser: 17.3 KiB minified, 7.2 KiB gzipped, no dependencies
+// browser: 17.9 KiB minified, 7.4 KiB gzipped, no dependencies
 import { attach } from 'mpl/interactive';
 const detach = attach(document);              // every annotated SVG under the root
 ```
@@ -377,9 +377,12 @@ const detach = attach(document);              // every annotated SVG under the r
 <img src="images/readme/interactive.png" width="640" alt="An annotated mpljs SVG in Chromium: hovering the sin line shows a crosshair, a ring on the nearest point and a tooltip with its x and y; the other series are dimmed">
 
 `attach` adds a crosshair and a tooltip for the nearest point (line, step and bar series snap along their axis, steps
-to the step holding the value; scatter and unordered lines by 2D distance). The tooltip reads as a sentence, not a
+to the step holding the value). Where an Axes has such a series the tooltip and crosshair follow it, snapped to the same
+point; a scatter marker or an unordered line's point takes over only with the pointer on it (the marker's radius plus a
+few pixels), and in an Axes of only those, the nearest one in 2D is reported. The tooltip reads as a sentence, not a
 coordinate pair: the series name and its value, with the unit when the axis label gives one (`ms`, `latency (ms)`,
-`Latency [ms]` → `72.4 ms`; a rate label like `requests / s` is shown muted beside the value), and under it, muted, the
+`Latency [ms]` → `72.4 ms`, or the title's when there is no axis label; an artist with no label is named, muted, by the
+value axis' label or else the Axes title; a rate label like `requests / s` is shown muted beside the value), and under it, muted, the
 position on the other axis. Dates print at the resolution the series has: `Nov 5, 08:40` for minutely data, `Nov 5` for
 daily, with no year unless the axis crosses one; numbers to the axis' per-pixel resolution (at least 3 significant
 digits, log axes 3). A stacked bar shows its own height with the stack total muted (`client: timed out 37`, `50 total`).

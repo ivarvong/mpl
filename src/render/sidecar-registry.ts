@@ -4,8 +4,8 @@ import type { AxesAnnot } from '../core/layout.ts';
 import type { AxesSpec, Option } from '../core/types.ts';
 import { none, some } from '../core/types.ts';
 
-/** Writes one Axes' sidecar (XML-escaped JSON) with pixel points at `dp` decimals; mpl/annotate exports the one mpl ships. */
-export type SidecarWriter = (ax: AxesSpec, an: AxesAnnot, dp: number) => string;
+/** Writes one Axes' sidecar (XML-escaped JSON) with pixel points at `dp` decimals, for a figure at `dpi`; mpl/annotate exports the one mpl ships. */
+export type SidecarWriter = (ax: AxesSpec, an: AxesAnnot, dp: number, dpi: number) => string;
 
 let writer: Option<SidecarWriter> = none;
 

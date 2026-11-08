@@ -16,11 +16,11 @@ export type AxisInfo = { readonly s: string; readonly lim: readonly [number, num
 /** One artist: its kind, label, colour and points (data `d` and pixel `p`, flat x/y pairs), as the sidecar has them. */
 export type ArtistInfo = {
   readonly i: number; readonly k: string; readonly l: string; readonly c: string; readonly s: string; readonly ds: string;
-  readonly d: readonly number[]; readonly p: readonly number[]; readonly b: readonly number[];
+  readonly d: readonly number[]; readonly p: readonly number[]; readonly b: readonly number[]; readonly r: number;
 };
 export type AxesInfo = {
   readonly box: readonly [number, number, number, number]; readonly x: AxisInfo; readonly y: AxisInfo; readonly cb: boolean;
-  readonly a: readonly ArtistInfo[]; readonly lg: readonly (readonly number[])[];
+  readonly a: readonly ArtistInfo[]; readonly lg: readonly (readonly number[])[]; readonly ti: string;
 };
 /** Formats a value on an axis for display (`exact`: a data point, not the cursor); the default is formatValue. A custom
  *  formatter's text is used as is: the axis unit is only appended to the default formatter's. */
@@ -32,6 +32,7 @@ const isObj = (v: unknown): v is Obj => typeof v === 'object' && !!v && !Array.i
 const field = (o: unknown, k: string): unknown => (isObj(o) && Object.hasOwn(o, k) ? o[k] : 0);
 const nums = (v: unknown): number[] => (Array.isArray(v) ? v.filter((n): n is number => typeof n === 'number') : []);
 const str = (v: unknown, d = ''): string => (typeof v === 'string' ? v : d);
+const num = (v: unknown, d: number): number => (typeof v === 'number' ? v : d);
 
 function axisOf(o: unknown, px: number): AxisInfo {
   const lim = nums(field(o, 'lim')), b = field(o, 'b'), names = field(o, 'names'), g = field(o, 'g');
@@ -49,9 +50,9 @@ export function parseSidecar(text: string): AxesInfo {
     box, x: axisOf(field(j, 'x'), box[2] - box[0]), y: axisOf(field(j, 'y'), box[3] - box[1]), cb: field(j, 'cb') === 1,
     a: (Array.isArray(arts) ? arts : []).map((o: unknown, i): ArtistInfo => ({
       i, k: str(field(o, 'k')), l: str(field(o, 'l')), c: str(field(o, 'c'), 'currentColor'), s: str(field(o, 's'), 'xy'), ds: str(field(o, 'ds')),
-      d: nums(field(o, 'd')), p: nums(field(o, 'p')), b: nums(field(o, 'b')),
+      d: nums(field(o, 'd')), p: nums(field(o, 'p')), b: nums(field(o, 'b')), r: num(field(o, 'r'), 0),
     })),
-    lg: (Array.isArray(lg) ? lg : []).map(nums).filter((e) => e.length === 5),
+    lg: (Array.isArray(lg) ? lg : []).map(nums).filter((e) => e.length === 5), ti: str(field(j, 'ti')),
   };
 }
 
@@ -141,7 +142,7 @@ const RATE = /^[^\s/]+ ?\/ ?[^\s/]+$/;
  *  `muted`: a rate that reads as a phrase ("requests / s"), shown quietly; `name`: the label without its unit ("latency"). */
 export function unitOf(label: string): { readonly plain: string; readonly muted: string; readonly name: string } {
   const t = label.trim(), p = /^(.*?)\s*[([]([^()[\]]{1,12})[)\]]$/.exec(t);
-  const bare = p ? p[1] : t, u = p ? p[2].trim() : t;
+  const bare = p ? p[1] : t, u = p ? p[2].split(',')[0].trim() : t;
   if (UNIT.test(u)) return { plain: u, muted: '', name: p ? bare : '' };
   if (RATE.test(u) && u.length <= 16) return { plain: '', muted: u, name: p ? bare : '' };
   return { plain: '', muted: '', name: p && /^(log|linear|symlog|logit)/i.test(u) ? bare : t };
@@ -269,7 +270,6 @@ function room(svg: SVGSVGElement): readonly number[] {
 }
 const clamp = (lo: number, hi: number, v: number): number => Math.max(lo, Math.min(hi, v));
 const onLegend = (e: Event): boolean => e.target instanceof Element && e.target.classList.contains('mpl-lg');
-const num = (v: unknown, d: number): number => (typeof v === 'number' ? v : d);
 
 /** Wire one annotated SVG, and again whenever its content is re-rendered (`mpl:render`); returns its detach function. */
 function wire(svg: SVGSVGElement, tip: Tip): () => void {
@@ -377,10 +377,17 @@ function wireContent(svg: SVGSVGElement, tip: Tip, offs: Map<number, Set<number>
     for (const o of tip.on) if (o !== me) o.hide();
     tip.on = [me];
     lx = x; ly = y;
-    const hit = pick.length > 0 ? pick : here.flatMap((a) => nearest(a.info.a, x, y, a.off)).reduce((b: readonly Hit[], h) => (b.length === 0 || h.dist <= b[0].dist ? [h] : b), []);
+    // series ordered along an axis follow the crosshair; a 2D point (a scatter marker) wins only under the pointer
+    const best = (f: (s: ArtistInfo) => boolean): readonly Hit[] => here.flatMap((a) => nearest(a.info.a.filter(f), x, y, a.off)).reduce((m: readonly Hit[], h) => (m.length === 0 || h.dist <= m[0].dist ? [h] : m), []);
+    const lines = best((s) => s.s !== 'xy'), spots = best((s) => s.s === 'xy'), ctm = svg.getScreenCTM(), scale = ctm ? Math.hypot(ctm.a, ctm.b) : 1;
+    const onSpot = spots.length > 0 && spots[0].dist <= spots[0].art.r + (touch ? 8 : 3) / scale;
+    const hit = pick.length > 0 ? pick : onSpot || lines.length === 0 ? spots : lines;
+    // the crosshair snaps to the point the tooltip reports, so the two always agree (not to a far-off 2D point)
+    const snap = hit.length > 0 && (pick.length > 0 || onSpot || hit === lines);
+    const sx = snap && hit[0].art.s !== 'y' ? hit[0].art.p[2 * hit[0].j] : x, sy = snap && hit[0].art.s === 'y' ? hit[0].art.p[2 * hit[0].j + 1] : y;
     const b = here[0].info.box;
-    vx.setAttribute('x1', String(x)); vx.setAttribute('x2', String(x)); vx.setAttribute('y1', String(b[1])); vx.setAttribute('y2', String(b[3]));
-    hy.setAttribute('y1', String(y)); hy.setAttribute('y2', String(y)); hy.setAttribute('x1', String(b[0])); hy.setAttribute('x2', String(b[2]));
+    vx.setAttribute('x1', String(sx)); vx.setAttribute('x2', String(sx)); vx.setAttribute('y1', String(b[1])); vx.setAttribute('y2', String(b[3]));
+    hy.setAttribute('y1', String(sy)); hy.setAttribute('y2', String(sy)); hy.setAttribute('x1', String(b[0])); hy.setAttribute('x2', String(b[2]));
     cross.style.display = '';
     const rows: HTMLElement[] = [];
     undim();
@@ -392,11 +399,14 @@ function wireContent(svg: SVGSVGElement, tip: Tip, offs: Map<number, Set<number>
       const horiz = art.s === 'y', V = horiz ? owner.info.x : owner.info.y, P = horiz ? owner.info.y : owner.info.x, vw = horiz ? 'x' : 'y', pw = horiz ? 'y' : 'x';
       const val = art.d[2 * j + (horiz ? 0 : 1)], base = art.b.length > 0 ? art.b[j] : 0;
       const pos = P.s === 'date' ? { ...P, step: dateStep(art, horiz ? 1 : 0, P) } : P;
-      const custom = format !== formatValue, vu = unitOf(V.t), pu = unitOf(P.t);
-      const head = html('div'), sw = html('i'), name = art.l !== '' ? art.l : custom || V.t.length > 24 ? '' : vu.name;
+      // the unit from the value axis' label, else from the title ("API latency (ms, log)")
+      const custom = format !== formatValue, vu = unitOf(V.t !== '' ? V.t : owner.info.ti), pu = unitOf(P.t);
+      const head = html('div'), sw = html('i');
       sw.style.background = art.c;
       head.append(sw);
-      if (name !== '') head.append(html('b', name), ' ');
+      // an unlabelled artist is named, muted, by the value axis' label or else the Axes title, without their parentheses
+      const fallback = [unitOf(V.t).name, owner.info.ti.replace(/\s*[([].*$/, '')].find((t) => t !== '' && t.length <= 28) || '';
+      if (art.l !== '') head.append(html('b', art.l), ' '); else if (fallback !== '') head.append(html('u', fallback), ' ');
       const stacked = art.b.length > 0 && base !== 0;
       const shown1 = format(stacked ? val - base : val, stacked ? { ...V, s: 'linear' } : V, vw, true, svg);
       head.append(html('span', custom ? shown1 : glue(shown1, vu.plain)));
@@ -416,7 +426,7 @@ function wireContent(svg: SVGSVGElement, tip: Tip, offs: Map<number, Set<number>
       const gid = groupOf(h, svg, here[0].k, here[0].info);
       unpaint();
       if (!spread(h, gid, here[0])) continue;
-      h.last = [gid, pixelToData(here[0].info, 'x', x)];
+      h.last = [gid, snap && hit[0].art.s !== 'y' ? hit[0].art.d[2 * hit[0].j] : pixelToData(here[0].info, 'x', x)];
       for (const p of h.painters) p.paint(gid, h.last[1], here.map((a) => a.k), svg, hit.map((v) => v.art));
     }
     if (tip.cursor) rows.push(html('small', [format(pixelToData(here[0].info, 'x', x), here[0].info.x, 'x', false, svg),

@@ -269,6 +269,7 @@ const u = (s: string): readonly string[] => { const r = unitOf(s); return [r.pla
   assert.deepEqual(u('requests (log)'), ['', '', 'requests']);
   assert.deepEqual(u('p99 ms'), ['', '', 'p99 ms']);
   assert.deepEqual(u('CPU'), ['', '', 'CPU']);
+  assert.deepEqual(u('API latency (ms, log)'), ['ms', '', 'API latency']);
   assert.deepEqual(u('%'), ['%', '', '']);
   // the sidecar carries the label
   const [fl, al] = subplots();
@@ -276,6 +277,14 @@ const u = (s: string): readonly string[] => { const r = unitOf(s); return [r.pla
   al.set_ylabel('latency (ms)');
   const sc6 = sidecars(fl.toSVG({ interactive: true }))[0];
   assert.deepEqual([sc6.y.t, sc6.x.t], ['latency (ms)', '']);
+  const [fm, am] = subplots({ dpi: 200 });
+  am.scatter([1, 2], [3, 4], { s: 36 });
+  am.plot([1, 2, 3], [1, 2, 4], 'o', { ms: 9 });
+  am.set_title('Title here');
+  const sc7 = sidecars(fm.toSVG({ interactive: true }))[0];
+  assert.equal(sc7.ti, 'Title here');
+  assert.ok(Math.abs(sc7.a[0].r - (3 * 200) / 72) < 0.01, `scatter marker radius in pixels: ${sc7.a[0].r}`);
+  assert.ok(Math.abs(sc7.a[1].r - (4.5 * 200) / 72) < 0.01, `line marker radius in pixels: ${sc7.a[1].r}`);
 }
 
 console.log(`annotate: ${names.length} fixtures byte-identical by default, annotated = default + inserted lines; ${checks} checks ok`);

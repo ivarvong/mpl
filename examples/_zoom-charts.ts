@@ -102,6 +102,8 @@ export function dashboard(): Figure {
   lat.plot(ts, p50, { label: 'p50' });
   lat.plot(ts, p50.map((v, i) => v * 2.4 + 8 * r() + 200 * spike(i)), { label: 'p95' });
   lat.plot(ts, p50.map((v, i) => v * 4.6 + 14 * r() + 500 * spike(i)), { label: 'p99' });
+  const out = [20, 34, 60, 72, 110, 130];
+  lat.scatter(out.map((i) => ts[i]), out.map((i) => 330 + 12 * (i % 5)), { s: 8, color: 'C3' });   // unlabelled outliers
   lat.set_yscale('log'); lat.set_ylabel('ms'); lat.set_title('API latency'); lat.legend({ loc: 'upper left' });
   budget.plot(ts, ts.map((_, i) => 62 - 0.03 * i - (i > 88 ? 6 : 0)));
   budget.set_ylabel('% left'); budget.set_title('Error budget remaining');
