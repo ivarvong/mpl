@@ -98,7 +98,7 @@ const png = fig.toPNGSync();
 ```
 
 That is the rule for the whole library, not one demo: `node test/compare.ts` replays every fixture matplotlib
-generated and compares the decoded pixels — **366 of 366 pixel-exact** at the time of writing — plus tick, label and
+generated and compares the decoded pixels — **374 of 374 pixel-exact** at the time of writing — plus tick, label and
 legend-extent records, and seeded fuzzers against matplotlib's tickers (106,000 cases) and date locators (12,000).
 Details: [docs/internals.md](docs/internals.md#verification).
 

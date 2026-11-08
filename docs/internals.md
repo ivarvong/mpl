@@ -16,7 +16,7 @@ The oracle is matplotlib 3.11.2 itself. `fixtures/ref/` holds matplotlib's own `
 JSON record (limits, tick locations and labels, offset text, legend extents) for every case, generated from call lists
 by `fixtures/generate*.py`. `tools/replay-core.ts` replays the same calls through mpljs, and `node test/compare.ts`
 compares the result: mpljs ships its own port of Agg and of FreeType's text layout, so the rasterized output is
-compared pixel for pixel, not by RMS. At the time of writing: **366 of 366 fixtures pixel-exact against matplotlib's
+compared pixel for pixel, not by RMS. At the time of writing: **374 of 374 fixtures pixel-exact against matplotlib's
 Agg PNG**.
 
 How the oracle grew:
@@ -29,7 +29,7 @@ How the oracle grew:
 | 3 | **log scales** (LogLocator major + minor, LogFormatterSciNotation with sublabels, mathtext `10^{n}` / `2×10^{n}` labels), **dates** (AutoDateLocator + AutoDateFormatter, seconds to centuries), **twinx** (shared x, right axis, log twins) | + minor ticks and minor labels on every axes | **101/101 exact, mean RMS 2.02** |
 | date fuzz | AutoDateLocator + AutoDateFormatter over random ranges, ~3 s to ~110 years, every frequency incl. microsecond | ticks, labels | **9,400/9,400** across 4 seeds |
 | locator fuzz | `YearLocator`, `MonthLocator`, `DayLocator`, `HourLocator`, `MinuteLocator`, `SecondLocator` (random intervals and by-lists, inverted views) + AutoDateFormatter. An RRuleLocator anchors its rule at vmin − relativedelta(vmax, vmin), so with interval > 1 the tick phase follows the view: `HourLocator(interval=12)` over data from 06:30 ticks at 04:00 and 16:00, and `byhour=[0, 12]` pins midnight and noon | ticks, labels | **2,600/2,600** across 2 seeds |
-| Agg port | every fixture after mpljs gained its own Agg and FreeType layout | pixels, byte-compared after decoding | **366/366 pixel-exact** (`node test/compare.ts`) |
+| Agg port | every fixture after mpljs gained its own Agg and FreeType layout | pixels, byte-compared after decoding | **374/374 pixel-exact** (`node test/compare.ts`) |
 
 Calibration: matplotlib's *own* SVG backend, rasterized by the same rasterizer, scores RMS **14–16** against its Agg PNG
 (it works in 72-dpi points and does not pixel-snap). Before the Agg port, mpljs at ~2 was anti-aliasing fringe; the
