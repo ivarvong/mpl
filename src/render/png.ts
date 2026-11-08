@@ -855,12 +855,36 @@ function encodeRows(e: ZlibEnc): boolean {
 }
 
 /**
+ * The hash chain's candidates for the pixel-aligned byte pb (row y, offset xb), against the best match so far
+ * packed as best | dist << 9 (best ≤ 258, dist ≤ 32768), returned in the same packing. Its own function keeps
+ * encodeRow small enough for V8's optimizing compiler to build quickly.
+ */
+function chainMatch(e: ZlibEnc, y: number, xb: number, pb: number, max: number, packed: number): number {
+  const W = e.W, px = e.px, u = e.u, RB = e.RB, S = e.S, epoch = e.epoch, head = TOK_HEAD, prev = TOK_PREV;
+  let best = packed & 511, dist = packed >>> 9;
+  const p = pb >> 2;
+  const hh = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
+  let j = TOK_AGE[hh] === epoch ? head[hh] : -1, chain = CHAIN;
+  while (j >= 0 && chain-- > 0 && p - j <= RM) {
+    const qy = (j / W) | 0, qxb = (j - qy * W) * 4, bd = (y - qy) * S + xb - qxb;
+    if (bd > 32768) break;
+    const mlen = Math.min(max, RB - qxb);
+    if (best < mlen && px[j * 4 + best] === px[pb + best]) {
+      const l = runBytes(px, u, pb, j * 4, mlen);
+      if (l > best) { best = l; dist = bd; }
+    }
+    const pj = prev[j & RM];
+    if (pj >= j) break;
+    j = pj;
+  }
+  return best | (dist << 9);
+}
+
+/**
  * Tokens for row e.y from byte e.xb to the row's end, or until the token block is full. One row per call, so the
  * loop V8 compiles on stack replacement is the function's outermost: optimized code no longer deopts ("exit from
  * OSR'd inner loop") at every row end, and the per-row calls tier the whole function up normally. Leaving the
  * block rotation (rare, and a call) to the caller keeps this loop free of paths that have never run.
- * Stopping inside a run of 258-byte left matches is the same as continuing it: the next token search at an aligned
- * xb finds the same 258-byte left match exactly when the run would go on (L.from ≥ 65 pixels, a full 258 left).
  */
 function encodeRow(e: ZlibEnc): void {
   const W = e.W, px = e.px, u = e.u, RB = e.RB, S = e.S, upOk = e.upOk, epoch = e.epoch, y = e.y;
@@ -874,46 +898,19 @@ function encodeRow(e: ZlibEnc): void {
       if (xb >= 4) { best = alongMatch(L, px, W, pb, xb, 4, max); dist = 4; }
       if (y > 0 && upOk && best < max) { const l = alongMatch(U, px, W, pb, xb, RB, max); if (l > best) { best = l; dist = S; } }
       if (best < 32 && (xb & 3) === 0) {
-        const p = pb >> 2;
-        const hh = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
-        let j = age[hh] === epoch ? head[hh] : -1, chain = CHAIN;
-        while (j >= 0 && chain-- > 0 && p - j <= RM) {
-          const qy = (j / W) | 0, qxb = (j - qy * W) * 4, bd = (y - qy) * S + xb - qxb;
-          if (bd > 32768) break;
-          const mlen = Math.min(max, RB - qxb);
-          if (best < mlen && px[j * 4 + best] === px[pb + best]) {
-            const l = runBytes(px, u, pb, j * 4, mlen);
-            if (l > best) { best = l; dist = bd; }
-          }
-          const pj = prev[j & RM];
-          if (pj >= j) break;
-          j = pj;
-        }
+        const m = chainMatch(e, y, xb, pb, max, best | (dist << 9));
+        best = m & 511; dist = m >>> 9;
       }
     }
     if (best >= 3) {
-      if (dist === 4 && best === 258 && (xb & 3) === 0) {
-        for (;;) {
-          tok[nTok++] = 256 + ((258 << 16) | 4);
-          const p1 = (rowB + xb + 258) >> 2;
-          for (let p = p1 - 2; p < p1; p++) {
-            const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
-            prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
-          }
-          xb += 258;
-          if (xb + 258 > RB) break;
-          if (L.from(xb >> 2) < 65) break;
-          if (nTok === TOK_BLOCK) break;
-        }
-      } else {
-        tok[nTok++] = 256 + ((best << 16) | dist);
-        const p0 = (rowB + ((xb + 3) & ~3)) >> 2, p1 = (pb + best) >> 2;
-        for (let p = best <= 32 ? p0 : Math.max(p0, p1 - 2); p < p1; p++) {
-          const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
-          prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
-        }
-        xb += best;
+      // a 258-byte match inserts only its last two pixels, a short one every pixel it starts
+      tok[nTok++] = 256 + ((best << 16) | dist);
+      const p0 = (rowB + ((xb + 3) & ~3)) >> 2, p1 = (pb + best) >> 2;
+      for (let p = best <= 32 ? p0 : Math.max(p0, p1 - 2); p < p1; p++) {
+        const h = Math.imul(u[p], 0x9e3779b1) >>> (32 - HBITS_TOK);
+        prev[p & RM] = age[h] === epoch ? head[h] : -1; head[h] = p; age[h] = epoch;
       }
+      xb += best;
     } else {
       tok[nTok++] = px[pb];
       if ((xb & 3) === 0) {
@@ -985,10 +982,12 @@ function pullIdat(e: ZlibEnc): Option<Uint8Array> {
         BITS.put(1, 1); BITS.put(1, 2); BITS.put(0, 7);
         e.phase = PH_ADLER;
         return some(takeIdat(e));
-      default:
+      case PH_ROWS:
         if (encodeRows(e)) return some(takeIdat(e));
         e.phase = PH_FLUSH;
         e.flushKind = e.hasHeld || e.nTok > 0 ? FK_HOLD : FK_EMPTY;
+        break;
+      default: throw new Error(`pullIdat: bad phase ${e.phase}`);
     }
   }
 }
