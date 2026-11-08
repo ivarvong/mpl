@@ -1,8 +1,13 @@
 // Layout-cache keys without serializing the data. A figure's spec holds every series (often the caller's own
 // Float64Array, zero-copy), so JSON.stringify(spec) cost ~6.5 ms on a 35k-point chart, on every first render.
-// A snapshot copies typed arrays with a native slice and keeps the rest of the tree. `sameSpec` then walks the live
-// spec against it. Equality is at least as strict as comparing the JSON: a snapshot match implies equal JSON.
-// Functions are ignored and objects that aren't plain compare by their JSON, as JSON.stringify treats them.
+// A snapshot copies typed arrays with a native slice and keeps the rest of the tree. Equality is at least as strict
+// as comparing the JSON: a snapshot match implies equal JSON. Functions are ignored and objects that aren't plain
+// compare by their JSON, as JSON.stringify treats them.
+//
+// `resnapshot(prev, live)` compares and snapshots in one walk and shares structure: every subtree of `live` that
+// still equals its counterpart in `prev` keeps prev's node (no copy), so the result is `prev` itself exactly when
+// nothing changed. A pan or zoom loop misses the cache on every frame; before this, each miss deep-copied the whole
+// spec (data arrays included) to store a key, and that copy plus the compare was 13–28 % of a re-render.
 import { isNullish, isPlainObject } from './std.ts';
 
 class JsonLeaf { readonly json: string; constructor(json: string) { this.json = json; } }
@@ -10,23 +15,19 @@ class BytesLeaf {
   readonly proto: unknown; readonly bytes: Uint8Array;
   constructor(proto: unknown, bytes: Uint8Array) { this.proto = proto; this.bytes = bytes; }
 }
-const FN = Symbol('function');
-
-const bytesOf = (v: ArrayBufferView): Uint8Array => new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
-
-/** A copy of `v` that later mutation of `v` (or of the arrays it holds) cannot change. */
-export function snapshot(v: unknown): unknown {
-  if (typeof v === 'function') return FN;
-  if (isNullish(v) || typeof v !== 'object') return v;
-  if (ArrayBuffer.isView(v)) return v instanceof DataView ? new JsonLeaf(JSON.stringify(v)) : new BytesLeaf(Object.getPrototypeOf(v), bytesOf(v).slice());
-  if (Array.isArray(v)) return v.map(snapshot);
-  if (isPlainObject(v)) {
-    const out: Record<string, unknown> = {};
-    for (const k of Object.keys(v)) out[k] = snapshot(v[k]);
-    return out;
-  }
-  return new JsonLeaf(JSON.stringify(v));
+/** A plain object: its own keys in order and their snapshots. */
+class ObjNode {
+  readonly keys: readonly string[]; readonly vals: readonly unknown[];
+  constructor(keys: readonly string[], vals: readonly unknown[]) { this.keys = keys; this.vals = vals; }
 }
+/** An array's element snapshots (a class, so a snapshot node is never confused with a live array). */
+class ArrNode { readonly vals: readonly unknown[]; constructor(vals: readonly unknown[]) { this.vals = vals; } }
+const FN = Symbol('function');
+/** No previous snapshot: matches nothing. */
+export const NO_SNAPSHOT: unique symbol = Symbol('no snapshot');
+
+const isObject = (v: unknown): v is object => typeof v === 'object' && !isNullish(v);
+const bytesOf = (v: ArrayBufferView): Uint8Array => new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
 
 function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   const n = a.length;
@@ -41,16 +42,67 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
-/** Whether `live` still equals the state `snap` was taken from. */
-export function sameSpec(snap: unknown, live: unknown): boolean {
-  if (snap === FN) return typeof live === 'function';
-  if (isNullish(snap) || typeof snap !== 'object') return typeof live === typeof snap && (snap === live || (typeof snap === 'number' && Number.isNaN(snap) && Number.isNaN(live)));
-  if (snap instanceof BytesLeaf) return ArrayBuffer.isView(live) && !(live instanceof DataView) && Object.getPrototypeOf(live) === snap.proto && sameBytes(snap.bytes, bytesOf(live));
-  if (snap instanceof JsonLeaf) return typeof live === 'object' && !isNullish(live) && !isPlainObject(live) && !Array.isArray(live) && JSON.stringify(live) === snap.json;
-  if (Array.isArray(snap)) return Array.isArray(live) && live.length === snap.length && snap.every((s, i) => sameSpec(s, live[i]));
-  if (!isPlainObject(snap) || !isPlainObject(live)) return false;
-  const ks = Object.keys(snap), kl = Object.keys(live);
-  if (ks.length !== kl.length) return false;
-  for (let i = 0; i < ks.length; i++) if (ks[i] !== kl[i] || !sameSpec(snap[ks[i]], live[ks[i]])) return false;
-  return true;
+function resnapArray(prev: unknown, live: readonly unknown[]): unknown {
+  const n = live.length;
+  const pv = prev instanceof ArrNode ? prev.vals : [];
+  let out: unknown[] = [];
+  let changed = pv.length !== n;
+  for (let i = 0; i < n; i++) {
+    const p = i < pv.length ? pv[i] : NO_SNAPSHOT;
+    const c = resnapshot(p, live[i]);
+    if (!changed && !Object.is(c, p)) { changed = true; out = pv.slice(0, n); }
+    if (changed) out[i] = c;
+  }
+  return changed ? new ArrNode(out) : prev;
 }
+
+function resnapObject(prev: unknown, live: Readonly<Record<string, unknown>>): unknown {
+  const keys = Object.keys(live), n = keys.length;
+  let pk: readonly string[] = [], pv: readonly unknown[] = [];
+  if (prev instanceof ObjNode && prev.keys.length === n) {
+    pk = prev.keys; pv = prev.vals;
+    for (let i = 0; i < n; i++) if (pk[i] !== keys[i]) { pv = []; break; }
+  }
+  const keyed = pv.length === n;   // prev has exactly these keys in this order
+  let out: unknown[] = [];
+  let changed = !keyed;
+  for (let i = 0; i < n; i++) {
+    const p = keyed ? pv[i] : NO_SNAPSHOT;
+    const c = resnapshot(p, live[keys[i]]);
+    if (!changed && !Object.is(c, p)) { changed = true; out = pv.slice(); }
+    if (changed) out[i] = c;
+  }
+  return changed ? new ObjNode(keyed ? pk : keys, out) : prev;
+}
+
+/**
+ * A snapshot of `live` that later mutation of `live` (or of the arrays it holds) cannot change, sharing every subtree
+ * of `prev` (a previous snapshot, or NO_SNAPSHOT) that still matches. Returns `prev` itself iff `live` still equals the
+ * state `prev` was taken from.
+ */
+export function resnapshot(prev: unknown, live: unknown): unknown {
+  if (!isObject(live)) {
+    if (typeof live === 'function') return FN;
+    // primitives are their own snapshot; NaN equals NaN as in JSON
+    return prev === live || (typeof live === 'number' && typeof prev === 'number' && Number.isNaN(live) && Number.isNaN(prev)) ? prev : live;
+  }
+  if (Array.isArray(live)) return resnapArray(prev, live);
+  if (ArrayBuffer.isView(live)) {
+    if (live instanceof DataView) return jsonLeaf(prev, live);
+    const proto: unknown = Object.getPrototypeOf(live), b = bytesOf(live);
+    return prev instanceof BytesLeaf && prev.proto === proto && sameBytes(prev.bytes, b) ? prev : new BytesLeaf(proto, b.slice());
+  }
+  if (isPlainObject(live)) return resnapObject(prev, live);
+  return jsonLeaf(prev, live);
+}
+
+function jsonLeaf(prev: unknown, live: object): unknown {
+  const json = JSON.stringify(live);
+  return prev instanceof JsonLeaf && prev.json === json ? prev : new JsonLeaf(json);
+}
+
+/** A copy of `v` that later mutation of `v` (or of the arrays it holds) cannot change. */
+export const snapshot = (v: unknown): unknown => resnapshot(NO_SNAPSHOT, v);
+
+/** Whether `live` still equals the state `snap` was taken from. */
+export const sameSpec = (snap: unknown, live: unknown): boolean => Object.is(resnapshot(snap, live), snap);
