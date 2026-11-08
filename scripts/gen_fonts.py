@@ -54,6 +54,12 @@ DEJAVU_BLOCKS = [
     (0x2713, 0x2718),  # Dingbats: check marks and ballot x
 ]
 DEJAVU_CHARS = list(dict.fromkeys(CHARS + [chr(c) for a, b in DEJAVU_BLOCKS for c in range(a, b + 1)]))
+# Inter faces add General Punctuation, Arrows, Geometric Shapes and the check marks, as far as Inter maps them:
+# ■ ● ‒ ▲ ✓ … draw from Inter, as matplotlib draws them. The rest of DejaVu's blocks stay out of Inter (each block's
+# outlines and kerning cost every Inter module); such characters fall back along font.family (src/core/text.ts), where
+# matplotlib would draw Inter's own if Inter has them.
+INTER_BLOCKS = [(0x2000, 0x206F), (0x2190, 0x21FF), (0x25A0, 0x25FF), (0x2713, 0x2718)]
+INTER_CHARS = list(dict.fromkeys(CHARS + [chr(c) for a, b in INTER_BLOCKS for c in range(a, b + 1)]))
 FEATURES = ["ccmp", "locl", "rlig", "calt", "clig", "liga"]
 
 
@@ -84,7 +90,7 @@ def bake(slug, family, weight, path):
     order = t.getGlyphOrder()
     gid = {n: i for i, n in enumerate(order)}
     cmap = t.getBestCmap()
-    chars = [c for c in (DEJAVU_CHARS if slug.startswith("dejavu") else CHARS) if ord(c) in cmap]
+    chars = [c for c in (DEJAVU_CHARS if slug.startswith("dejavu") else INTER_CHARS) if ord(c) in cmap]
     gsub = t["GSUB"].table if "GSUB" in t else None
     roots = langsys_lookups(gsub, FEATURES) if gsub else []
 

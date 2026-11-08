@@ -408,7 +408,8 @@ export type Theme = {
     readonly spacing: { readonly wspace: number; readonly hspace: number };
     readonly titleSizePt: number; readonly titleWeight: number; readonly labelSizePt: number; readonly labelWeight: number };
   /** font.family resolved to faces by weight: body text, axes titles, axes labels */
-  readonly font: { readonly families: readonly string[]; readonly sizePt: number; readonly weight: number; readonly titleWeight: number; readonly labelWeight: number };
+  /** families: one entry per rc font.family name, each its candidate font names ('sans-serif' expands to font.sans-serif) */
+  readonly font: { readonly families: readonly (readonly string[])[]; readonly sizePt: number; readonly weight: number; readonly titleWeight: number; readonly labelWeight: number };
   readonly text: { readonly color: Rgb };
   /** How SVG text is written: 'text' nodes or glyph 'path's (rc svg.fonttype: 'none' -> 'text', 'path' -> 'glyphs') */
   readonly svgText: 'text' | 'glyphs';

@@ -118,9 +118,11 @@ class Reader {
 
 /** font.family may be a name or a list; the generic 'sans-serif' expands to font.sans-serif. */
 const nameList = (v: RcValue): readonly string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : typeof v === 'string' ? [v] : []);
-function fontFamilies(fam: RcValue, sans: RcValue): readonly string[] {
+/** font.family as matplotlib's font fallback reads it: each entry resolves to one font (a generic family to the first
+ *  font.sans-serif name found), and the entries after the first are the fallback chain. */
+function fontFamilies(fam: RcValue, sans: RcValue): readonly (readonly string[])[] {
   const list = nameList;
-  return list(fam).flatMap((f) => (f === 'sans-serif' ? [...list(sans), 'DejaVu Sans'] : [f]));
+  return list(fam).map((f) => (f === 'sans-serif' ? [...list(sans), 'DejaVu Sans'] : [f]));
 }
 
 function tickTheme(r: Reader, axis: 'x' | 'y', fontPt: number, cycle: readonly Rgb[]): TickTheme {

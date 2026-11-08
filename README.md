@@ -545,11 +545,23 @@ Other plot types (`boxplot`, `violinplot`, `pie`, `stem`, `stairs`, `fill`/`fill
 (`subplot_mosaic`, gridspec slices), general mathtext (only the tick-label forms `10^{n}` /
 `2×10^{n}`), constrained layout. Within the plotting calls: hist's `hatch` and per-dataset `linestyle`, `axline` with a
 `transform`, and errorbar on polar axes or with timedelta errors on date axes.
-Text uses DejaVu Sans/Serif (or Inter) with ASCII plus Latin-1, Latin Extended-A, Greek letters, general punctuation,
-super/subscripts, currency, arrows, math operators, box drawing, block elements, geometric shapes and ✓/✗ baked in
-(`scripts/gen_fonts.py`). Anything else draws matplotlib's empty .notdef box and warns once: `Glyph N (c) missing from
-font(s) …` when the font lacks it (as matplotlib does), or `… is in DejaVu Sans but not bundled with mpl` when only the
-baked subset lacks it.
+Text uses DejaVu Sans/Serif or Inter (`scripts/gen_fonts.py` bakes them).
+- DejaVu carries ASCII plus Latin-1, Latin Extended-A, Greek letters, general punctuation, super/subscripts, currency,
+  arrows, math operators, box drawing, block elements, geometric shapes and ✓/✗.
+- Inter carries ASCII and a few Latin-1 signs (− × µ ² ³ √ ° ± ·), plus General Punctuation, Arrows, Geometric
+  Shapes and the check marks, as far as Inter v4.0 maps them (■ ● ‒ ▲ ✓ …). Each further block costs every Inter
+  module its outlines and kerning: Latin-1 letters alone would add 50 KB per face.
+- Font fallback works as in matplotlib 3.11: each `font.family` entry resolves to one font (`'sans-serif'` to the first
+  `font.sans-serif` name shipped), and a character the first font lacks comes from the next entry that has it.
+  libraqm shapes each face's run on its own (fixtures `font_fallback_chain*`). With `font.family: ['Inter', 'DejaVu
+  Sans']`, ∀ ∈ ∇ ⇄ draw from DejaVu.
+- Not matched, by design:
+  - matplotlib ends every chain with LastResort, a box-per-Unicode-block font mpl doesn't ship, so a character no
+    listed font has draws the first font's .notdef box.
+  - Characters Inter has but mpl doesn't bake (accented letters, Greek, math operators, box drawing) fall back along
+    `font.family`, where matplotlib would draw Inter's own.
+- Missing glyphs warn once: `Glyph N (c) missing from font(s) …` when the font lacks it (as matplotlib does), or
+  `… is in Inter but not bundled with mpl` when only the baked subset lacks it.
 Done and covered by the oracle: `plot` (incl. `drawstyle`), `step`, `scatter`, `bar`/`barh`, `hist` (every `histtype`, stacked or side by side, horizontal, log, density, weights, cumulative, numpy's bin estimators), `errorbar` (symmetric/asymmetric, caps, limits, `errorevery`), `axhline`/`axvline`/`axline`, `hlines`/`vlines`, `fill_between`, `text`/`annotate`, `legend`, `grid` with Line2D
 kwargs (major/minor), `tight_layout`, per-tick label styling, multi-line text, log scales, date axes, `twinx`, 9+ bundled styles, PNG output (own Agg port), SVG with glyph outlines (matplotlib's `svg.fonttype='path'`) or `<text>`.
 Everything (`src/`, `test/`, `tools/`, `scripts/`, `bench/`, `examples/`) is TypeScript run directly by Node and typechecked by `tsc -p .`;

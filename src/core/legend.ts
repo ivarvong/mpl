@@ -158,7 +158,10 @@ export function layoutLegend(inp: LegendInput, tracer: Tracer): LegendOutput {
       const [hx, hy] = item.offsets[0], [txo, tyo] = item.offsets[1];
       entries.push(bb(bx + item.bbox.x0, by + item.bbox.y0, bx + item.bbox.x1, by + item.bbox.y1));
       nodes.push(...handleNodes(item.entry.handle, bx + hx, by + hy, { wPt: hWidthPt, hPt: hHeightPt, ydPt: descentPt, fsPt }, inp.markers, theme, k, tlG, inp.W, H, inp.Hg, inp.snap));
-      nodes.push({ kind: 'text', text: item.entry.label, x: bx + txo, y: tl(by + tyo), dy: 0, sizePx: fs, sizePt: fsPt, glyphs: measure(item.entry.label, fsPt, dpi, face).runs[0].glyphs, face: face.id, color: L.labelColor, rotation: 'horizontal' });
+      // one node per run: a label that needs font fallback has a run per face
+      for (const r of measure(item.entry.label, fsPt, dpi, face).runs) {
+        nodes.push({ kind: 'text', text: r.text, x: bx + txo + r.dx, y: tl(by + tyo), dy: 0, sizePx: fs, sizePt: fsPt, glyphs: r.glyphs, face: r.face, color: L.labelColor, rotation: 'horizontal' });
+      }
     });
   });
   return { box, code, nodes, entries };

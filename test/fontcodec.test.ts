@@ -8,16 +8,17 @@ import { allFonts, dejavuSans, dejavuSansBold, interMedium, interRegular } from 
 import { encodeFace } from '../scripts/encode_fonts.ts';
 
 // 1. lossless: each face decodes to exactly the JSON scripts/gen_fonts.py baked before the split
-//    (sha256 of JSON.stringify of the original src/core/data/fonts/<name>.ts object, at 3e8352f)
+//    (sha256 of JSON.stringify of the original src/core/data/fonts/<name>.ts object, at 3e8352f; the Inter faces re-baked
+//    with General Punctuation, Arrows, Geometric Shapes and check marks)
 const BAKED_SHA256: Readonly<Record<string, string>> = {
   'dejavu-sans': 'd2f7faa48bc489114a5c98bf79f99956ab13535a7889d60f3e9956dd8116ece5',
   'dejavu-sans-bold': '76c5e15c215b28a5975d19ca08aee47ff1a84f3a78a7f940649c873616072f1a',
   'dejavu-serif': 'dcd708f6cd093db9b3bb19201f40f93e14526ea0f9e5b47dc5c2dc8f82187e06',
   'dejavu-serif-bold': '45d6b481dd91bc044ba89189946fe1661cb7e78e3db934e07e7988b37eecffed',
-  'inter-regular': '986aca56316e1215a1f996b2f36ffc324c79c1624b144ae72bc3b185b4b9bc44',
-  'inter-medium': 'e43f59fa0a018b8325ed4cebd13b13fb4649b450c5f874c5647eacace8914e52',
-  'inter-semibold': 'c91ee1bf2c5e08285bc137f3e6806a8a5fe3d710f0d96a03c7f841ee63894f35',
-  'inter-bold': '4de29b99d554a7534d1d30cc82ddf19595743a9b45d4e88f7628aea4b7eadcfa',
+  'inter-regular': 'bcba567bc231fa3ec3f600dd4707e50ef47bbb51e250b245ffc053e412662c3a',
+  'inter-medium': 'cdaf7c766878613d476250dc37bf5ba9c3f7647f4d53a3426424ce830b25a213',
+  'inter-semibold': '2a65fbbbe11f7698775e059dd554395e14344778f4648bfe438badc0e9ed424f',
+  'inter-bold': '8f0769124b142027183ea46aaae8e46bf06585bbfcc58d05cfcf0a918b9a9bec',
 };
 assert.equal(allFonts.length, FACE_CATALOG.length);
 FACE_CATALOG.forEach((e, i) => {

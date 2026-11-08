@@ -7,7 +7,7 @@
 //   - substitutions: the GSUB lookups behind ccmp/locl/rlig/calt/clig/liga for Latin text
 import { decodeTables, FACE_CATALOG, type BakedFace, type CatalogEntry, type FaceId, type GlyphContours } from './fontcodec.ts';
 import { lookup } from './std.ts';
-import { assertNever } from './types.ts';
+import { assertNever, none, some, type Option } from './types.ts';
 import { tracer } from '../trace.ts';
 
 const getOr = <K, V>(m: ReadonlyMap<K, V>, k: K, d: V): V => { const o = lookup(m, k); return o.kind === 'some' ? o.value : d; };
@@ -98,6 +98,8 @@ export type Face = {
   readonly data: Pick<FaceData, 'cover' | 'typo' | 'gsub'>;
   /** Text._get_layout's minimum ascent and descent, font units */
   readonly minAscent: number; readonly minDescent: number;
+  /** font fallback: the faces of the later font.family entries, tried in order for a character this face lacks */
+  readonly fallback: readonly Face[];
 };
 
 /** The same tables decodeFace bakes, built as Maps directly; glyph outlines wait until drawn. */
@@ -108,7 +110,7 @@ function load(b: BakedFace, e: CatalogEntry): Face {
     outlines: t.outlines, offsets: t.offsets, kern: t.kern,
     lookups: new Map(Object.entries(b.gsub.lookups).map(([k, v]) => [Number(k), compileLookup(v)] as const)),
     gclass: numMap(b.gsub.gclass),
-    data: { cover: t.cover, typo: b.typo, gsub: b.gsub }, minAscent: b.typo[0], minDescent: b.typo[1],
+    data: { cover: t.cover, typo: b.typo, gsub: b.gsub }, minAscent: b.typo[0], minDescent: b.typo[1], fallback: [],
   };
 }
 
@@ -180,16 +182,38 @@ const WEIGHTS: ReadonlyMap<string, number> = new Map([
 /** matplotlib's weights: a number, or a named weight (unknown names read as normal). */
 export const parseWeight = (v: unknown): number => (typeof v === 'number' ? v : typeof v === 'string' ? getOr(WEIGHTS, v, 400) : 400);
 
-/** font_manager.findfont, reduced: first family in the list that we ship, then the nearest weight
- *  (over every shipped face, registered or not); throws FontNotLoadedError if that face is not registered. */
-export function resolveFace(families: readonly string[], weight: number): Face {
-  for (const fam of families) {
+/** findfont for one font.family entry: its first name we ship, at the nearest weight (over every shipped face). */
+function findEntry(names: readonly string[], weight: number): Option<CatalogEntry> {
+  for (const fam of names) {
     // matplotlib's generic families resolve through font.sans-serif / font.serif, whose first entries we ship
     const name = fam === 'sans-serif' ? 'DejaVu Sans' : fam === 'serif' ? 'DejaVu Serif' : fam;
     const cands = FACE_CATALOG.filter((f) => f.family.toLowerCase() === name.toLowerCase());
-    if (cands.length > 0) return getFace(cands.reduce((a, b) => (Math.abs(b.weight - weight) < Math.abs(a.weight - weight) ? b : a)));
+    if (cands.length > 0) return some(cands.reduce((a, b) => (Math.abs(b.weight - weight) < Math.abs(a.weight - weight) ? b : a)));
   }
-  return getFace(weight >= 600 ? FACE_CATALOG[1] : FACE_CATALOG[0]);
+  return none;
+}
+const chains = new Map<string, Face>();
+/**
+ * font_manager._find_fonts_by_props + get_font: each font.family entry resolves to one font, the first is the face and
+ * the rest its fallback chain (FT2Font _fallback_list), duplicates dropped; none found → DejaVu Sans
+ * (fallback_to_default). matplotlib ends the chain with LastResort, which mpl does not ship: a character no face has
+ * draws the first face's .notdef. Throws FontNotLoadedError if a face it picks is not registered.
+ */
+export function resolveFace(families: readonly (readonly string[])[], weight: number): Face {
+  const ids: CatalogEntry[] = [];
+  for (const names of families) {
+    const e = findEntry(names, weight);
+    if (e.kind === 'some' && !ids.includes(e.value)) ids.push(e.value);
+  }
+  if (ids.length === 0) return getFace(weight >= 600 ? FACE_CATALOG[1] : FACE_CATALOG[0]);
+  const primary = getFace(ids[0]);
+  if (ids.length === 1) return primary;
+  const key = ids.map((e) => e.id).join('|');
+  const hit = lookup(chains, key);
+  if (hit.kind === 'some' && hit.value.cmap === primary.cmap) return hit.value;
+  const chained: Face = { ...primary, fallback: ids.slice(1).map(getFace) };
+  chains.set(key, chained);
+  return chained;
 }
 /** The face a laid-out text node names (its Face.id). */
 export function faceById(id: string): Face {
