@@ -2601,9 +2601,9 @@ export class Figure {
     });
   }
   /** svgChunks({ precision, interactive, idPrefix }) — the SVG as a generator of string chunks (keywords as in toSVG). */
-  svgChunks(kwargs: Kwargs = {}): Generator<string> { const o = this.svgOptions(kwargs, 'svgChunks'); return svgChunks(this.sceneFor('svg'), tracer, 'text', o.prefix, o.pd, o.annot); }
+  svgChunks(kwargs: Kwargs = {}): Generator<string> { const o = this.svgOptions(kwargs, 'svgChunks'); return svgChunks(this.sceneFor('svg'), tracer, this.theme.svgText, o.prefix, o.pd, o.annot); }
   /** svgStream({ precision, interactive, idPrefix }) — the SVG as a byte stream (Workers, browsers, Node; keywords as in toSVG). */
-  svgStream(kwargs: Kwargs = {}): ReadableStream<Uint8Array> { const o = this.svgOptions(kwargs, 'svgStream'); return svgStream(this.sceneFor('svg'), tracer, 'text', o.prefix, o.pd, o.annot); }
+  svgStream(kwargs: Kwargs = {}): ReadableStream<Uint8Array> { const o = this.svgOptions(kwargs, 'svgStream'); return svgStream(this.sceneFor('svg'), tracer, this.theme.svgText, o.prefix, o.pd, o.annot); }
 
   /**
    * Layout at a savefig dpi (matplotlib Figure.savefig(dpi=…)). Default is this.dpi
