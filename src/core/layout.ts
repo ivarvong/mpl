@@ -13,7 +13,7 @@ import { forward } from './scale.ts';
 import { layoutLegend } from './legend.ts';
 import type { Box } from './legend-index.ts';
 import { tickLabelText } from './log.ts';
-import { inkOf, pathNode, rectNode, snap } from './scene.ts';
+import { inkOf, pathNode, rectNode, snapIf } from './scene.ts';
 import { lookup } from './std.ts';
 import type { TextBox } from './text.ts';
 import { measure, placeText, pxPerPt, windowExtent } from './text.ts';
@@ -135,6 +135,7 @@ function legendEntries(ax: AxesSpec, drawn: readonly Drawn[]): readonly Sourced[
 
 function spinesForAxes(ax: AxesSpec, theme: Theme, f: Frame, k: number): readonly Node[] {
   const baseW = theme.axes.linewidthPt * k, b = f.box;
+  const snap = (v: number, w: number): number => snapIf(f.snap, v, w);
   const sides: Array<{ side: 'left' | 'right' | 'top' | 'bottom'; x0: number; y0: number; x1: number; y1: number }> = [];
   const ov = ax.spines;
   const has = theme.axes.spines;
@@ -408,7 +409,8 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, dev: Device,
 
   const face = roles.patch ? inkOf(theme.axes.face, none) : none;
   // The axes patch is a rectilinear, edgeless path: Agg snaps its corners to whole pixels (snap value 0).
-  const bx0 = snap(box.x0, 0), bx1 = snap(box.x1, 0), by0 = snap(box.yTopG, 0), by1 = snap(box.yBotG, 0);
+  // (matplotlib's SVG backend draws it unsnapped)
+  const bx0 = snapIf(f.snap, box.x0, 0), bx1 = snapIf(f.snap, box.x1, 0), by0 = snapIf(f.snap, box.yTopG, 0), by1 = snapIf(f.snap, box.yBotG, 0);
   const background: readonly Node[] = face.kind === 'some' ? [rectNode(bx0, by0, bx1 - bx0, by1 - by0, face.value)] : [];
   const undrawn = (): readonly Drawn[] => ax.artists.map((a): Drawn => ({ nodes: [], lines: [], boxes: [], points: [], handle: handleOf(a) }));
   const needArtists = mode === 'scene' || (ax.legend.kind === 'on' && ax.legend.loc.kind === 'best' && legendEntries(ax, undrawn()).length > 0);
@@ -438,7 +440,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, dev: Device,
   const spec = ax.legend;
   const legend = spec.kind === 'on' && entries.length > 0
     ? some({ code: spec.loc, out: tracer.span('legend', { entries: entries.length }, () => layoutLegend({
-        entries, theme, dpi, W, H, Hg, axesBox: axesUp, lines: drawn.flatMap((d) => d.lines), points: drawn.flatMap((d) => d.points), boxes: drawn.flatMap((d) => d.boxes),
+        entries, theme, dpi, W, H, Hg, snap: f.snap, axesBox: axesUp, lines: drawn.flatMap((d) => d.lines), points: drawn.flatMap((d) => d.points), boxes: drawn.flatMap((d) => d.boxes),
         loc: spec.loc, ncols: spec.ncols, frame: spec.frame, fontSizePt: spec.fontSizePt, markers: spec.markers }, tracer)) })
     : none;
 

@@ -259,8 +259,8 @@ carry points; fills, spans, reference lines (`axhline`/`axvline`/`axline`), segm
 listed (kind, label, colour) so they can be highlighted and toggled, but are not hit-tested. Colorbars are Axes like
 any other and get a sidecar, but no readout of the colormap value. Nothing is zoomable: the client never re-renders. With
 `toSVG({ precision, interactive: true })` the sidecar's pixel points round like the path data (exactly on the drawn
-line vertices at precision 0–2, within 0.005 px above); marker positions are pixel-snapped by Agg, as in matplotlib,
-so a marker can sit up to 1 px from its sidecar point.
+line vertices at precision 0–2, within 0.005 px above); markers sit at their exact positions, as matplotlib's SVG
+backend writes them.
 
 ## Runs in
 
@@ -501,7 +501,7 @@ That is a plan/apply split — one typed-array pass for data limits, then a stre
 Measured log-log slopes after: layout 0.4–0.6 (sub-linear once the pixel bound kicks in), render ≈ 0 for points/markers/bars.
 Mechanisms, each exact with respect to the Agg oracle (77/77 fixtures unchanged):
 - matplotlib's own line pipeline, ported from `path_converters.h` (NaN breaks → canvas clip → snap → `PathSimplifier`, threshold 1/9 px, only for ≥128 vertices like `Path.should_simplify`) plus `Line2D`'s subslice to the view: a 1M-point sine becomes 142 vertices, the same vertices matplotlib emits;
-- a `Markers` node instanced via `<use>`, with opaque duplicates at the same snapped pixel dropped;
+- a `Markers` node instanced via `<use>`, with opaque duplicates at the same snapped pixel dropped (PNG; the SVG writes every marker);
 - zero-area and same-column-nested opaque bars culled;
 - `legend(best)` answered from a grid index (prefix sums for interior cells, exact tests only on boundary cells) built once per layout;
 - hot loops in small pure functions — the same loop inside the 300-line `layoutAxes` ran 4.5× slower (V8 wouldn't optimize the body).
@@ -531,6 +531,7 @@ Things that had to be verified against Agg rather than reasoned about:
 
 - Spines/ticks/grid snap **after** the y-flip (rows 58/427, not 57/426).
 - A fractional canvas height (e.g. 4.94 in × 72 dpi = 355.68 px): `RendererAgg` flips paths, markers, images and clip boxes with its int canvas height (355), while text flips with the float height (`Text._draw` uses `get_canvas_width_height`). matplotlib's SVG backend flips everything with the float height and clips lines to the float canvas ± 1, so mpl lays out one scene per device (`frame.ts` `Device`).
+- matplotlib's SVG backend never pixel-snaps: no `PathSnapper` (spines, ticks, grid, bars, rectilinear lines) and no draw_markers pixel grid. mpl's SVG layout drops Agg's snapping too, and the PNG keeps it. At 72 dpi `test/svg-geometry.test.ts` checks lines, gridlines, spines, tick origins, the axes patch, bars, spans and markers against matplotlib's own SVG to 6e-5 px. The legend differs by up to 0.016 px, because matplotlib's SVG backend measures text with `TextToPath` (100 pt at 72 dpi, unhinted, scaled) and Agg measures it at the figure dpi. mpl lays out text as Agg does.
 - Text width is Σ `horiAdvance` (1/64 px) + kerning with `text.hinting='no_hinting'`; ascent/descent clamp to `"lp"` = 1556/2048, 492/2048 em.
 - Markers: origin snaps to `floor(v+0.5)+0.5`; above the marker's snap threshold its vertices snap to integers.
 - Filled bars with no edge snap to integer pixel edges (linewidth 0 ⇒ even).
