@@ -1,7 +1,7 @@
 // A request trace as a Gantt/waterfall chart: barh with left= offsets, a tree of indented labels
 // drawn with box-drawing characters (tick labels are right-aligned, as in matplotlib), the root label in bold, a dashed x grid, and tight_layout.
 // The same calls are an oracle case (fixtures/ref/example_gantt_trace), pixel-checked against
-// matplotlib. Writes examples/out/gantt.{svg,png}; docs/images/gantt.png is this PNG.
+// matplotlib. Writes examples/out/gantt.{svg,png}; its README image is now examples/trace.ts.
 import { registerFonts, subplots } from '../src/index.ts';
 // the root label is bold: DejaVu Sans Bold is its own module (in an app, 'mpl/fonts/dejavu-sans-bold')
 import { dejavuSansBold } from '../src/fonts/dejavu-sans-bold.ts';

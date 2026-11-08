@@ -18,87 +18,113 @@ rendering — its layout, tickers, text and its Agg rasterizer — that runs in 
 
 ## Same code, same pixels
 
-<p align="center">
-  <img src="fixtures/ref/example_gantt_trace.png" width="49%" alt="A request trace as a Gantt chart, rendered by matplotlib 3.11.2">
-  <img src="docs/images/gantt.png" width="49%" alt="The same request trace rendered by mpljs, identical">
-</p>
+**matplotlib 3.11.2**, Python:
 
-**Left: matplotlib 3.11.2. Right: mpljs.** All 307,200 pixels are identical. The left image is matplotlib's own
-`savefig` output, committed as [`fixtures/ref/example_gantt_trace.png`](fixtures/ref/example_gantt_trace.png);
-[`test/examples.test.ts`](test/examples.test.ts) checks the right one against it on every CI run. The code is the
-same, call for call.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="fixtures/ref/example_trace_pro_dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="fixtures/ref/example_trace_pro_slate.png">
+  <img src="fixtures/ref/example_trace_pro_slate.png" width="560" alt="A request trace drawn as a waterfall by matplotlib 3.11.2: six spans as horizontal bars, each labelled with its name and duration">
+</picture>
 
-**Python** (matplotlib):
+**mpljs**, TypeScript:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/trace-pro-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/readme/trace-pro-slate.png">
+  <img src="docs/images/readme/trace-pro-slate.png" width="560" alt="The same request trace drawn by mpljs, identical">
+</picture>
+
+All 651,200 pixels are identical, in both themes. The first image is matplotlib's own `savefig` output, committed
+as an oracle fixture ([`fixtures/ref/example_trace_pro_slate.png`](fixtures/ref/example_trace_pro_slate.png),
+[`…_pro_dark.png`](fixtures/ref/example_trace_pro_dark.png)). The second is
+[`examples/trace.ts`](examples/trace.ts), and [`test/examples.test.ts`](test/examples.test.ts) checks it against
+matplotlib's on every CI run. Both are 200 dpi, so the comparison is at the resolution shown. The `pro-slate` and
+`pro-dark` themes are plain `.mplstyle` files in [`styles/`](styles/), so matplotlib reads them unchanged.
+
+The Python below, run with matplotlib 3.11.2 on Linux x86-64, writes the first PNG byte for byte:
 
 ```python
 import matplotlib.pyplot as plt
 
+plt.style.use("styles/pro-slate.mplstyle")   # ships with mpljs; matplotlib reads it as is
+plt.rcParams.update({"figure.figsize": (4.4, 3.7), "figure.dpi": 200,
+                     "text.hinting": "none"})   # mpljs draws unhinted text
+
 spans = [
     ("GET /api/checkout", 0, 120, "C0"),
-    ("├─ auth.verify", 2, 14, "C1"),
-    ("├─ db.query orders", 15, 55, "C2"),
-    ("└─ pool.acquire", 15, 19, "C2"),
-    ("├─ inventory.reserve", 56, 92, "C4"),
-    ("└─ render.json", 93, 118, "C1"),
+    ("auth.verify", 2, 14, "C1"),
+    ("db.query orders", 15, 55, "C2"),
+    ("pool.acquire", 15, 19, "C2"),
+    ("inventory.reserve", 56, 92, "C4"),
+    ("render.json", 93, 118, "C3"),
 ]
-labels, starts, ends, colors = zip(*spans)
-rows = range(len(spans))
+names, starts, ends, colors = zip(*spans)
 
-plt.rcParams["axes.axisbelow"] = True
 fig, ax = plt.subplots()
-ax.barh(rows, [e - s for s, e in zip(starts, ends)],
-        left=starts, color=colors, height=0.6)
-ax.set_yticks(rows, labels)
-ax.get_yticklabels()[0].set_fontweight("bold")
-ax.set_ylim(len(spans) - 0.4, -0.6)
+ax.barh(range(len(spans)), [e - s for s, e in zip(starts, ends)],
+        left=starts, color=colors, height=0.34)
+for i, (name, s, e, _) in enumerate(spans):
+    late = s > 80   # near the right edge: end the label at the bar's end
+    ax.text(e if late else s, i - 0.25, f"{name}  {e - s} ms",
+            ha="right" if late else "left", va="bottom", fontsize=9.5,
+            fontweight="semibold" if i == 0 else "normal")
+ax.set_yticks([])
+ax.set_ylim(len(spans) - 0.5, -0.85)
+ax.set_xlim(0, 122)
+ax.grid(False, axis="y")
+ax.grid(True, axis="x")
 ax.set_xlabel("ms since request start")
-ax.set_title("Checkout request trace", loc="left")
-ax.grid(True, axis="x", color="0.85",
-        linestyle="--", linewidth=0.8)
-ax.spines[["top", "right"]].set_visible(False)
+ax.set_title("Checkout request trace")
 fig.tight_layout()
 fig.savefig("trace.png")
 ```
 
-**TypeScript** (mpljs, [`examples/gantt.ts`](examples/gantt.ts) in the repo):
+The mpljs version is the same calls. mpljs always draws text unhinted, so it has no `text.hinting` key:
 
 ```ts
 import { registerFonts, subplots } from 'mpl';
-import { dejavuSansBold } from 'mpl/fonts/dejavu-sans-bold';
-registerFonts(dejavuSansBold);   // faces are opt-in modules
+import { interRegular } from 'mpl/fonts/inter-regular';
+import { interSemibold } from 'mpl/fonts/inter-semibold';
+registerFonts(interRegular, interSemibold);   // faces are opt-in modules
 
 const spans = [
   ['GET /api/checkout', 0, 120, 'C0'],
-  ['├─ auth.verify', 2, 14, 'C1'],
-  ['├─ db.query orders', 15, 55, 'C2'],
-  ['└─ pool.acquire', 15, 19, 'C2'],
-  ['├─ inventory.reserve', 56, 92, 'C4'],
-  ['└─ render.json', 93, 118, 'C1'],
+  ['auth.verify', 2, 14, 'C1'],
+  ['db.query orders', 15, 55, 'C2'],
+  ['pool.acquire', 15, 19, 'C2'],
+  ['inventory.reserve', 56, 92, 'C4'],
+  ['render.json', 93, 118, 'C3'],
 ] as const;
-const rows = spans.map((_, i) => i);
 
-const [fig, ax] = subplots({ rc: { 'axes.axisbelow': true } });
-ax.barh(rows, spans.map(([, s, e]) => e - s), {
+const [fig, ax] = subplots({
+  style: 'pro-slate',
+  rc: { 'figure.figsize': [4.4, 3.7], 'figure.dpi': 200 },
+});
+ax.barh(spans.map((_, i) => i), spans.map(([, s, e]) => e - s), {
   left: spans.map(([, s]) => s),
   color: spans.map(([, , , c]) => c),
-  height: 0.6,
+  height: 0.34,
 });
-ax.set_yticks(rows);
-ax.set_yticklabels(spans.map(([label]) => label));
-ax.get_yticklabels()[0].set_fontweight('bold');
-ax.set_ylim(spans.length - 0.4, -0.6);
+spans.forEach(([name, s, e], i) => {
+  const late = s > 80;   // near the right edge: end the label at the bar's end
+  ax.text(late ? e : s, i - 0.25, `${name}  ${e - s} ms`, {
+    ha: late ? 'right' : 'left', va: 'bottom', fontsize: 9.5,
+    fontweight: i === 0 ? 'semibold' : 'normal',
+  });
+});
+ax.set_yticks([]);
+ax.set_ylim(spans.length - 0.5, -0.85);
+ax.set_xlim(0, 122);
+ax.grid(false, { axis: 'y' });
+ax.grid(true, { axis: 'x' });
 ax.set_xlabel('ms since request start');
-ax.set_title('Checkout request trace', { loc: 'left' });
-ax.grid(true, { axis: 'x', color: '0.85',
-  linestyle: '--', linewidth: 0.8 });
-ax.spines.top.set_visible(false);
-ax.spines.right.set_visible(false);
+ax.set_title('Checkout request trace');
 fig.tight_layout();
 const png = fig.toPNGSync();
 ```
 
 That is the rule for the whole library, not one demo: `node test/compare.ts` replays every fixture matplotlib
-generated and compares the decoded pixels — **374 of 374 pixel-exact** at the time of writing — plus tick, label and
+generated and compares the decoded pixels — **376 of 376 pixel-exact** at the time of writing — plus tick, label and
 legend-extent records, and seeded fuzzers against matplotlib's tickers (106,000 cases) and date locators (12,000).
 Details: [docs/internals.md](docs/internals.md#verification).
 

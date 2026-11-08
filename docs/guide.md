@@ -151,14 +151,23 @@ fig.toSVG();  fig.toPNGSync();   // a string, and a Uint8Array of PNG bytes
   <img src="images/twinx_theme.png" width="380" alt="bars and a line on twin y axes in the dark_background style, rendered by mpl">
 </p>
 
-### A Gantt / waterfall chart
+### A request-trace waterfall
 
-[`examples/gantt.ts`](../examples/gantt.ts) draws a request trace with `barh(..., { left })`, box-drawing tree labels, a bold
-root label (`ax.get_yticklabels()[0].set_fontweight('bold')`), a dashed x grid (`ax.grid(true, { axis: 'x', ls: '--' })`)
-and `fig.tight_layout()`. The same calls are an oracle case (`fixtures/ref/example_gantt_trace`) that matches matplotlib
-pixel for pixel. This is its `fig.toPNGSync()`:
+[`examples/trace.ts`](../examples/trace.ts) draws a request trace with `barh(..., { left })`, writes each span's name
+and duration above its bar with `ax.text` (no tick labels; the root in semibold), keeps only an x grid
+(`ax.grid(false, { axis: 'y' })`, then `ax.grid(true, { axis: 'x' })`), and renders at 200 dpi in the `pro-slate` and
+`pro-dark` sheets. The same calls are oracle cases (`fixtures/ref/example_trace_pro_{slate,dark}`) that match
+matplotlib pixel for pixel:
 
-<img src="images/gantt.png" width="560" alt="Gantt chart of a checkout request trace: one bold root span and five child spans as horizontal bars, with tree-drawing labels">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/readme/trace-pro-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="images/readme/trace-pro-slate.png">
+  <img src="images/readme/trace-pro-slate.png" width="640" alt="A checkout request trace as a waterfall: six spans as horizontal bars at their start offsets, each labelled with its name and duration">
+</picture>
+
+[`examples/gantt.ts`](../examples/gantt.ts) is the same trace in matplotlib's default style, with tick labels
+(`set_yticklabels`, a bold root via `ax.get_yticklabels()[0].set_fontweight('bold')`) and box-drawing characters; it is
+also an oracle case (`fixtures/ref/example_gantt_trace`).
 
 ### Subplot grids (small multiples)
 
