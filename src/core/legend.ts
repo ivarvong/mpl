@@ -5,6 +5,7 @@ import type { Box } from './legend-index.ts';
 import { buildObstacleIndex } from './legend-index.ts';
 import { lineStroke, markersNode } from './marks.ts';
 import type { XY } from './path.ts';
+import { MOVE0 } from './path.ts';
 import { inkOf, pathNode, rectNode, snap, snapOffset } from './scene.ts';
 import { lpAscent, measure, pxPerPt, strokePx } from './text.ts';
 import { resolveFace } from './fonts.ts';
@@ -238,7 +239,7 @@ function handleNodes(h: Handle, ox: number, oy: number, area: HandleArea, mk: Le
       if (h.widthPt <= 0 || s.color.alpha <= 0) return [];
       const xs = Float64Array.of(ox, ox + wPx).map((v) => snap(v, s.width));
       const ys = Float64Array.of(y, y).map((v) => snap(v, s.width));
-      return [{ kind: 'polyline', xs, ys, stroke: s }];
+      return [{ kind: 'polyline', xs, ys, moves: MOVE0, stroke: s }];
     }
     case 'line': {
       // xdata [0, w], ydata (h - yd) / 2; numpoints = 1: a 3-point line, marker at the middle
@@ -248,7 +249,7 @@ function handleNodes(h: Handle, ox: number, oy: number, area: HandleArea, mk: Le
         const s = lineStroke(theme, h.stroke.color, h.stroke.widthPt, h.stroke.style, k);
         const xs = Float64Array.of(ox, ox + wPx / 2, ox + wPx).map((v) => snap(v, s.width));
         const ys = Float64Array.of(y, y, y).map((v) => snap(v, s.width));
-        if (s.color.alpha > 0) out.push({ kind: 'polyline', xs, ys, stroke: s });
+        if (s.color.alpha > 0) out.push({ kind: 'polyline', xs, ys, moves: MOVE0, stroke: s });
       }
       const markers = scaled(h.markers, mk.markerScale);
       if (markers.kind === 'on') {
@@ -278,7 +279,7 @@ function handleNodes(h: Handle, ox: number, oy: number, area: HandleArea, mk: Le
         const ln = e.line.value;
         if (ln.stroke.kind === 'on') {
           const st = lineStroke(theme, ln.stroke.color, ln.stroke.widthPt, ln.stroke.style, k);
-          if (st.color.alpha > 0) out.push({ kind: 'polyline', xs: Float64Array.of(ox, ox + wPx).map((v) => snap(v, st.width)), ys: Float64Array.of(tl(yUp), tl(yUp)).map((v) => snap(v, st.width)), stroke: st });
+          if (st.color.alpha > 0) out.push({ kind: 'polyline', moves: MOVE0, xs: Float64Array.of(ox, ox + wPx).map((v) => snap(v, st.width)), ys: Float64Array.of(tl(yUp), tl(yUp)).map((v) => snap(v, st.width)), stroke: st });
         }
         const markers = scaled(ln.markers, mk.markerScale);
         if (markers.kind === 'on') {

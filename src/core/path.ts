@@ -1,60 +1,285 @@
-// Polyline simplification in device space, after matplotlib's PathSimplifier
-// (path.simplify, threshold in px): vertices within `thr` px of the current
-// run's direction collapse to the run's backward/forward extremes. Output size
-// is bounded by direction changes at pixel scale, not by input length.
+// A Line2D stroke's path cleanup, ported from matplotlib 3.11.2 src/path_converters.h in Agg's order
+// (RendererAgg::draw_path): PathNanRemover → PathClipper → PathSnapper → PathSimplifier. Each converter is a
+// pull-based vertex source in C++; here each is a loop over the previous stage's output, which emits the same
+// command sequence (the converters' queues only batch output, they never reorder it).
+
+import { snapOffset } from './scene.ts';
+import type { Simplify } from './types.ts';
 
 export type XY = { readonly xs: Float64Array; readonly ys: Float64Array };
+/** Vertices in device px (y down). MOVETO at the indices in `moves` (ascending), LINETO everywhere else. */
+export type Polyline = { readonly xs: Float64Array; readonly ys: Float64Array; readonly moves: Uint32Array };
 
-const finite = (x: number, y: number): boolean => Number.isFinite(x) && Number.isFinite(y);
+/** One subpath starting at vertex 0 (shared; never mutated). */
+export const MOVE0: Uint32Array = Uint32Array.of(0);
+const isFin = (v: number): boolean => v - v === 0;   // false for NaN and ±Infinity
 
-export function simplifyPolyline(xs: Float64Array, ys: Float64Array, thr: number): XY {
-  const n = xs.length;
-  if (n <= 2) return { xs, ys };
-  const ox = new Float64Array(n), oy = new Float64Array(n);
-  let m = 0;
-  const thr2 = thr * thr;
-  let i = 0;
-  while (i < n && !finite(xs[i], ys[i])) i++;
-  if (i === n) return { xs: ox.subarray(0, 0), ys: oy.subarray(0, 0) };
-  let origX = xs[i], origY = ys[i];
-  ox[m] = origX; oy[m] = origY; m++;
-  let haveDir = false, dx = 0, dy = 0;
-  let fwdX = origX, fwdY = origY, fwdPara = 0, backX = origX, backY = origY, backPara = 0;
-  for (i += 1; i < n; i++) {
-    const x = xs[i], y = ys[i];
-    if (!finite(x, y)) continue;
-    if (!haveDir) {
-      dx = x - origX; dy = y - origY;
-      const dn = Math.hypot(dx, dy);
-      if (dn === 0) continue;
-      dx /= dn; dy /= dn; haveDir = true;
-      fwdX = x; fwdY = y; fwdPara = dn; backX = origX; backY = origY; backPara = 0;
-      continue;
-    }
-    const vx = x - origX, vy = y - origY;
-    const para = vx * dx + vy * dy, perp = vx * dy - vy * dx;
-    if (perp * perp < thr2) {
-      if (para > fwdPara) { fwdPara = para; fwdX = x; fwdY = y; }
-      else if (para < backPara) { backPara = para; backX = x; backY = y; }
-      continue;
-    }
-    if (backPara < 0) { ox[m] = backX; oy[m] = backY; m++; }
-    ox[m] = fwdX; oy[m] = fwdY; m++;
-    origX = fwdX; origY = fwdY;
-    dx = x - origX; dy = y - origY;
-    const dn = Math.hypot(dx, dy);
-    if (dn === 0) { haveDir = false; continue; }
-    dx /= dn; dy /= dn;
-    fwdX = x; fwdY = y; fwdPara = dn; backX = origX; backY = origY; backPara = 0;
+/** Growable vertex/command buffer (the converters' output). */
+class Out {
+  xs: Float64Array; ys: Float64Array; n = 0;
+  moves: Uint32Array; nm = 0;
+  constructor(cap: number) { this.xs = new Float64Array(cap); this.ys = new Float64Array(cap); this.moves = new Uint32Array(8); }
+  private grow(): void {
+    const xs = new Float64Array(this.xs.length * 2), ys = new Float64Array(this.ys.length * 2);
+    xs.set(this.xs); ys.set(this.ys); this.xs = xs; this.ys = ys;
   }
-  if (haveDir) {
-    if (backPara < 0) { ox[m] = backX; oy[m] = backY; m++; }
-    ox[m] = fwdX; oy[m] = fwdY; m++;
+  line(x: number, y: number): void {
+    if (this.n === this.xs.length) this.grow();
+    this.xs[this.n] = x; this.ys[this.n] = y; this.n++;
   }
-  return { xs: ox.subarray(0, m), ys: oy.subarray(0, m) };
+  move(x: number, y: number): void {
+    if (this.nm === this.moves.length) { const m = new Uint32Array(this.moves.length * 2); m.set(this.moves); this.moves = m; }
+    this.moves[this.nm++] = this.n;
+    this.line(x, y);
+  }
+  done(): Polyline { return { xs: this.xs.subarray(0, this.n), ys: this.ys.subarray(0, this.n), moves: this.moves.subarray(0, this.nm) }; }
 }
 
-/** Every segment axis-aligned (Agg snaps such paths). */
+// ------------------------------------------------------------------ PathNanRemover + PathClipper
+// agg::clip_line_segment (agg_clip_liang_barsky.h) on the rect (x1, y1, x2, y2); results in CLIP.
+const CLIP = new Float64Array(4);
+function clipFlags(x: number, y: number, x1: number, y1: number, x2: number, y2: number): number {
+  return (x > x2 ? 1 : 0) | (y > y2 ? 2 : 0) | (x < x1 ? 4 : 0) | (y < y1 ? 8 : 0);
+}
+/** clip_move_point: moves point `which` (0 or 1) of CLIP onto the rect; false when it cannot. */
+function clipMovePoint(tx1: number, ty1: number, tx2: number, ty2: number, x1: number, y1: number, x2: number, y2: number, which: number, flags: number): boolean {
+  let x = CLIP[2 * which], y = CLIP[2 * which + 1];
+  if (flags & 5) {
+    if (tx1 === tx2) return false;
+    const bound = flags & 4 ? x1 : x2;
+    y = (bound - tx1) * (ty2 - ty1) / (tx2 - tx1) + ty1;
+    x = bound;
+  }
+  const fy = (y > y2 ? 2 : 0) | (y < y1 ? 8 : 0);
+  if (fy & 10) {
+    if (ty1 === ty2) return false;
+    const bound = fy & 8 ? y1 : y2;
+    x = (bound - ty1) * (tx2 - tx1) / (ty2 - ty1) + tx1;
+    y = bound;
+  }
+  CLIP[2 * which] = x; CLIP[2 * which + 1] = y;
+  return true;
+}
+/** Returns ≥ 4 when fully clipped; bit 0: first point moved; bit 1: second point moved. */
+function clipLineSegment(ax: number, ay: number, bx: number, by: number, x1: number, y1: number, x2: number, y2: number): number {
+  CLIP[0] = ax; CLIP[1] = ay; CLIP[2] = bx; CLIP[3] = by;
+  const f1 = clipFlags(ax, ay, x1, y1, x2, y2), f2 = clipFlags(bx, by, x1, y1, x2, y2);
+  if ((f1 | f2) === 0) return 0;
+  if ((f1 & 5) !== 0 && (f1 & 5) === (f2 & 5)) return 4;
+  if ((f1 & 10) !== 0 && (f1 & 10) === (f2 & 10)) return 4;
+  let ret = 0;
+  if (f1) {
+    if (!clipMovePoint(ax, ay, bx, by, x1, y1, x2, y2, 0, f1)) return 4;
+    if (CLIP[0] === CLIP[2] && CLIP[1] === CLIP[3]) return 4;
+    ret |= 1;
+  }
+  if (f2) {
+    if (!clipMovePoint(ax, ay, bx, by, x1, y1, x2, y2, 1, f2)) return 4;
+    if (CLIP[0] === CLIP[2] && CLIP[1] === CLIP[3]) return 4;
+    ret |= 2;
+  }
+  return ret;
+}
+
+/**
+ * PathNanRemover (the no-codes fast path: a non-finite vertex is skipped and the next finite one becomes a MOVETO)
+ * feeding PathClipper (Liang-Barsky against the rect widened by 1 px on every side). A polyline that is finite and
+ * inside the rect comes back as itself.
+ */
+function nanRemoveAndClip(xs: Float64Array, ys: Float64Array, x1: number, y1: number, x2: number, y2: number): Polyline {
+  const n = xs.length;
+  let inside = true;
+  for (let i = 0; i < n; i++) {
+    const x = xs[i], y = ys[i];
+    if (!(x >= x1 && x <= x2 && y >= y1 && y <= y2)) { inside = false; break; }   // NaN fails too
+  }
+  if (inside) return { xs, ys, moves: n > 0 ? MOVE0 : new Uint32Array(0) };
+  const out = new Out(n + 8);
+  const inRect = (x: number, y: number): boolean => x >= x1 && x <= x2 && y >= y1 && y <= y2;
+  let lastX = NaN, lastY = NaN, moveto = true, hasInit = false;
+  let i = 0, first = true;
+  while (i < n) {
+    // PathNanRemover: one vertex out per call
+    let x = xs[i], y = ys[i], isMove = first;
+    i++;
+    if (!(isFin(x) && isFin(y))) {
+      let found = false;
+      while (i < n) { x = xs[i]; y = ys[i]; i++; if (isFin(x) && isFin(y)) { found = true; break; } }
+      if (!found) break;
+      isMove = true;
+    }
+    first = false;
+    // PathClipper
+    if (isMove) {
+      if (moveto && hasInit && inRect(lastX, lastY)) out.move(lastX, lastY);
+      lastX = x; lastY = y; hasInit = true; moveto = true;
+    } else {
+      const moved = clipLineSegment(lastX, lastY, x, y, x1, y1, x2, y2);
+      if (moved < 4) {
+        if ((moved & 1) !== 0 || moveto) out.move(CLIP[0], CLIP[1]);
+        out.line(CLIP[2], CLIP[3]);
+        moveto = false;
+      }
+      lastX = x; lastY = y;
+    }
+  }
+  if (moveto && hasInit && inRect(lastX, lastY)) out.move(lastX, lastY);
+  return out.done();
+}
+
+// ------------------------------------------------------------------ PathSnapper
+/** PathSnapper::should_snap for SNAP_AUTO: at most 1024 vertices in the original path, and every LINETO
+ *  axis-aligned (within 1e-4 px) with the vertex before it. */
+function shouldSnap(p: Polyline, totalVertices: number): boolean {
+  if (totalVertices > 1024 || p.xs.length === 0) return false;
+  let mi = 1;
+  for (let i = 1; i < p.xs.length; i++) {
+    if (mi < p.moves.length && p.moves[mi] === i) { mi++; continue; }
+    if (Math.abs(p.xs[i - 1] - p.xs[i]) >= 1e-4 && Math.abs(p.ys[i - 1] - p.ys[i]) >= 1e-4) return false;
+  }
+  return true;
+}
+function snapAll(p: Polyline, strokePx: number): Polyline {
+  const off = snapOffset(strokePx);
+  const xs = new Float64Array(p.xs.length), ys = new Float64Array(p.ys.length);
+  for (let i = 0; i < xs.length; i++) { xs[i] = Math.floor(p.xs[i] + 0.5) + off; ys[i] = Math.floor(p.ys[i] + 0.5) + off; }
+  return { xs, ys, moves: p.moves };
+}
+
+// ------------------------------------------------------------------ PathSimplifier
+const grownF64 = (a: Float64Array, cap: number): Float64Array => { const b = new Float64Array(cap); b.set(a); return b; };
+const grownU32 = (a: Uint32Array, cap: number): Uint32Array => { const b = new Uint32Array(cap); b.set(a); return b; };
+
+/**
+ * PathSimplifier::vertex, line for line (Allan Haldane / Michael Droettboom / Kevin Rose): consecutive vertices
+ * whose perpendicular distance from the current vector stays under the threshold merge into it; the run's
+ * furthest forward and backward points are kept. `thr` is path.simplify_threshold in px (compared squared).
+ * The arithmetic is the C++'s, operation for operation. The loop is one closure-free function with the output
+ * written inline: a closure over the state would context-allocate every variable the loop touches, which costs the
+ * most in the interpreter and baseline tiers where short-lived isolates run.
+ */
+export function simplifyPath(p: Polyline, thr: number): Polyline {
+  const xs = p.xs, ys = p.ys, moves = p.moves, n = xs.length, nIn = moves.length;
+  let cap = n + 16, m = 0;
+  let ox: Float64Array = new Float64Array(cap), oy: Float64Array = new Float64Array(cap);
+  let mcap = 2 * nIn + 8, nm = 0;
+  let mv: Uint32Array = new Uint32Array(mcap);
+  const thr2 = thr * thr;
+  let moveto = true, afterMoveto = false, clipped = false;
+  let lastx = 0, lasty = 0;
+  let origdx = 0, origdy = 0, origdNorm2 = 0, dnorm2ForwardMax = 0, dnorm2BackwardMax = 0;
+  let lastForwardMax = false, lastBackwardMax = false;
+  let nextX = 0, nextY = 0, nextBackwardX = 0, nextBackwardY = 0, currVecStartX = 0, currVecStartY = 0;
+  let mi = 0, nextMove = nIn > 0 ? moves[0] : n;
+
+  for (let i = 0; i < n; i++) {
+    const x = xs[i], y = ys[i];
+    if (moveto || i === nextMove) {
+      if (i === nextMove) { mi++; nextMove = mi < nIn ? moves[mi] : n; }
+      if (origdNorm2 !== 0.0 && !afterMoveto) {
+        // _push(x, y) at a MOVETO (a NaN or clip break); the state it resets is overwritten just below
+        if (m + 4 > cap) { cap *= 2; ox = grownF64(ox, cap); oy = grownF64(oy, cap); }
+        if (nm + 1 > mcap) { mcap *= 2; mv = grownU32(mv, mcap); }
+        if (dnorm2BackwardMax > 0.0) {
+          if (lastForwardMax) { ox[m] = nextBackwardX; oy[m] = nextBackwardY; m++; ox[m] = nextX; oy[m] = nextY; m++; }
+          else { ox[m] = nextX; oy[m] = nextY; m++; ox[m] = nextBackwardX; oy[m] = nextBackwardY; m++; }
+        } else { ox[m] = nextX; oy[m] = nextY; m++; }
+        if (clipped) { mv[nm++] = m; ox[m] = lastx; oy[m] = lasty; m++; }
+        else if (!lastForwardMax && !lastBackwardMax) { ox[m] = lastx; oy[m] = lasty; m++; }
+        lastForwardMax = true; lastBackwardMax = false;
+        nextX = x; nextY = y;
+      }
+      afterMoveto = true;
+      lastx = x; lasty = y;
+      moveto = false;
+      origdNorm2 = 0.0;
+      dnorm2BackwardMax = 0.0;
+      clipped = true;
+      continue;
+    }
+    afterMoveto = false;
+    if (origdNorm2 === 0.0) {
+      if (clipped) {
+        if (m + 1 > cap) { cap *= 2; ox = grownF64(ox, cap); oy = grownF64(oy, cap); }
+        if (nm + 1 > mcap) { mcap *= 2; mv = grownU32(mv, mcap); }
+        mv[nm++] = m; ox[m] = lastx; oy[m] = lasty; m++;
+        clipped = false;
+      }
+      origdx = x - lastx; origdy = y - lasty;
+      origdNorm2 = origdx * origdx + origdy * origdy;
+      dnorm2ForwardMax = origdNorm2;
+      dnorm2BackwardMax = 0.0;
+      lastForwardMax = true;
+      lastBackwardMax = false;
+      currVecStartX = lastx; currVecStartY = lasty;
+      nextX = lastx = x; nextY = lasty = y;
+      continue;
+    }
+    const totdx = x - currVecStartX, totdy = y - currVecStartY;
+    const totdot = origdx * totdx + origdy * totdy;
+    const paradx = totdot * origdx / origdNorm2, parady = totdot * origdy / origdNorm2;
+    const perpdx = totdx - paradx, perpdy = totdy - parady;
+    if (perpdx * perpdx + perpdy * perpdy < thr2) {
+      const paradNorm2 = paradx * paradx + parady * parady;
+      lastForwardMax = false;
+      lastBackwardMax = false;
+      if (totdot > 0.0) {
+        if (paradNorm2 > dnorm2ForwardMax) { lastForwardMax = true; dnorm2ForwardMax = paradNorm2; nextX = x; nextY = y; }
+      } else if (paradNorm2 > dnorm2BackwardMax) {
+        lastBackwardMax = true; dnorm2BackwardMax = paradNorm2; nextBackwardX = x; nextBackwardY = y;
+      }
+      lastx = x; lasty = y;
+      continue;
+    }
+    // _push(x, y): emit the finished vector (and its backward extreme), then start the next one at (x, y)
+    if (m + 4 > cap) { cap *= 2; ox = grownF64(ox, cap); oy = grownF64(oy, cap); }
+    if (dnorm2BackwardMax > 0.0) {
+      if (lastForwardMax) { ox[m] = nextBackwardX; oy[m] = nextBackwardY; m++; ox[m] = nextX; oy[m] = nextY; m++; }
+      else { ox[m] = nextX; oy[m] = nextY; m++; ox[m] = nextBackwardX; oy[m] = nextBackwardY; m++; }
+    } else { ox[m] = nextX; oy[m] = nextY; m++; }
+    if (clipped) {
+      if (nm + 1 > mcap) { mcap *= 2; mv = grownU32(mv, mcap); }
+      mv[nm++] = m; ox[m] = lastx; oy[m] = lasty; m++;
+    } else if (!lastForwardMax && !lastBackwardMax) { ox[m] = lastx; oy[m] = lasty; m++; }   // "would be move_to if not for the artifacts"
+    origdx = x - lastx; origdy = y - lasty;
+    origdNorm2 = origdx * origdx + origdy * origdy;
+    dnorm2ForwardMax = origdNorm2;
+    lastForwardMax = true;
+    currVecStartX = ox[m - 1]; currVecStartY = oy[m - 1];
+    lastx = nextX = x; lasty = nextY = y;
+    dnorm2BackwardMax = 0.0;
+    lastBackwardMax = false;
+    clipped = false;
+  }
+  // end of path: flush the open vector, then the last vertex
+  if (m + 3 > cap) { cap += 3; ox = grownF64(ox, cap); oy = grownF64(oy, cap); }
+  if (nm + 3 > mcap) { mcap += 3; mv = grownU32(mv, mcap); }
+  if (origdNorm2 !== 0.0) {
+    const asMove = moveto || afterMoveto;
+    if (asMove) mv[nm++] = m;
+    ox[m] = nextX; oy[m] = nextY; m++;
+    if (dnorm2BackwardMax > 0.0) { if (asMove) mv[nm++] = m; ox[m] = nextBackwardX; oy[m] = nextBackwardY; m++; }
+    moveto = false;
+  }
+  if (moveto || afterMoveto) mv[nm++] = m;
+  ox[m] = lastx; oy[m] = lasty; m++;
+  return { xs: ox.subarray(0, m), ys: oy.subarray(0, m), moves: mv.subarray(0, nm) };
+}
+
+/**
+ * RendererAgg::draw_path for an unfilled, unhatched stroke (clip = simplify-eligible = true): drop non-finite
+ * vertices, clip to the canvas (W × H, integers) widened by 1 px, snap when SNAP_AUTO says so, then simplify when
+ * Path.should_simplify holds (path.simplify on and at least 128 vertices in the original path).
+ * `strokePx` is the stroke width in px (it picks the snap offset).
+ */
+export function cleanupStroke(xs: Float64Array, ys: Float64Array, W: number, H: number, strokePx: number, simplify: Simplify): Polyline {
+  const n = Math.min(xs.length, ys.length);
+  let p = nanRemoveAndClip(xs.length === n ? xs : xs.subarray(0, n), ys.length === n ? ys : ys.subarray(0, n), -1.0, -1.0, W + 1.0, H + 1.0);
+  if (shouldSnap(p, n)) p = snapAll(p, strokePx);
+  if (simplify.kind === 'on' && simplify.thresholdPx > 0 && n >= 128) p = simplifyPath(p, simplify.thresholdPx);
+  return p;
+}
+
 /**
  * PathSnapper::should_snap for SNAP_AUTO: at most 1024 vertices, and every segment axis-aligned within
  * 1e-4 px (|dx| < 1e-4 or |dy| < 1e-4). Such paths snap to pixel centres (or edges) in Agg.

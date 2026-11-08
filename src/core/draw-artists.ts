@@ -5,7 +5,7 @@ import { tx, ty } from './frame.ts';
 import type { Box } from './legend-index.ts';
 import { lineStroke, markersNode, snapsAuto } from './marks.ts';
 import type { XY } from './path.ts';
-import { isRectilinear, simplifyPolyline } from './path.ts';
+import { cleanupStroke, isRectilinear } from './path.ts';
 import { inkOf, pathNode, rectNode, snap, snapOffset } from './scene.ts';
 import { MARKERS } from './data/markers.ts';
 import { arrowExtents, yaArrowPath } from './arrow.ts';
@@ -63,30 +63,76 @@ function transform(x: Float64Array, y: Float64Array, coords: LineArtist['coords'
   return { xs, ys, ysUp };
 }
 
-/** A Line2D stroke (already in device px): snapped when rectilinear, else simplified when long. */
-function strokeNodes(xs: Float64Array, ys: Float64Array, stroke: Stroke, theme: Theme, span: SpanHandle): readonly Node[] {
+/** A Line2D stroke (already in device px), cleaned up as RendererAgg::draw_path does: NaN breaks, the canvas
+ *  clip, SNAP_AUTO snapping and path.simplify (src/core/path.ts). */
+function strokeNodes(xs: Float64Array, ys: Float64Array, stroke: Stroke, theme: Theme, f: Frame, span: SpanHandle): readonly Node[] {
   if (xs.length === 0 || stroke.color.alpha <= 0) return [];
-  let px = xs, py = ys;
-  if (isRectilinear(xs, ys)) {
-    px = xs.map((v) => snap(v, stroke.width)); py = ys.map((v) => snap(v, stroke.width));
-  } else if (theme.simplify.kind === 'on' && xs.length >= 128) {   // Path.should_simplify
-    const s = simplifyPolyline(xs, ys, theme.simplify.thresholdPx);
-    px = s.xs; py = s.ys;
-    span.setAttribute('simplified', px.length);
-  }
-  return [{ kind: 'polyline', xs: px, ys: py, stroke }];
+  const p = cleanupStroke(xs, ys, Math.trunc(f.W), Math.trunc(f.H), stroke.width, theme.simplify);
+  if (p.xs.length !== xs.length) span.setAttribute('simplified', p.xs.length);
+  return [{ kind: 'polyline', xs: p.xs, ys: p.ys, moves: p.moves, stroke }];
 }
 
 const clip01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
 const byteTrunc01 = (x: number): number => (clip01(x) * 255) | 0;
 
+/** numpy searchsorted on an ascending, NaN-free array: the first i with v[i] >= x ('left') or v[i] > x ('right'). */
+function searchsorted(v: Float64Array, x: number, side: 'left' | 'right'): number {
+  let lo = 0, hi = v.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (side === 'left' ? v[mid] < x : v[mid] <= x) lo = mid + 1; else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * Line2D._subslice (recache + draw): a line on transData with more than 1000 points whose x is sorted (NaNs ignored,
+ * _path.is_sorted_and_has_non_nan) on a linear x scale, clipped to the axes, draws only the samples around the view,
+ * [max(i0 − 1, 0), i1 + 1) with i0, i1 = searchsorted(x_filled, xbound, 'left' / 'right'). x_filled is x with NaNs
+ * filled by np.interp over the index. This changes where path.simplify starts, so it decides vertices, not just cost.
+ */
+function subslice(a: LineArtist, f: Frame): readonly [number, number] {
+  const x = a.x, n = Math.min(a.x.length, a.y.length);
+  const full = [0, n] as const;
+  if (n <= 1000 || !a.clip || a.coords.x !== 'data' || a.coords.y !== 'data' || f.xscale.kind !== 'linear') return full;
+  let last = -Infinity, nonNan = false, nans = false;
+  for (let i = 0; i < x.length; i++) {
+    const v = x[i];
+    if (v === v) { nonNan = true; if (v < last) return full; last = v; } else nans = true;
+  }
+  if (!nonNan) return full;
+  let xf = x;
+  if (nans) {   // np.interp(indices[nan], indices[~nan], x[~nan]): ends take the nearest value
+    xf = Float64Array.from(x);
+    let prev = -1;
+    for (let i = 0; i <= x.length; i++) {
+      if (i < x.length && x[i] !== x[i]) continue;
+      for (let j = prev + 1; j < i; j++) {
+        if (prev < 0) xf[j] = x[i];
+        else if (i === x.length) xf[j] = x[prev];
+        else { const slope = (x[i] - x[prev]) / (i - prev); xf[j] = slope * (j - prev) + x[prev]; }
+      }
+      prev = i;
+    }
+  }
+  const lo = Math.min(f.xlim[0], f.xlim[1]), hi = Math.max(f.xlim[0], f.xlim[1]);   // get_xbound
+  const i0 = searchsorted(xf, lo, 'left'), i1 = searchsorted(xf, hi, 'right');
+  return [Math.max(i0 - 1, 0), Math.min(i1 + 1, n)];
+}
+
 export function drawLine(a: LineArtist, f: Frame, theme: Theme, k: number, clip: Clip, span: SpanHandle): Drawn {
   // the stroke follows the drawstyle's step vertices; markers sit on the data points (Line2D.draw)
   const path = stepped(a.x, a.y, a.drawstyle);
   const line = transform(path.x, path.y, a.coords, f);
-  const pts = a.drawstyle === 'default' ? line : transform(a.x, a.y, a.coords, f);
+  // what is drawn: the subslice around the view (Line2D._subslice); legend placement still sees the whole path
+  const [s0, s1] = subslice(a, f);
+  const whole = s0 === 0 && s1 >= Math.min(a.x.length, a.y.length);
+  const ax = whole ? a.x : a.x.subarray(s0, s1), ay = whole ? a.y : a.y.subarray(s0, s1);
+  if (!whole) span.setAttribute('subslice', s1 - s0);
+  const drawn = whole ? line : (() => { const p = stepped(ax, ay, a.drawstyle); return transform(p.x, p.y, a.coords, f); })();
+  const pts = a.drawstyle === 'default' ? drawn : transform(ax, ay, a.coords, f);
   const nodes: Node[] = [];
-  if (a.stroke.kind === 'on') nodes.push(...strokeNodes(line.xs, line.ys, lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k), theme, span));
+  if (a.stroke.kind === 'on') nodes.push(...strokeNodes(drawn.xs, drawn.ys, lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k), theme, f, span));
   if (a.markers.kind === 'on') {
     const m = markersNode(a.markers, pts.xs, pts.ys, k);
     if (m.kind === 'some') { nodes.push(m.value); span.setAttribute('markerCount', m.value.kind === 'markers' ? m.value.xs.length : 0); }
@@ -126,7 +172,7 @@ export function drawAxLine(a: AxLineArtist, f: Frame, theme: Theme, k: number, c
   const xs = Float64Array.of(start[0] * f.ax + f.cx, stop[0] * f.ax + f.cx);
   const ys = Float64Array.of(start[1] * -f.ay + (f.H - f.cy), stop[1] * -f.ay + (f.H - f.cy));
   const up = Float64Array.of(start[1] * f.ay + f.cy, stop[1] * f.ay + f.cy);
-  const nodes = a.stroke.kind === 'on' ? strokeNodes(xs, ys, lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k), theme, span) : [];
+  const nodes = a.stroke.kind === 'on' ? strokeNodes(xs, ys, lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k), theme, f, span) : [];
   return { nodes: nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [], lines: [{ xs, ys: up }], boxes: [], points: [], handle };
 }
 

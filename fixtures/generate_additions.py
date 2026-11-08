@@ -603,6 +603,17 @@ case("dense_timeseries_tag", ("$rc", [], {"figure.figsize": [7.2, 4.8]}), ("$sub
      ("sca", [2]), ("plot", [TX, TDEPTH], {"lw": 0.8, "color": "#050830"}), ("set_ylim", [250, 0]), ("set_ylabel", ["Depth (m)"]),
      ("set_xlabel", ["hours since 2013-06-18 06:30"]))
 
+# path.simplify around matplotlib's other line converters (seeded noisy series, 3 decimals):
+# Line2D._subslice draws only the samples around a zoomed xlim (sorted x, > 1000 points), which moves where the
+# simplifier starts; spikes that leave the figure go through PathClipper, whose MOVETOs restart the simplifier.
+SR = np.random.default_rng(20261107)
+SY = [round(float(v), 3) for v in np.sin(np.arange(6000) / 600) * 10 + SR.uniform(0, 3, 6000)]
+case("simplify_zoom_subslice", ("plot", [{"$arange": [6000, 1]}, SY], {"lw": 1}), ("set_xlim", [1500.5, 2500]))
+CY = [round(float(v), 3) for v in np.sin(np.arange(3000) / 300) + SR.uniform(0, 0.3, 3000)]
+for i in range(0, 3000, 397): CY[i] += 40
+for i in range(0, 3000, 211): CY[i] -= 25
+case("simplify_clip_spikes", ("plot", [{"$arange": [3000, 1]}, CY], {"lw": 1}), ("set_ylim", [-2, 2.5]))
+
 def run_case(name, calls):
     style = STYLES.get(name)
     rc_layer = {}
