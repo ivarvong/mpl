@@ -18,67 +18,80 @@ rendering — its layout, tickers, text and its Agg rasterizer — that runs in 
 
 ## Same code, same pixels
 
-matplotlib, in Python:
-
-```python
-import matplotlib.pyplot as plt
-
-spans = [("GET /api/checkout", 0, 120, "C0"), ("├─ auth.verify", 2, 14, "C1"),
-         ("├─ db.query orders", 15, 55, "C2"), ("└─ pool.acquire", 15, 19, "C2"),
-         ("├─ inventory.reserve", 56, 92, "C4"), ("└─ render.json", 93, 118, "C1")]
-
-plt.rcParams["axes.axisbelow"] = True
-fig, ax = plt.subplots()
-rows = range(len(spans))
-ax.barh(rows, [e - s for _, s, e, _ in spans], left=[s for _, s, _, _ in spans],
-        color=[c for *_, c in spans], height=0.6)
-ax.set_yticks(rows, [l for l, *_ in spans])
-ax.get_yticklabels()[0].set_fontweight("bold")
-ax.set_ylim(len(spans) - 0.4, -0.6)
-ax.set_xlabel("ms since request start")
-ax.set_title("Checkout request trace", loc="left")
-ax.grid(True, axis="x", color="0.85", linestyle="--", linewidth=0.8)
-ax.spines[["top", "right"]].set_visible(False)
-fig.tight_layout()
-fig.savefig("trace.png")
-```
-
-mpljs, in TypeScript ([`examples/gantt.ts`](examples/gantt.ts)):
-
-```ts
-import { registerFonts, subplots } from 'mpl';
-import { dejavuSansBold } from 'mpl/fonts/dejavu-sans-bold';   // faces load on demand
-registerFonts(dejavuSansBold);
-
-const spans = [['GET /api/checkout', 0, 120, 'C0'], ['├─ auth.verify', 2, 14, 'C1'],
-  ['├─ db.query orders', 15, 55, 'C2'], ['└─ pool.acquire', 15, 19, 'C2'],
-  ['├─ inventory.reserve', 56, 92, 'C4'], ['└─ render.json', 93, 118, 'C1']] as const;
-
-const [fig, ax] = subplots({ rc: { 'axes.axisbelow': true } });
-const rows = spans.map((_, i) => i);
-ax.barh(rows, spans.map(([, s, e]) => e - s), { left: spans.map(([, s]) => s),
-  color: spans.map(([, , , c]) => c), height: 0.6 });
-ax.set_yticks(rows);
-ax.set_yticklabels(spans.map(([l]) => l));
-ax.get_yticklabels()[0].set_fontweight('bold');
-ax.set_ylim(spans.length - 0.4, -0.6);
-ax.set_xlabel('ms since request start');
-ax.set_title('Checkout request trace', { loc: 'left' });
-ax.grid(true, { axis: 'x', color: '0.85', linestyle: '--', linewidth: 0.8 });
-ax.spines.top.set_visible(false);
-ax.spines.right.set_visible(false);
-fig.tight_layout();
-const png = fig.toPNGSync();
-```
-
 <p align="center">
-  <img src="fixtures/ref/example_gantt_trace.png" width="49%" alt="The request trace rendered by matplotlib 3.11.2">
+  <img src="fixtures/ref/example_gantt_trace.png" width="49%" alt="A request trace as a Gantt chart, rendered by matplotlib 3.11.2">
   <img src="docs/images/gantt.png" width="49%" alt="The same request trace rendered by mpljs, identical">
 </p>
 
 **Left: matplotlib 3.11.2. Right: mpljs.** All 307,200 pixels are identical. The left image is matplotlib's own
 `savefig` output, committed as [`fixtures/ref/example_gantt_trace.png`](fixtures/ref/example_gantt_trace.png);
-[`test/examples.test.ts`](test/examples.test.ts) checks the right one against it on every CI run.
+[`test/examples.test.ts`](test/examples.test.ts) checks the right one against it on every CI run. The code is the
+same, call for call:
+
+```python
+import matplotlib.pyplot as plt
+
+spans = [
+    ("GET /api/checkout", 0, 120, "C0"),
+    ("├─ auth.verify", 2, 14, "C1"),
+    ("├─ db.query orders", 15, 55, "C2"),
+    ("└─ pool.acquire", 15, 19, "C2"),
+    ("├─ inventory.reserve", 56, 92, "C4"),
+    ("└─ render.json", 93, 118, "C1"),
+]
+labels, starts, ends, colors = zip(*spans)
+rows = range(len(spans))
+
+plt.rcParams["axes.axisbelow"] = True
+fig, ax = plt.subplots()
+ax.barh(rows, [e - s for s, e in zip(starts, ends)],
+        left=starts, color=colors, height=0.6)
+ax.set_yticks(rows, labels)
+ax.get_yticklabels()[0].set_fontweight("bold")
+ax.set_ylim(len(spans) - 0.4, -0.6)
+ax.set_xlabel("ms since request start")
+ax.set_title("Checkout request trace", loc="left")
+ax.grid(True, axis="x", color="0.85",
+        linestyle="--", linewidth=0.8)
+ax.spines[["top", "right"]].set_visible(False)
+fig.tight_layout()
+fig.savefig("trace.png")
+```
+
+```ts
+import { registerFonts, subplots } from 'mpl';
+import { dejavuSansBold } from 'mpl/fonts/dejavu-sans-bold';
+registerFonts(dejavuSansBold);   // faces are opt-in modules
+
+const spans = [
+  ['GET /api/checkout', 0, 120, 'C0'],
+  ['├─ auth.verify', 2, 14, 'C1'],
+  ['├─ db.query orders', 15, 55, 'C2'],
+  ['└─ pool.acquire', 15, 19, 'C2'],
+  ['├─ inventory.reserve', 56, 92, 'C4'],
+  ['└─ render.json', 93, 118, 'C1'],
+] as const;
+const rows = spans.map((_, i) => i);
+
+const [fig, ax] = subplots({ rc: { 'axes.axisbelow': true } });
+ax.barh(rows, spans.map(([, s, e]) => e - s), {
+  left: spans.map(([, s]) => s),
+  color: spans.map(([, , , c]) => c),
+  height: 0.6,
+});
+ax.set_yticks(rows);
+ax.set_yticklabels(spans.map(([label]) => label));
+ax.get_yticklabels()[0].set_fontweight('bold');
+ax.set_ylim(spans.length - 0.4, -0.6);
+ax.set_xlabel('ms since request start');
+ax.set_title('Checkout request trace', { loc: 'left' });
+ax.grid(true, { axis: 'x', color: '0.85',
+  linestyle: '--', linewidth: 0.8 });
+ax.spines.top.set_visible(false);
+ax.spines.right.set_visible(false);
+fig.tight_layout();
+const png = fig.toPNGSync();
+```
 
 That is the rule for the whole library, not one demo: `node test/compare.ts` replays every fixture matplotlib
 generated and compares the decoded pixels — **366 of 366 pixel-exact** at the time of writing — plus tick, label and
@@ -99,12 +112,12 @@ npm install github:ivarvong/mpl
 import { writeFileSync } from 'node:fs';
 import { subplots } from 'mpl';
 
-const x = Array.from({ length: 200 }, (_, i) => (i / 199) * 4 * Math.PI);
+const x = Array.from({ length: 200 }, (_, i) => i / 16);
 const [fig, ax] = subplots();
 ax.plot(x, x.map(Math.sin), { label: 'sin(x)' });
 ax.plot(x, x.map(Math.cos), '--', { label: 'cos(x)' });
 ax.legend();
-writeFileSync('chart.png', fig.toPNGSync({ scale: 2 }));   // retina PNG
+writeFileSync('chart.png', fig.toPNGSync({ scale: 2 }));
 writeFileSync('chart.svg', fig.toSVG());
 ```
 
@@ -117,7 +130,9 @@ export default {
   fetch(): Response {
     const [fig, ax] = subplots();
     ax.bar(['api', 'web', 'worker'], [120, 85, 42]);
-    return new Response(fig.pngStream({ scale: 2 }), { headers: { 'content-type': 'image/png' } });
+    return new Response(fig.pngStream({ scale: 2 }), {
+      headers: { 'content-type': 'image/png' },
+    });
   },
 };
 ```
@@ -126,12 +141,12 @@ Browsers take the same import through any bundler. To try it in the repo: `git c
 
 ## What's in it
 
-- **Plots:** `plot`, `step`, `scatter`, `bar`/`barh`, `hist`, `errorbar`, `boxplot`, `fill_between`, `imshow` +
-  `colorbar`, `axhline`/`axvline`/`axline`, `hlines`/`vlines`, `axhspan`/`axvspan`, `text`, `annotate`.
-- **Axes:** linear, log and date scales (`AutoDateLocator`, `ConciseDateFormatter`, `Year`…`SecondLocator`),
-  categories, `twinx`, inverted axes, shared axes, `set_aspect`.
-- **Layout:** `subplots` grids with `sharex`/`sharey` and width/height ratios, `tight_layout`, `subplots_adjust`,
-  `suptitle`/`supxlabel`/`supylabel`, legends including `loc='best'`.
+- **Plots:** line, step, scatter, bar and barh, hist, errorbar, boxplot, fill_between, imshow with colorbar,
+  reference lines and spans, text and annotate.
+- **Axes:** linear, log and date scales (matplotlib's date locators and formatters), categories, twinx, inverted
+  and shared axes, aspect.
+- **Layout:** subplot grids with shared axes and width/height ratios, tight_layout, subplots_adjust, figure
+  titles and labels, legends including `loc='best'`.
 - **Style:** matplotlib's bundled `.mplstyle` sheets, four dashboard themes (`pro-dark`, `pro-mono`, `pro-ember`,
   `pro-slate`, each pixel-exact against matplotlib), rc overrides. Fonts: DejaVu Sans/Serif and Inter.
 - **Colormaps:** viridis, plasma, inferno, magma, cividis, twilight, turbo, coolwarm, RdBu, Greys, Blues, tab10,

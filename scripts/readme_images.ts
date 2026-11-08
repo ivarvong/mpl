@@ -45,8 +45,8 @@ export const HERO = [
 export function hero(style: string, heat: string, cmap: string, vmin: number): Figure {
   // larger type than the sheets' dashboard sizes: the gallery is read on a phone, about 360 px wide
   const rc = { 'font.size': 10, 'axes.titlesize': 13, 'axes.labelsize': 10, 'xtick.labelsize': 9.5, 'ytick.labelsize': 9.5, 'legend.fontsize': 9.5 };
-  const [fig, ax] = subplots(3, 2, { figsize: [6.4, 8.4], style: [style, rc] });
-  const ticks = [0, 6, 12, 18, 24], tickLabels = ['00:00', '06:00', '12:00', '18:00', '24:00'];
+  const [fig, ax] = subplots(3, 2, { figsize: [5.8, 7.8], style: [style, rc] });
+  const ticks = [0, 8, 16, 24], tickLabels = ['00:00', '08:00', '16:00', '24:00'];
 
   const lat = ax[0][0];
   lat.fill_between(D.hours, D.p50, D.p99, { color: 'C0', alpha: 0.12, linewidth: 0 });
@@ -55,14 +55,14 @@ export function hero(style: string, heat: string, cmap: string, vmin: number): F
   lat.plot(D.hours, D.p95, { color: 'C1', label: 'p95' });
   lat.plot(D.hours, D.p99, { color: 'C3', label: 'p99', linestyle: '--' });
   lat.set_xticks(ticks); lat.set_xticklabels(tickLabels);
-  lat.set_ylim(0, 230);
+  lat.set_ylim(0, 265);
   lat.legend({ loc: 'upper left', ncols: 3 });
   lat.set_title('Latency (ms)');
 
   const hm = ax[0][1];
   const im = hm.imshow(D.heat, { cmap: heat, origin: 'lower', aspect: 'auto', interpolation: 'nearest', extent: [0, 24, 0, 320] });
   hm.set_xticks([0, 12, 24]); hm.set_xticklabels(['00:00', '12:00', '24:00']);
-  hm.set_title('Latency heatmap (ms)');
+  hm.set_title('Latency heatmap');
   hm.grid(false);
   fig.colorbar(im, { ax: hm });
 
@@ -86,7 +86,7 @@ export function hero(style: string, heat: string, cmap: string, vmin: number): F
   req.bar(hrs, D.e4, { bottom: D.ok, color: 'C1', width: 1.44, label: '4xx' });
   req.bar(hrs, D.e5, { bottom: D.ok.map((v, i) => v + D.e4[i]), color: 'C3', width: 1.44, label: '5xx' });
   req.legend({ loc: 'upper left', ncols: 3 });
-  req.set_xticks([0, 6, 12, 18]); req.set_xticklabels(['00:00', '06:00', '12:00', '18:00']);
+  req.set_xticks([0, 8, 16]); req.set_xticklabels(['00:00', '08:00', '16:00']);
   req.set_ylim(0, 1950);
   req.set_title('Requests / 2 h');
 
@@ -97,7 +97,7 @@ export function hero(style: string, heat: string, cmap: string, vmin: number): F
   hs.set_xlabel('latency (ms)');
   hs.set_title('Before / after deploy');
 
-  fig.subplots_adjust({ left: 0.175, right: 0.955, bottom: 0.07, top: 0.955, wspace: 0.42, hspace: 0.62 });
+  fig.subplots_adjust({ left: 0.19, right: 0.955, bottom: 0.07, top: 0.955, wspace: 0.42, hspace: 0.62 });
   return fig;
 }
 
