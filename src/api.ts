@@ -22,6 +22,7 @@ import { parseWeight } from './core/fonts.ts';
 import type { RcLayer, RcValue } from './core/rc.ts';
 import { DEFAULTS } from './core/rc.ts';
 import { isNullish, isPlainObject, lookup, prop } from './core/std.ts';
+import { sameSpec, snapshot } from './core/snapshot.ts';
 import type { StyleSpec } from './core/style.ts';
 import { composeStyles } from './core/style.ts';
 import { parseFontSize, parseLegendLoc, parseTheme, scatterPointsOf } from './core/theme.ts';
@@ -2308,8 +2309,8 @@ export class Figure {
     };
   }
   // Layout cache: compute once per figure state; invalidated by any spec change.
-  // The cache key is the JSON of FigureSpec: pure and deterministic.
-  private _layoutCache: Option<{ readonly key: string; readonly scene: Scene; readonly meta: readonly AxesMeta[] }> = none;
+  // The cache key is a snapshot of FigureSpec (core/snapshot.ts): layout is pure and deterministic in it.
+  private _layoutCache: Option<{ readonly key: unknown; readonly scene: Scene; readonly meta: readonly AxesMeta[] }> = none;
   private touch(): void { this._layoutCache = none; }
   /** Figure-level text in figure coordinates (0..1). */
   text(x: unknown, y: unknown, s: unknown, kwargs: Kwargs = {}): this {
@@ -2524,10 +2525,9 @@ export class Figure {
   }
   /** Run layout; one trace per run. */
   toScene(): Scene {
-    // Cache by FigureSpec JSON — pure and deterministic; stable ordering by construction.
+    // Cache by a FigureSpec snapshot: typed arrays are copied, not serialized.
     const spec = this.spec();
-    const key = JSON.stringify(spec);
-    if (this._layoutCache.kind === 'some' && this._layoutCache.value.key === key) {
+    if (this._layoutCache.kind === 'some' && sameSpec(this._layoutCache.value.key, spec)) {
       // Keep meta in sync with the last produced layout
       this.meta = this._layoutCache.value.meta;
       return this._layoutCache.value.scene;
@@ -2537,7 +2537,7 @@ export class Figure {
       const { scene, meta } = layoutFigure(spec, tracer);
       this.meta = meta;
       root.setAttribute('nodes', scene.nodes.length);
-      this._layoutCache = some({ key, scene, meta });
+      this._layoutCache = some({ key: snapshot(spec), scene, meta });
       return scene;
     } catch (e) { root.recordException(e); throw e; } finally { root.end(); }
   }

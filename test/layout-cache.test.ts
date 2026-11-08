@@ -25,5 +25,24 @@ ax.set_title('changed');
 fig.toPNGSync();
 const layoutSpans3 = tracer.spans().filter((s) => s.name === 'figure.layout').length;
 assert.equal(layoutSpans3, 2, 'mutation invalidates layout cache');
+
+// The key is a snapshot (src/core/snapshot.ts), not JSON: a caller's Float64Array is held zero-copy, so mutating it
+// in place must invalidate the cache, and the re-render must match a fresh figure with the new data.
+{
+  const ys = Float64Array.from([1, 4, Number.NaN, 16]);
+  const [f2, a2] = subplots();
+  a2.plot([0, 1, 2, 3], ys);
+  tracer.clear();
+  const svgA = f2.toSVG();
+  f2.toSVG();
+  assert.equal(tracer.spans().filter((s) => s.name === 'figure.layout').length, 1, 'NaN data still hits the cache');
+  ys[1] = 9;
+  const svgB = f2.toSVG();
+  assert.equal(tracer.spans().filter((s) => s.name === 'figure.layout').length, 2, 'in-place Float64Array mutation invalidates the cache');
+  assert.notEqual(svgA, svgB);
+  const [f3, a3] = subplots();
+  a3.plot([0, 1, 2, 3], Float64Array.from([1, 9, Number.NaN, 16]));
+  assert.equal(svgB, f3.toSVG(), 're-render equals a fresh figure');
+}
 console.log('layout cache: ok');
 
