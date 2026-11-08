@@ -16,7 +16,7 @@ import {
   type Aff, interpolationStage, resampleAffineFloat, resampleAffineRgba,
   resolveInterp, UnsupportedInterpolationError,
 } from './image-resample.ts';
-import type { Artist, AxLineArtist, MarkerName, ScatterCollection, BarArtist, PolygonArtist, SegmentsArtist, Clip, FillArtist, Handle, ImageArtist, LineArtist, Node, Option, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, AnnotationCoords, AnnotationCoordPair, Paint } from './types.ts';
+import type { Artist, AxLineArtist, MarkerName, ScatterCollection, BarArtist, PolygonArtist, SegmentsArtist, Clip, FillArtist, Handle, ImageArtist, LineArtist, Node, Option, PathNode, Seg, Stroke, TextArtist, Theme, ScatterArtist, SpanArtist, AnnotationArtist, AnnotationCoords, AnnotationCoordPair, Paint } from './types.ts';
 import { labelNodes } from './draw-axis.ts';
 import { measure, placeLayout, pxPerPt, strokePx, windowExtent } from './text.ts';
 import type { Face } from './fonts.ts';
@@ -449,13 +449,13 @@ export function collectionNodes(shape: MarkerName, xs: Float64Array, ys: Float64
   if (n === 0 || sizesPt2.length === 0 || faces.length === 0 || edges.length === 0) return [];
   const strokeOf = (edge: Paint): Option<Stroke> =>
     edge.kind === 'solid' && edgeWidthPt > 0 ? some({ color: edge.color, width: strokePx(edgeWidthPt, k), cap: 'butt', join: 'round', dash: { kind: 'solid' } }) : none;
-  const nodes: Node[] = [];
   if (single) {
     const face = faces[0], edge = edges[0];
     if (inkOf(face, strokeOf(edge)).kind === 'none') return [];
     const m = markersNode({ kind: 'on', shape, sizePt: Math.sqrt(Math.max(0, sizesPt2[0])), edgeWidthPt, face, edge }, xs, ys, k, true, snapOn);
     return m.kind === 'some' ? [m.value] : [];
   }
+  const members: PathNode[] = [], mx: number[] = [], my: number[] = [], refs: number[] = [];
   for (let i = 0; i < n; i++) {
     if (!(Number.isFinite(xs[i]) && Number.isFinite(ys[i]))) continue;
     const ink = inkOf(MARKERS[shape].filled ? faces[i % faces.length] : { kind: 'none' }, strokeOf(edges[i % edges.length]));
@@ -471,9 +471,27 @@ export function collectionNodes(shape: MarkerName, xs: Float64Array, ys: Float64
         default: return assertNever(sg);
       }
     });
-    nodes.push(pathNode(snapOn ? snapRectilinear(segs, snapOffset(strokePx(edgeWidthPt, k))) : segs, ink.value));
+    members.push({ kind: 'path', segs: snapOn ? snapRectilinear(segs, snapOffset(strokePx(edgeWidthPt, k))) : segs, ink: ink.value, antialiased: true });
+    mx.push(x); my.push(y); refs.push(i % sizesPt2.length);
   }
-  return nodes;
+  if (members.length === 0) return [];
+  // draw_path_collection's defs: one path per transform (size), scaled about the offset (y flipped to top-left px)
+  const paths = Array.from(sizesPt2, (s2) => {
+    const sizePx = Math.sqrt(Math.max(0, s2)) * k;
+    return MARKERS[shape].segs.map((sg): Seg => {
+      switch (sg[0]) {
+        case 'M': return ['M', sg[1] * sizePx, -sg[2] * sizePx];
+        case 'L': return ['L', sg[1] * sizePx, -sg[2] * sizePx];
+        case 'Q': return ['Q', sg[1] * sizePx, -sg[2] * sizePx, sg[3] * sizePx, -sg[4] * sizePx];
+        case 'C': return ['C', sg[1] * sizePx, -sg[2] * sizePx, sg[3] * sizePx, -sg[4] * sizePx, sg[5] * sizePx, -sg[6] * sizePx];
+        case 'Z': return ['Z'];
+        default: return assertNever(sg);
+      }
+    });
+  });
+  // _iter_collection_uses_per_path: N = max(Npath_ids, Noffsets) members cycle over Npath_ids = max(Npaths, Ntransforms)
+  const usesPerPath = Math.ceil(Math.max(sizesPt2.length, n) / sizesPt2.length);
+  return [{ kind: 'collection', nodes: members, paths, refs: Uint32Array.from(refs), xs: Float64Array.from(mx), ys: Float64Array.from(my), usesPerPath }];
 }
 
 /**
