@@ -156,7 +156,11 @@ class VSeq {
 // ------------------------------------------------------------------ math_stroke
 type LJ = 'miter' | 'miterRevert' | 'round' | 'bevel';
 type Stroker = { readonly w: number; readonly wAbs: number; readonly wEps: number; readonly cap: Cap; readonly join: LJ; readonly miterLimit: number };
-type Out = { xs: number[]; ys: number[] };
+/** Where math_stroke's vertices go: straight to the sink (vcgen_stroke emits each join's vertices in order). */
+type Out = { readonly sink: PathSink; first: boolean };
+function put(o: Out, x: number, y: number): void {
+  if (o.first) { o.sink.moveTo(x, y); o.first = false; } else o.sink.lineTo(x, y);
+}
 
 /** matplotlib's GCAgg mapping: 'miter' → miter_join_revert, 'projecting' (square) caps. */
 export function stroker(width: number, cap: Cap, join: Join, miterLimit: number): Stroker {
@@ -180,13 +184,13 @@ function calcArc(st: Stroker, vc: Out, x: number, y: number, dx1: number, dy1: n
   let a1 = Math.atan2(dy1, dx1);
   let a2 = Math.atan2(dy2, dx2);
   let da = Math.acos(st.wAbs / (st.wAbs + 0.125)) * 2;
-  vc.xs.push(x + dx1); vc.ys.push(y + dy1);
+  put(vc, x + dx1, y + dy1);
   if (a1 > a2) a2 += 2 * Math.PI;
   const n = Math.trunc((a2 - a1) / da);
   da = (a2 - a1) / (n + 1);
   a1 += da;
-  for (let i = 0; i < n; i++) { vc.xs.push(x + Math.cos(a1) * st.w); vc.ys.push(y + Math.sin(a1) * st.w); a1 += da; }
-  vc.xs.push(x + dx2); vc.ys.push(y + dy2);
+  for (let i = 0; i < n; i++) { put(vc, x + Math.cos(a1) * st.w, y + Math.sin(a1) * st.w); a1 += da; }
+  put(vc, x + dx2, y + dy2);
 }
 
 const P = { x: 0, y: 0 };
@@ -200,29 +204,29 @@ function calcMiter(st: Stroker, vc: Out, v0x: number, v0y: number, v1x: number, 
     xi = P.x; yi = P.y;
     const ex = xi - v1x, ey = yi - v1y;
     di = Math.sqrt(ex * ex + ey * ey);
-    if (di <= lim) { vc.xs.push(xi); vc.ys.push(yi); exceeded = false; }
+    if (di <= lim) { put(vc, xi, yi); exceeded = false; }
     failed = false;
   } else {
     const x2 = v1x + dx1, y2 = v1y - dy1;
     if ((cross(v0x, v0y, v1x, v1y, x2, y2) < 0) === (cross(v1x, v1y, v2x, v2y, x2, y2) < 0)) {
-      vc.xs.push(v1x + dx1); vc.ys.push(v1y - dy1); exceeded = false;
+      put(vc, v1x + dx1, v1y - dy1); exceeded = false;
     }
   }
   if (!exceeded) return;
   switch (lj) {
     case 'miterRevert':
-      vc.xs.push(v1x + dx1, v1x + dx2); vc.ys.push(v1y - dy1, v1y - dy2); return;
+      put(vc, v1x + dx1, v1y - dy1); put(vc, v1x + dx2, v1y - dy2); return;
     case 'round':
       calcArc(st, vc, v1x, v1y, dx1, -dy1, dx2, -dy2); return;
     case 'miter': case 'bevel':
       if (failed) {
-        vc.xs.push(v1x + dx1 + dy1 * mlimit, v1x + dx2 - dy2 * mlimit);
-        vc.ys.push(v1y - dy1 + dx1 * mlimit, v1y - dy2 - dx2 * mlimit);
+        put(vc, v1x + dx1 + dy1 * mlimit, v1y - dy1 + dx1 * mlimit);
+        put(vc, v1x + dx2 - dy2 * mlimit, v1y - dy2 - dx2 * mlimit);
       } else {
         const x1 = v1x + dx1, y1 = v1y - dy1, x2 = v1x + dx2, y2 = v1y - dy2;
         di = (lim - dbevel) / (di - dbevel);
-        vc.xs.push(x1 + (xi - x1) * di, x2 + (xi - x2) * di);
-        vc.ys.push(y1 + (yi - y1) * di, y2 + (yi - y2) * di);
+        put(vc, x1 + (xi - x1) * di, y1 + (yi - y1) * di);
+        put(vc, x2 + (xi - x2) * di, y2 + (yi - y2) * di);
       }
       return;
     default: assertNever(lj);
@@ -230,23 +234,22 @@ function calcMiter(st: Stroker, vc: Out, v0x: number, v0y: number, v1x: number, 
 }
 
 function calcCap(st: Stroker, vc: Out, v0x: number, v0y: number, v1x: number, v1y: number, len: number): void {
-  vc.xs.length = 0; vc.ys.length = 0;
   let dx1 = (v1y - v0y) / len, dy1 = (v1x - v0x) / len;
   dx1 *= st.w; dy1 *= st.w;
   if (st.cap !== 'round') {
     let dx2 = 0, dy2 = 0;
     if (st.cap === 'square') { dx2 = dy1; dy2 = dx1; }
-    vc.xs.push(v0x - dx1 - dx2, v0x + dx1 - dx2);
-    vc.ys.push(v0y + dy1 - dy2, v0y - dy1 - dy2);
+    put(vc, v0x - dx1 - dx2, v0y + dy1 - dy2);
+    put(vc, v0x + dx1 - dx2, v0y - dy1 - dy2);
     return;
   }
   let da = Math.acos(st.wAbs / (st.wAbs + 0.125)) * 2;
   const n = Math.trunc(Math.PI / da);
   da = Math.PI / (n + 1);
-  vc.xs.push(v0x - dx1); vc.ys.push(v0y + dy1);
+  put(vc, v0x - dx1, v0y + dy1);
   let a1 = Math.atan2(dy1, -dx1) + da;
-  for (let i = 0; i < n; i++) { vc.xs.push(v0x + Math.cos(a1) * st.w); vc.ys.push(v0y + Math.sin(a1) * st.w); a1 += da; }
-  vc.xs.push(v0x + dx1); vc.ys.push(v0y - dy1);
+  for (let i = 0; i < n; i++) { put(vc, v0x + Math.cos(a1) * st.w, v0y + Math.sin(a1) * st.w); a1 += da; }
+  put(vc, v0x + dx1, v0y - dy1);
 }
 
 const INNER_MITER_LIMIT = 1.01;
@@ -254,7 +257,6 @@ const INNER_MITER_LIMIT = 1.01;
 function calcJoin(st: Stroker, vc: Out, v0x: number, v0y: number, v1x: number, v1y: number, v2x: number, v2y: number, len1: number, len2: number): void {
   const dx1 = st.w * (v1y - v0y) / len1, dy1 = st.w * (v1x - v0x) / len1;
   const dx2 = st.w * (v2y - v1y) / len2, dy2 = st.w * (v2x - v1x) / len2;
-  vc.xs.length = 0; vc.ys.length = 0;
   const cp = cross(v0x, v0y, v1x, v1y, v2x, v2y);
   if (cp > EPS && st.w > 0) {
     let limit = (len1 < len2 ? len1 : len2) / st.wAbs;
@@ -265,49 +267,43 @@ function calcJoin(st: Stroker, vc: Out, v0x: number, v0y: number, v1x: number, v
   const mx = (dx1 + dx2) / 2, my = (dy1 + dy2) / 2;
   const dbevel = Math.sqrt(mx * mx + my * my);
   if ((st.join === 'round' || st.join === 'bevel') && st.wAbs - dbevel < st.wEps) {
-    if (intersect(v0x + dx1, v0y - dy1, v1x + dx1, v1y - dy1, v1x + dx2, v1y - dy2, v2x + dx2, v2y - dy2, P)) { vc.xs.push(P.x); vc.ys.push(P.y); }
-    else { vc.xs.push(v1x + dx1); vc.ys.push(v1y - dy1); }
+    if (intersect(v0x + dx1, v0y - dy1, v1x + dx1, v1y - dy1, v1x + dx2, v1y - dy2, v2x + dx2, v2y - dy2, P)) { put(vc, P.x, P.y); }
+    else { put(vc, v1x + dx1, v1y - dy1); }
     return;
   }
   switch (st.join) {
     case 'miter': case 'miterRevert':
       calcMiter(st, vc, v0x, v0y, v1x, v1y, v2x, v2y, dx1, dy1, dx2, dy2, st.join, st.miterLimit, dbevel); return;
     case 'round': calcArc(st, vc, v1x, v1y, dx1, -dy1, dx2, -dy2); return;
-    case 'bevel': vc.xs.push(v1x + dx1, v1x + dx2); vc.ys.push(v1y - dy1, v1y - dy2); return;
+    case 'bevel': put(vc, v1x + dx1, v1y - dy1); put(vc, v1x + dx2, v1y - dy2); return;
     default: assertNever(st.join);
   }
 }
 
 // ------------------------------------------------------------------ vcgen_stroke
-function emit(vc: Out, sink: PathSink, first: { v: boolean }): void {
-  for (let i = 0; i < vc.xs.length; i++) {
-    if (first.v) { sink.moveTo(vc.xs[i], vc.ys[i]); first.v = false; } else sink.lineTo(vc.xs[i], vc.ys[i]);
-  }
-}
-
 /** One subpath through vcgen_stroke: the outline polygon(s) into the sink. */
 function strokeSeq(st: Stroker, v: VSeq, closedIn: boolean, sink: PathSink): void {
   v.close(closedIn);
   const n = v.size;
   const closed = n < 3 ? false : closedIn;
   if (n < 2 + (closed ? 1 : 0)) return;
-  const vc: Out = { xs: [], ys: [] };
+  const vc: Out = { sink, first: true };
   const X = v.xs, Y = v.ys, D = v.ds;
-  const prev = (i: number): number => (i + n - 1) % n, next = (i: number): number => (i + 1) % n;
-  const first = { v: true };
   let i: number;
   if (!closed) {
-    calcCap(st, vc, X[0], Y[0], X[1], Y[1], D[0]); emit(vc, sink, first);
-    for (i = 1; i < n - 1; i++) { calcJoin(st, vc, X[prev(i)], Y[prev(i)], X[i], Y[i], X[next(i)], Y[next(i)], D[prev(i)], D[i]); emit(vc, sink, first); }
-    calcCap(st, vc, X[n - 1], Y[n - 1], X[n - 2], Y[n - 2], D[n - 2]); emit(vc, sink, first);
-    for (i = n - 2; i >= 1; i--) { calcJoin(st, vc, X[next(i)], Y[next(i)], X[i], Y[i], X[prev(i)], Y[prev(i)], D[i], D[prev(i)]); emit(vc, sink, first); }
+    // interior vertices: prev(i) = i - 1 and next(i) = i + 1
+    calcCap(st, vc, X[0], Y[0], X[1], Y[1], D[0]);
+    for (i = 1; i < n - 1; i++) calcJoin(st, vc, X[i - 1], Y[i - 1], X[i], Y[i], X[i + 1], Y[i + 1], D[i - 1], D[i]);
+    calcCap(st, vc, X[n - 1], Y[n - 1], X[n - 2], Y[n - 2], D[n - 2]);
+    for (i = n - 2; i >= 1; i--) calcJoin(st, vc, X[i + 1], Y[i + 1], X[i], Y[i], X[i - 1], Y[i - 1], D[i], D[i - 1]);
     sink.close();
     return;
   }
-  for (i = 0; i < n; i++) { calcJoin(st, vc, X[prev(i)], Y[prev(i)], X[i], Y[i], X[next(i)], Y[next(i)], D[prev(i)], D[i]); emit(vc, sink, first); }
+  const prev = (k: number): number => (k + n - 1) % n, next = (k: number): number => (k + 1) % n;
+  for (i = 0; i < n; i++) calcJoin(st, vc, X[prev(i)], Y[prev(i)], X[i], Y[i], X[next(i)], Y[next(i)], D[prev(i)], D[i]);
   sink.close();
-  first.v = true;
-  for (i = n - 1; i >= 0; i--) { calcJoin(st, vc, X[next(i)], Y[next(i)], X[i], Y[i], X[prev(i)], Y[prev(i)], D[i], D[prev(i)]); emit(vc, sink, first); }
+  vc.first = true;
+  for (i = n - 1; i >= 0; i--) calcJoin(st, vc, X[next(i)], Y[next(i)], X[i], Y[i], X[prev(i)], Y[prev(i)], D[i], D[prev(i)]);
   sink.close();
 }
 

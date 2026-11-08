@@ -163,7 +163,7 @@ export class Rasterizer {
 const grow = (a: Int32Array): Int32Array<ArrayBuffer> => { const b = new Int32Array(a.length * 2); b.set(a); return b; };
 let CX = new Int32Array(4096), CY = new Int32Array(4096), CC = new Int32Array(4096), CA = new Int32Array(4096);
 let SW_SX = new Int32Array(4096), SW_SL = new Int32Array(4096), SW_SV = new Uint8Array(4096);
-let SW_KX = new Int32Array(64), SW_KI = new Int32Array(64), SW_KF = new Float64Array(64);
+let SW_KX = new Int32Array(64), SW_KI = new Int32Array(64), SW_CNT = new Int32Array(64);
 
 class Grid {
   readonly x0: number; readonly y0: number; readonly w: number; readonly h: number;
@@ -208,13 +208,14 @@ class Grid {
       }
       sx[m] = x; sl[m] = len; sv[m] = v; m++;
     };
-    // per-row order by x: insertion sort (rows hold a handful of cells), typed sort for long rows
-    let kx = SW_KX, ki = SW_KI, kf = SW_KF;
+    // per-row order by (x, i): insertion sort (rows hold a handful of cells), a stable counting sort on x for long
+    // rows (dense lines put thousands of cells in a row). `order` already lists each row's cells by ascending i.
+    let kx = SW_KX, ki = SW_KI, cnt = SW_CNT;
     for (let r = 0; r < h; r++) {
       rows[r] = m;
       const a = start[r], k = start[r + 1] - a;
       if (k === 0) continue;
-      if (kx.length < k) { kx = new Int32Array(k * 2); ki = new Int32Array(k * 2); kf = new Float64Array(k * 2); SW_KX = kx; SW_KI = ki; SW_KF = kf; }
+      if (kx.length < k) { kx = new Int32Array(k * 2); ki = new Int32Array(k * 2); SW_KX = kx; SW_KI = ki; }
       if (k <= 48) {
         for (let j = 0; j < k; j++) {
           const i = order[a + j], x = CX[i];
@@ -223,10 +224,14 @@ class Grid {
           kx[t] = x; ki[t] = i;
         }
       } else {
-        const ks = kf.subarray(0, k);
-        for (let j = 0; j < k; j++) { const i = order[a + j]; ks[j] = CX[i] * 4194304 + i; }
-        ks.sort();
-        for (let j = 0; j < k; j++) { const i = ks[j] % 4194304; kx[j] = CX[i]; ki[j] = i; }
+        let lo = w, hi = 0;
+        for (let j = 0; j < k; j++) { const x = CX[order[a + j]]; if (x < lo) lo = x; if (x > hi) hi = x; }
+        const span = hi - lo + 1;
+        if (cnt.length < span + 1) { cnt = new Int32Array((span + 1) * 2); SW_CNT = cnt; }
+        cnt.fill(0, 0, span + 1);
+        for (let j = 0; j < k; j++) cnt[CX[order[a + j]] - lo + 1]++;
+        for (let t = 1; t <= span; t++) cnt[t] += cnt[t - 1];
+        for (let j = 0; j < k; j++) { const i = order[a + j], x = CX[i], t = cnt[x - lo]++; kx[t] = x; ki[t] = i; }
       }
       let cover = 0, j = 0;
       while (j < k) {
