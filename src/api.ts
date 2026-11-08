@@ -2629,7 +2629,7 @@ export class Figure {
     if (cached.kind !== 'some') return { prefix, pd, annot: [] };
     // sidecar pixels at the path data's own rounding when it is coarser than their 0.01 px, so they land on drawn vertices
     const spec = this.spec(), annot = cached.value.annot, write = sidecarWriter(), dp = Math.min(2, pd.kind === 'compact' ? pd.decimals : 4);
-    return { prefix, pd, annot: tracer.span('render.annotate', { axes: annot.length }, () => annot.map((a, k) => ({ nodes: a.nodes, sidecar: write(spec.axes[k], a, dp) }))) };
+    return { prefix, pd, annot: tracer.span('render.annotate', { axes: annot.length }, () => annot.map((a, k) => ({ nodes: a.nodes, sidecar: write(spec.axes[k], a, dp, this.dpi) }))) };
   }
   /**
    * toSVG({ precision, interactive, idPrefix }) — the figure as an SVG document string, as matplotlib's SVG backend writes it.

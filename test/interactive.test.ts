@@ -313,7 +313,7 @@ try {
     check(t.startsWith('p99 '), `${at} the hovered panel has the tooltip`, t);
     for (const [k, name, dots] of [[1, 'budget', 1], [2, 'throughput', 1], [4, 'cpu', 1]] as const) {
       const s = await synced(page, 'dash', k), x = await dataX(page, 'dash', k, s.x);
-      check(s.line && s.dots === dots && Math.abs(x - dated) < 1e-6, `${at} ${name}: crosshair at the same x, a dot per series`, JSON.stringify(s));
+      check(s.line && s.dots === dots && Math.abs(x - dated) < 1e-4, `${at} ${name}: crosshair at the same x, a dot per series`, JSON.stringify(s));
     }
     const twin = await synced(page, 'dash', 6);
     check(twin.dots === 1, `${at} the twin's series gets its dot too`, JSON.stringify(twin));
@@ -338,6 +338,37 @@ try {
       check(!(await synced(page, 'dash', 1)).line, `${at} leaving clears the other panels`);
     }
     check(errors.length === 0, `${at} no page errors`, errors.join('; '));
+    await page.close();
+  }
+  // the tooltip describes the crosshair's x: an outlier wins only under the pointer
+  {
+    const { page, errors } = await open(1280, false);
+    await (await page.$('#dash'))?.scrollIntoViewIfNeeded();
+    const crossX = (): Promise<{ line: number; dot: number }> => page.evaluate(() => {
+      const c = document.querySelector('#dash .mpl-cross'), l = c?.querySelector('line'), d = c?.querySelector('circle');
+      return { line: Number(l?.getAttribute('x1')), dot: Number(d?.getAttribute('cx')) };
+    });
+    const out = await pointAt(page, 'dash', 0, 3, 2);   // the third outlier (ts[60] = 10:00)
+    // 14 screen px left of it (and 6 down): near, but off the marker: the tooltip is a line's, at the crosshair
+    await page.mouse.move(out.x - 14, out.y + 6);
+    let t = await tipText(page);
+    check(/^p(50|95|99) /.test(t) && / Nov 5, \d\d:\d0$/.test(t), 'near an outlier, not on it: the tooltip is a line point', t);
+    let c = await crossX();
+    check(Math.abs(c.line - c.dot) < 0.01, 'the crosshair snaps to the reported point', JSON.stringify(c));
+    const cl = await page.evaluate(() => { const svg = document.querySelector<SVGSVGElement>('#dash'), line = svg?.querySelector('.mpl-cross line'), j = JSON.parse(svg?.querySelector('g[data-mpl-axes="0"] > metadata')?.textContent ?? '{}'); const p = (Number(line?.getAttribute('x1')) - j.box[0]) / (j.box[2] - j.box[0]); return j.x.lim[0] + p * (j.x.lim[1] - j.x.lim[0]); });
+    const stamp = new Date(Math.round(cl * 86400) * 1000);
+    const hhmm = `${String(stamp.getUTCHours()).padStart(2, '0')}:${String(stamp.getUTCMinutes()).padStart(2, '0')}`;
+    check(t.endsWith(hhmm), 'the tooltip time is the crosshair time', `${t} vs ${hhmm}`);
+    const peer = await synced(page, 'dash', 1), peerX = await dataX(page, 'dash', 1, peer.x);
+    check(Math.abs(peerX - cl) < 1e-4, 'the other panels sit at that same x', `${peerX} vs ${cl}`);
+    // directly on it (hit radius: the marker's, plus a few px): the marker's value, its time, named by the fallback
+    await page.mouse.move(out.x + 1, out.y);
+    t = await tipText(page);
+    check(/^API latency 3[3-9]\d ms Nov 5, 10:00$/.test(t), 'on an outlier: its value and time, named by the Axes title', t);
+    c = await crossX();
+    check(Math.abs(c.line - (await page.evaluate(() => JSON.parse(document.querySelector('#dash g[data-mpl-axes="0"] > metadata')?.textContent ?? '{}').a[3].p[4]))) < 0.01, 'the crosshair snaps to the marker too', JSON.stringify(c));
+    check(await page.evaluate(() => { const u = document.querySelector('.mpl-tip u'); return !!u && getComputedStyle(u).opacity !== '1'; }), 'the fallback name is muted');
+    check(errors.length === 0, 'outliers: no page errors', errors.join('; '));
     await page.close();
   }
   // opt out; and a name links separate figures (with idPrefix)

@@ -194,8 +194,8 @@ Unknown keyword arguments throw, as in matplotlib. Not yet: `violinplot`, `pie`,
 ## Interactive SVG
 
 `fig.toSVG({ interactive: true })` draws the same SVG plus a small JSON sidecar of each artist's data. The
-`mpl/interactive` client (7.2 KiB gzipped, no dependencies) turns it into a crosshair, a nearest-point tooltip,
-series highlighting, legend toggles and arrow-key navigation, with no re-render. `mpl/zoom` (11.8 KiB gzipped with
+`mpl/interactive` client (7.4 KiB gzipped, no dependencies) turns it into a crosshair, a nearest-point tooltip,
+series highlighting, legend toggles and arrow-key navigation, with no re-render. `mpl/zoom` (12.0 KiB gzipped with
 the client) adds wheel, drag, box, pinch and keyboard zoom and pan, where every frame is a real mpljs render loaded on
 the first gesture ([guide](docs/guide.md#zoom-and-pan-mplzoom)).
 

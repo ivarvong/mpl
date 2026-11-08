@@ -3,9 +3,10 @@
 // the server-rendered SVG without re-rendering anything. Schema (v1), all pixel values in SVG user units, y down:
 //   { v: 1, box: [x0, yTop, x1, yBot],
 //     x | y: { s: 'linear' | 'log' | 'date' | 'cat', lim: [lo, hi], inv: bool, g: share group, b?: log base, names?: categories, t?: axis label },
-//     cb?: 1 (a colorbar's Axes),
+//     cb?: 1 (a colorbar's Axes), ti?: the Axes title,
 //     a: [ { k: kind, l?: label, c?: color, s?: 'x' | 'y' | 'xy' (how the pointer snaps), ds?: 'pre' | 'mid' | 'post',
-//            o?: 'h' (horizontal bars), d?: [x0, y0, x1, y1, …] data, p?: [px0, py0, …] pixels, b?: bar bases, n?: points before decimation } ],
+//            o?: 'h' (horizontal bars), d?: [x0, y0, x1, y1, …] data, p?: [px0, py0, …] pixels, b?: bar bases, n?: points before decimation,
+//            r?: marker radius in pixels (series the pointer picks in 2D) } ],
 //     lg: [ [artist, x0, y0, x1, y1], … ] legend entry boxes }
 // `g` is the index of the first Axes holding this axis: Axes that share an axis (sharex/sharey, twinx) have the same `g`,
 // and their limits move together (mpl/zoom relies on it). `a[i]` is the artist tagged data-artist="artist/i/<kind>". Date values are matplotlib date numbers (days since
@@ -108,7 +109,13 @@ export function decimate(values: ArrayLike<number>, snap: Series['snap'], max: n
   return out;
 }
 
-function artistJson(a: Artist, f: Frame, rp: (v: number) => number): Json {
+/** A marker's radius in pixels: scatter sizes are pt^2 (the largest of them), line markers a diameter in pt. */
+function markerRadius(a: Artist, dpi: number): number {
+  const pt = a.kind === 'scatter' ? Math.sqrt(Math.max(0, ...a.collection.sizesPt2)) : a.kind === 'line' && a.markers.kind === 'on' ? a.markers.sizePt : 0;
+  return (pt / 2) * (dpi / 72);
+}
+
+function artistJson(a: Artist, f: Frame, rp: (v: number) => number, dpi: number): Json {
   const head: Record<string, unknown> = { k: a.kind };
   if (a.kind !== 'text' && a.kind !== 'annotation' && a.label.kind === 'text') head['l'] = a.label.text;
   const c = colorOf(a);
@@ -135,18 +142,21 @@ function artistJson(a: Artist, f: Frame, rp: (v: number) => number): Json {
   if (a.kind === 'bar' && a.orientation === 'horizontal') out['o'] = 'h';
   if (base.some((v) => v !== 0)) out['b'] = base;
   if (sel.length < m) out['n'] = m;
+  const r = s.snap === 'xy' ? markerRadius(a, dpi) : 0;
+  if (r > 0) out['r'] = px(r);
   return out;
 }
 
 /** The sidecar of one Axes, as XML-escaped JSON text (it sits inside an SVG <metadata> element). */
-export function axesSidecar(ax: AxesSpec, an: AxesAnnot, dp = 2): string {
+export function axesSidecar(ax: AxesSpec, an: AxesAnnot, dp = 2, dpi = 100): string {
   const f = an.frame, b = f.box;
   const j = {
     // the box to the SVG's own 1e-4 (points are 0.01 px): the client's pixel → data mapping rests on it
     v: 1, box: [b.x0, b.yTop, b.x1, b.yBot].map((v) => Math.round(v * 1e4) / 1e4),
     x: axisJson(ax.x, f.xscale, f.xlim, ax.xShare, ax.xlabel), y: axisJson(ax.y, f.yscale, f.ylim, ax.yShare, ax.ylabel),
     ...(ax.role.kind === 'colorbar' ? { cb: 1 } : {}),
-    a: ax.artists.map((a) => artistJson(a, f, pxAt(Math.max(0, Math.min(2, dp))))),
+    ...(ax.title === '' ? {} : { ti: ax.title }),
+    a: ax.artists.map((a) => artistJson(a, f, pxAt(Math.max(0, Math.min(2, dp))), dpi)),
     lg: an.legend.map((e) => [e.artist, px(e.box.x0), px(e.box.y0), px(e.box.x1), px(e.box.y1)]),
   };
   return xmlText(JSON.stringify(j));
