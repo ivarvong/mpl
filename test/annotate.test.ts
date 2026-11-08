@@ -10,7 +10,7 @@ import { registerSidecar, subplots } from '../src/index.ts';
 import type { Figure } from '../src/index.ts';
 import { MAX_POINTS, sidecar } from '../src/annotate.ts';
 import type { AxesInfo } from '../src/interactive/client.ts';
-import { dataToPixel, nearest, parseSidecar, pixelToData } from '../src/interactive/client.ts';
+import { dataToPixel, formatValue, nearest, parseSidecar, pixelToData, unitOf } from '../src/interactive/client.ts';
 import { build, loadFixture } from '../tools/replay.ts';
 
 let checks = 0;
@@ -241,4 +241,41 @@ const make = (): Figure => {
     checks += 3 + exact;
   }
 }
+const u = (s: string): readonly string[] => { const r = unitOf(s); return [r.plain, r.muted, r.name]; };
+// ---- 6. value text: dates at their own resolution, numbers to the axis' resolution, units read off the axis label
+{
+  const t0 = Date.UTC(2026, 10, 5, 8, 40) / 864e5;
+  const axis = { s: 'date', lim: [t0 - 1, t0 + 1], b: 10, names: [], px: 400, g: 0, t: '', step: 1 / 1440 } as const;
+  // 08:40 stored to the sidecar's 12 significant digits used to print 08:39:59.999
+  assert.equal(formatValue(Number(t0.toPrecision(12)), axis, 'x', true), 'Nov 5, 08:40');
+  assert.equal(formatValue(t0, { ...axis, step: 1 }, 'x', true), 'Nov 5');
+  assert.equal(formatValue(t0, { ...axis, step: 1 / 86400 }, 'x', true), 'Nov 5, 08:40:00');
+  assert.equal(formatValue(t0, { ...axis, step: 30 }, 'x', true), 'Nov 2026');
+  assert.equal(formatValue(t0, { ...axis, step: 365 }, 'x', true), '2026');
+  assert.equal(formatValue(t0, { ...axis, step: 1, lim: [Date.UTC(2025, 11, 20) / 864e5, Date.UTC(2026, 0, 20) / 864e5] }, 'x', true), 'Nov 5, 2026', 'the year when the axis crosses one');
+  const lin = { s: 'linear', lim: [40, 90], b: 10, names: [], px: 300, g: 0, t: '', step: 0 } as const;
+  assert.equal(formatValue(75.6199, lin, 'y', true), '75.6');
+  assert.equal(formatValue(72, lin, 'y', true), '72');
+  assert.equal(formatValue(0.012345, { ...lin, lim: [0, 1000] }, 'y', true), '0.0123', 'at least 3 significant digits');
+  assert.equal(formatValue(-0.0001, { ...lin, lim: [-1, 1], px: 10 }, 'y', true), '-0.0001');
+  assert.equal(formatValue(0, lin, 'y', true), '0');
+  const log = { ...lin, s: 'log', lim: [1, 10000] } as const;
+  assert.equal(formatValue(75.6199, log, 'y', true), '75.6');
+  assert.equal(formatValue(9000.4, log, 'y', true), '9000');
+  assert.deepEqual(u('ms'), ['ms', '', '']);
+  assert.deepEqual(u('latency (ms)'), ['ms', '', 'latency']);
+  assert.deepEqual(u('Latency [ms]'), ['ms', '', 'Latency']);
+  assert.deepEqual(u('requests / s'), ['', 'requests / s', '']);
+  assert.deepEqual(u('requests (log)'), ['', '', 'requests']);
+  assert.deepEqual(u('p99 ms'), ['', '', 'p99 ms']);
+  assert.deepEqual(u('CPU'), ['', '', 'CPU']);
+  assert.deepEqual(u('%'), ['%', '', '']);
+  // the sidecar carries the label
+  const [fl, al] = subplots();
+  al.plot([1, 2], [3, 4]);
+  al.set_ylabel('latency (ms)');
+  const sc6 = sidecars(fl.toSVG({ interactive: true }))[0];
+  assert.deepEqual([sc6.y.t, sc6.x.t], ['latency (ms)', '']);
+}
+
 console.log(`annotate: ${names.length} fixtures byte-identical by default, annotated = default + inserted lines; ${checks} checks ok`);

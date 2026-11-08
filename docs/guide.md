@@ -369,24 +369,49 @@ import { registerSidecar } from 'mpl';
 import { sidecar } from 'mpl/annotate';
 registerSidecar(sidecar);
 const svg = fig.toSVG({ interactive: true, idPrefix: 'c1-' });   // idPrefix: several SVGs in one page
-// browser: 9.1 KiB minified, 4.0 KiB gzipped, no dependencies
+// browser: 14.3 KiB minified, 6.2 KiB gzipped, no dependencies
 import { attach } from 'mpl/interactive';
 const detach = attach(document);              // every annotated SVG under the root
 ```
 
 <img src="images/readme/interactive.png" width="640" alt="An annotated mpljs SVG in Chromium: hovering the sin line shows a crosshair, a ring on the nearest point and a tooltip with its x and y; the other series are dimmed">
 
-`attach` adds a crosshair with the cursor's data coordinates (dates as UTC dates to the resolution of one pixel,
-categories by name, log values to 4 digits), a tooltip for the nearest point (line, step and bar series snap along
-their axis, steps to the step holding the value; scatter and unordered lines by 2D distance), dims every other
-artist while one is hovered, and turns a legend entry into a toggle (click, or Tab + Enter/Space). A focused plot
-steps through points with the arrow keys (Up/Down change series, Escape hides). Pointer positions map through
-`getScreenCTM`, so the SVG can be scaled freely (drop `width`/`height`, keep `viewBox`). Pass a second argument to
-format values your way: `attach(document, (v, axis, which, exact) => …)`, falling back to the exported `formatValue`.
+`attach` adds a crosshair and a tooltip for the nearest point (line, step and bar series snap along their axis, steps
+to the step holding the value; scatter and unordered lines by 2D distance). The tooltip reads as a sentence, not a
+coordinate pair: the series name and its value, with the unit when the axis label gives one (`ms`, `latency (ms)`,
+`Latency [ms]` → `72.4 ms`; a rate label like `requests / s` is shown muted beside the value), and under it, muted, the
+position on the other axis. Dates print at the resolution the series has: `Nov 5, 08:40` for minutely data, `Nov 5` for
+daily, with no year unless the axis crosses one; numbers to the axis' per-pixel resolution (at least 3 significant
+digits, log axes 3). A stacked bar shows its own height with the stack total muted (`client: timed out 37`, `50 total`).
+With no point to report the crosshair stands alone. Other series in the hovered Axes (and its twin) dim gently while one
+is hovered; other Axes are untouched. A legend entry is a toggle (click, or Tab + Enter/Space). A focused plot steps
+through points with the arrow keys (Up/Down change series, Escape hides). Pointer positions map through `getScreenCTM`,
+so the SVG can be scaled freely (drop `width`/`height`, keep `viewBox`).
+
+On touch a tapped value stays after the finger lifts, until the next tap, a tap outside the axes, or Escape, and it
+follows its point through a scroll. Under `mpl/zoom`, where a finger pans, the value shows on lift when the finger did
+not travel. The tooltip is kept inside the visible part of the chart (the chart's box cut by the viewport and any
+clipping ancestor), not the viewport: beside a mouse, centred above a finger (below it when there is no room).
+
+The second argument of `attach` is a value formatter or an options object:
+
+```ts
+attach(document, (v, axis, which, exact) => …);   // a formatter (fall back to the exported formatValue); its text is used as is, no unit added
+attach(document, {
+  format,                // the same, as an option
+  compact: 480,          // below this visible chart width (CSS px) the tooltip is compact; 0 never, Infinity always
+  gap: 14,               // CSS px from a mouse or focus position
+  touchGap: 32,          // CSS px from a finger
+  margin: 4,             // CSS px kept from the chart's edges
+  placement: 'auto',     // 'auto': beside a mouse, above a finger; 'above': above and centred for every pointer
+  cursor: false,         // true also lists the cursor's own data coordinates under the point
+});
+```
 
 Theming is CSS only: `--mpl-dim-opacity`, `--mpl-crosshair`, `--mpl-crosshair-opacity`, `--mpl-dot`, `--mpl-dot-fill`,
 `--mpl-legend-off`, `--mpl-legend-off-opacity`, `--mpl-focus`, `--mpl-tip-font`, `--mpl-tip-bg`, `--mpl-tip-fg`,
-`--mpl-tip-border`, `--mpl-tip-radius`, and the classes `.mpl-tip`, `.mpl-dim`, `.mpl-off`, `.mpl-cross`, `.mpl-dot`,
+`--mpl-tip-border`, `--mpl-tip-radius`, `--mpl-tip-padding`, `--mpl-tip-shadow`, `--mpl-tip-small-size`, `--mpl-tip-max-width`,
+`--mpl-tip-compact-size`, `--mpl-tip-compact-padding`, and the classes `.mpl-tip`, `.mpl-tip-compact`, `.mpl-dim`, `.mpl-off`, `.mpl-cross`, `.mpl-dot`,
 `.mpl-lg`. Defaults follow the page's `color-scheme` (`Canvas`/`CanvasText`), and the dimming transition is off
 under `prefers-reduced-motion`. [`examples/interactive.ts`](../examples/interactive.ts) writes a page with four charts
 (lines + scatter, steps on a date axis, log bars with a twin axis, categories and an inverted axis);
