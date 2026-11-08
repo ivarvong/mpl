@@ -289,3 +289,37 @@ export function isRectilinear(xs: Float64Array, ys: Float64Array): boolean {
   for (let i = 1; i < xs.length; i++) if (Math.abs(xs[i] - xs[i - 1]) >= 1e-4 && Math.abs(ys[i] - ys[i - 1]) >= 1e-4) return false;
   return true;
 }
+
+/**
+ * Min/max decimation per device-pixel column (plot's opt-in `decimate`, see Decimate in types.ts). A column is
+ * floor(x · perPx); in each run of finite samples sharing one, the first, lowest y, highest y and last are kept, in
+ * order. A non-finite sample is kept and ends the run, so NaN still breaks the line. x must be non-decreasing over
+ * its finite values (a time series); otherwise the input comes back unchanged.
+ */
+export function decimateMinMax(xs: Float64Array, ys: Float64Array, perPx: number): XY {
+  const n = xs.length;
+  let last = -Infinity;
+  for (let i = 0; i < n; i++) { const v = xs[i]; if (v === v) { if (v < last) return { xs, ys }; last = v; } }
+  const keep = new Uint8Array(n);
+  let col = 0, first = -1, lo = 0, hi = 0, end = 0, m = 0;
+  const flush = (): void => {
+    if (first < 0) return;
+    keep[first] = 1; keep[lo] = 1; keep[hi] = 1; keep[end] = 1;
+    first = -1;
+  };
+  for (let i = 0; i < n; i++) {
+    const x = xs[i], y = ys[i];
+    if (!(x - x === 0 && y - y === 0)) { flush(); keep[i] = 1; continue; }
+    const c = Math.floor(x * perPx);
+    if (first < 0 || c !== col) { flush(); col = c; first = lo = hi = end = i; continue; }
+    end = i;
+    if (y < ys[lo]) lo = i;
+    if (y > ys[hi]) hi = i;
+  }
+  flush();
+  for (let i = 0; i < n; i++) m += keep[i];
+  if (m === n) return { xs, ys };
+  const ox = new Float64Array(m), oy = new Float64Array(m);
+  for (let i = 0, j = 0; i < n; i++) if (keep[i] === 1) { ox[j] = xs[i]; oy[j] = ys[i]; j++; }
+  return { xs: ox, ys: oy };
+}
