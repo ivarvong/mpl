@@ -1,5 +1,6 @@
 // Minimal OpenTelemetry-shaped tracer. Off by default: every span is a shared
-// no-op until enable(). Spans keep performance.now() doubles; export converts
+// no-op until enable(), and a disabled tracer never reads the clock (performance.now()
+// was 3–4.5 % of a re-render). Spans keep performance.now() doubles; export converts
 // to OTLP/JSON (traceId/spanId hex, Unix-nano strings, typed attribute values).
 // Cloudflare Workers caveat: clocks advance only at I/O boundaries there, so
 // intra-request durations read as 0 by design; structure and attrs still work.
@@ -69,14 +70,14 @@ export class Tracer {
   /** A new trace (one per top-level run). Inside an open span it joins that span's trace as a
    *  child instead, as OTel libraries do with the active context, so a caller's own span (a
    *  request, a frame) parents the library's work. */
-  startTrace(name: string, attrs: Attrs): SpanHandle { return this.startTraceAt(name, attrs, now()); }
+  startTrace(name: string, attrs: Attrs): SpanHandle { return this.enabled ? this.startTraceAt(name, attrs, now()) : NOOP; }
   /** startTrace with an explicit start (e.g. an input event's timeStamp, or navigation start = 0). */
   startTraceAt(name: string, attrs: Attrs, startMs: number): SpanHandle {
     if (!this.enabled) return NOOP;
     if (this.stack.length === 0) this.traceId = hex(16);
     return this.startSpanAt(name, attrs, startMs);
   }
-  startSpan(name: string, attrs: Attrs): SpanHandle { return this.startSpanAt(name, attrs, now()); }
+  startSpan(name: string, attrs: Attrs): SpanHandle { return this.enabled ? this.startSpanAt(name, attrs, now()) : NOOP; }
   startSpanAt(name: string, attrs: Attrs, startMs: number): SpanHandle {
     if (!this.enabled) return NOOP;
     const parent = this.stack.length > 0 ? some(this.stack[this.stack.length - 1].spanId) : none;

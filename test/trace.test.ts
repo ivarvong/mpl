@@ -18,6 +18,14 @@ const draw = () => { const [fig, ax] = subplots(); ax.plot([1, 2, 3], [1, 4, 9],
 
 draw();
 assert.equal(tracer.spans().length, 0, 'disabled tracer collects nothing');
+// ...and never reads the clock (fonts are decoded by now; their one-off decode timestamps are not the tracer's)
+{
+  const clock = performance.now.bind(performance);
+  let reads = 0;
+  performance.now = () => { reads++; return clock(); };
+  try { draw(); } finally { performance.now = clock; }
+  assert.equal(reads, 0, 'disabled tracer calls performance.now() 0 times');
+}
 
 tracer.enable();
 const svg = draw();
