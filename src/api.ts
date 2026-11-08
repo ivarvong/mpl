@@ -33,7 +33,8 @@ import type {
 } from './core/types.ts';
 import { assertNever, err, none, ok, some, unwrap } from './core/types.ts';
 import { iolistToString } from './render/iolist.ts';
-import { leafCount, svgChunks, svgIO, svgStream } from './render/svg.ts';
+import { DEFAULT_PATH_DATA, leafCount, svgChunks, svgIO, svgStream } from './render/svg.ts';
+import type { PathData } from './render/svg.ts';
 import type { Canvas } from './render/agg.ts';
 import { renderRGBA, renderScratch } from './render/agg.ts';
 import { encodePNG, encodePNGSync, pngStream } from './render/png.ts';
@@ -2553,19 +2554,24 @@ export class Figure {
       return scene;
     } catch (e) { root.recordException(e); throw e; } finally { root.end(); }
   }
-  /** The figure as an SVG document string, as matplotlib's SVG backend writes it. */
-  toSVG(): string {
+  /**
+   * The figure as an SVG document string, as matplotlib's SVG backend writes it. Optional { precision }, mpl's own:
+   * path coordinates (line and path `d`, marker positions) rounded to 0–4 decimals, a repeated command letter written
+   * once, and line vertices that round onto the previous one dropped. Omitted, the output is unchanged (4 decimals).
+   */
+  toSVG(kwargs: Kwargs = {}): string {
+    const pd = svgPathData(kwargs, 'toSVG');
     const scene = this.toScene();
     return tracer.span('render.svg', { topNodes: scene.nodes.length }, (sp) => {
-      const out = iolistToString(svgIO(scene, tracer, this.theme.svgText));
+      const out = iolistToString(svgIO(scene, tracer, this.theme.svgText, '', pd));
       sp.setAttribute('bytes', out.length).setAttribute('leaves', scene.nodes.reduce((a, n) => a + leafCount(n), 0));
       return out;
     });
   }
-  /** The SVG as a generator of string chunks. */
-  svgChunks(): Generator<string> { return svgChunks(this.toScene(), tracer); }
-  /** The SVG as a byte stream (Workers, browsers, Node). */
-  svgStream(): ReadableStream<Uint8Array> { return svgStream(this.toScene(), tracer); }
+  /** The SVG as a generator of string chunks. Optional { precision } as in toSVG. */
+  svgChunks(kwargs: Kwargs = {}): Generator<string> { const pd = svgPathData(kwargs, 'svgChunks'); return svgChunks(this.toScene(), tracer, 'text', '', pd); }
+  /** The SVG as a byte stream (Workers, browsers, Node). Optional { precision } as in toSVG. */
+  svgStream(kwargs: Kwargs = {}): ReadableStream<Uint8Array> { const pd = svgPathData(kwargs, 'svgStream'); return svgStream(this.toScene(), tracer, 'text', '', pd); }
 
   /**
    * Layout at a savefig dpi (matplotlib Figure.savefig(dpi=…)). Default is this.dpi
@@ -2662,6 +2668,15 @@ const paletteColors = (v: unknown): Result<Option<number>> =>
 
 /** savefig dpi: finite and > 0, capped so a canvas stays below ~100 MP at typical figsizes. */
 const MAX_SAVE_DPI = 10_000;
+/** toSVG / svgChunks / svgStream { precision }: an integer 0–4 selects compact path data (render/svg.ts PathData). */
+function svgPathData(kwargs: Kwargs, fn: string): PathData {
+  const kw = new KwReader(kwargs, fn);
+  const pd = kw.read(['precision'], (v): Result<PathData> => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 4
+    ? ok({ kind: 'compact', decimals: v }) : err(`precision must be an integer from 0 to 4, got ${JSON.stringify(v)}`)), () => DEFAULT_PATH_DATA);
+  kw.done();
+  return pd;
+}
+
 function saveDpiOf(v: unknown, what: string): number {
   if (typeof v !== 'number' || !Number.isFinite(v) || !(v > 0)) {
     const shown = typeof v === 'number' ? String(v) : JSON.stringify(v);
