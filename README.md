@@ -444,7 +444,7 @@ Before → after:
 | legend loc | `string \| number \| undefined` | `LegendLoc = best \| anchored{1..10}` = **11 of 11** |
 | rc | `Record<string, any>` | `Theme`, fully typed, parsed once with every error collected |
 
-**Scene** is the renderer-independent output, a tagged union in device px with Agg's snapping already applied:
+**Scene** is the renderer-independent output, a tagged union in device px, laid out for one device ('agg' for PNG with Agg's int canvas and snapping applied, 'svg' for SVG):
 
 ```
 Scene = { width, height, background: Paint, nodes: Node[] }
@@ -530,6 +530,7 @@ Scale    = linear | log{ base } | symlog{ linthresh, linscale }
 Things that had to be verified against Agg rather than reasoned about:
 
 - Spines/ticks/grid snap **after** the y-flip (rows 58/427, not 57/426).
+- A fractional canvas height (e.g. 4.94 in × 72 dpi = 355.68 px): `RendererAgg` flips paths, markers, images and clip boxes with its int canvas height (355), while text flips with the float height (`Text._draw` uses `get_canvas_width_height`). matplotlib's SVG backend flips everything with the float height and clips lines to the float canvas ± 1, so mpl lays out one scene per device (`frame.ts` `Device`).
 - Text width is Σ `horiAdvance` (1/64 px) + kerning with `text.hinting='no_hinting'`; ascent/descent clamp to `"lp"` = 1556/2048, 492/2048 em.
 - Markers: origin snaps to `floor(v+0.5)+0.5`; above the marker's snap threshold its vertices snap to integers.
 - Filled bars with no edge snap to integer pixel edges (linewidth 0 ⇒ even).

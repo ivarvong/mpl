@@ -633,6 +633,33 @@ for a, b in [(0, 3), (700, 701), (1500, 1505), (2600, 2640), (3333, 3334), (4990
 for i in (1200, 2000, 2001, 3900): NX[i] = NAN
 case("plot_nan_dense", ("plot", [NX, NY], {"lw": 1}), ("set_xlim", [800, 4200]))
 
+# Fractional canvas height: Agg's canvas is int(h·dpi) and RendererAgg flips paths, markers, images and clip boxes with
+# that int height, while text flips with the float height (Text._draw uses get_canvas_width_height, then FreeType's y).
+case("frac_canvas_tag_dpi72", ("$rc", [], {"figure.figsize": [7.2, 4.94], "figure.dpi": 72}), ("$subplots", [3, 1], {"sharex": True}),
+     ("plot", [TX, TLIGHT], {"lw": 0.8, "color": "#63B2EB"}), ("set_ylim", [0, 250]), ("set_ylabel", ["Light"]),
+     ("sca", [1]), ("plot", [TX, TTEMP], {"lw": 0.8, "color": "#3F72A5"}), ("set_ylim", [10, 22]), ("set_ylabel", ["Temp (°C)"]),
+     ("sca", [2]), ("plot", [TX, TDEPTH], {"lw": 0.8, "color": "#050830"}), ("set_ylim", [250, 0]), ("set_ylabel", ["Depth (m)"]),
+     ("set_xlabel", ["hours since 2013-06-18 06:30"]))
+FR = np.random.default_rng(20261108)
+FIMG = [[round(float(v), 3) for v in row] for row in FR.uniform(0, 1, (6, 8))]
+case("frac_canvas_mixed", ("$rc", [], {"figure.figsize": [6.4, 4.805], "figure.dpi": 100}), ("$subplots", [2, 2]),
+     ("plot", [[0, 1, 2, 3, 4], [1, 3, 2, 4, 3]], {"marker": "o", "label": "line"}), ("axhline", [2.5], {"color": "k", "lw": 1}),
+     ("grid", [True]), ("legend", [], {"loc": "upper left"}), ("set_title", ["fractional height"]),
+     ("sca", [1]), ("bar", [[0, 1, 2, 3], [3, 1.5, 2.25, 0.7]], {"color": "C1", "edgecolor": "k"}), ("text", [0.5, 2.5, "text in data"]),
+     ("sca", [2]), ("scatter", [[0.1, 0.4, 0.5, 0.9, 0.33], [0.2, 0.8, 0.45, 0.6, 0.1]], {"s": 60, "c": "C2"}),
+     ("fill_between", [[0, 0.5, 1], [0, 0.3, 0.1], [0.2, 0.6, 0.4]], {"alpha": 0.4}),
+     ("sca", [3]), ("imshow", [{"$array": FIMG}]))
+case("frac_canvas_odd_dpi", ("$rc", [], {"figure.figsize": [5.0, 3.3], "figure.dpi": 77}),
+     ("plot", [[0, 1, 2, 3], [0, 1, 0.5, 2]], {"lw": 1.5, "marker": "s"}), ("set_xlabel", ["x"]), ("set_ylabel", ["y"]),
+     ("fig.suptitle", ["suptitle"]))
+
+# The SVG backend clips line paths to the float canvas (PathClipper over (0, 0, width, height) in points, ±1); Agg to
+# its int canvas. At 72 dpi the SVG is in px: spikes leave the bottom of a 345.96 px tall figure (test/svg-geometry.test.ts).
+case("frac_canvas_svg_clip", ("$rc", [], {"figure.figsize": [6.4, 4.805], "figure.dpi": 72}),
+     ("plot", [[0, 1, 2, 3, 4, 5, 6, 7, 8], [1, 2, -60, 1.5, 2.5, -400, 1, 80, 2]], {"lw": 1.5, "color": "#d62728"}),
+     ("plot", [[0, 8], [-50, -50]], {"lw": 1, "color": "#2ca02c"}),
+     ("set_ylim", [0, 3]))
+
 def run_case(name, calls):
     style = STYLES.get(name)
     rc_layer = {}

@@ -1,7 +1,7 @@
 // Artists -> scene nodes, plus what loc='best' needs to avoid. Plan/apply:
 // one typed-array transform pass; everything after is bounded by pixels.
 import type { Frame } from './frame.ts';
-import { tx, ty } from './frame.ts';
+import { tx, ty, tyText } from './frame.ts';
 import type { Box } from './legend-index.ts';
 import { lineStroke, markersNode, snapsAuto } from './marks.ts';
 import type { XY } from './path.ts';
@@ -54,10 +54,10 @@ function transform(x: Float64Array, y: Float64Array, coords: LineArtist['coords'
   const xs = new Float64Array(n), ys = new Float64Array(n), ysUp = new Float64Array(n);
   const dataX = coords.x === 'data', dataY = coords.y === 'data';
   const dx = dataX ? forwardAll(f.xscale, x) : x, dy = dataY ? forwardAll(f.yscale, y) : y;
-  // Agg folds the y flip into the affine (trans_affine::multiply): y_dev = y·(−ay) + (H − cy).
+  // Agg folds the y flip into the affine (trans_affine::multiply): y_dev = y·(−ay) + (Hg − cy), Hg its int height.
   const ax = dataX ? f.ax : f.box.w, cx = dataX ? f.cx : f.box.x0;
   const ay = dataY ? f.ay : f.box.h, cy = dataY ? f.cy : f.box.b;
-  const nay = -ay, tyDev = f.H - cy;
+  const nay = -ay, tyDev = f.Hg - cy;
   for (let i = 0; i < n; i++) {
     xs[i] = dx[i] * ax + cx; ys[i] = dy[i] * nay + tyDev; ysUp[i] = dy[i] * ay + cy;
   }
@@ -68,7 +68,7 @@ function transform(x: Float64Array, y: Float64Array, coords: LineArtist['coords'
  *  clip, SNAP_AUTO snapping and path.simplify (src/core/path.ts). */
 function strokeNodes(xs: Float64Array, ys: Float64Array, stroke: Stroke, theme: Theme, f: Frame, span: SpanHandle): readonly Node[] {
   if (xs.length === 0 || stroke.color.alpha <= 0) return [];
-  const p = cleanupStroke(xs, ys, Math.trunc(f.W), Math.trunc(f.H), stroke.width, theme.simplify);
+  const p = cleanupStroke(xs, ys, f.clipW, f.clipH, stroke.width, theme.simplify);
   if (p.xs.length !== xs.length) span.setAttribute('simplified', p.xs.length);
   if (p.xs.length === 0) return [];   // nothing finite on the canvas (matplotlib writes a path without d)
   return [{ kind: 'polyline', xs: p.xs, ys: p.ys, moves: p.moves, stroke }];
@@ -188,7 +188,7 @@ export function drawAxLine(a: AxLineArtist, f: Frame, theme: Theme, k: number, c
     start = pts[1]; stop = pts[2];
   }
   const xs = Float64Array.of(start[0] * f.ax + f.cx, stop[0] * f.ax + f.cx);
-  const ys = Float64Array.of(start[1] * -f.ay + (f.H - f.cy), stop[1] * -f.ay + (f.H - f.cy));
+  const ys = Float64Array.of(start[1] * -f.ay + (f.Hg - f.cy), stop[1] * -f.ay + (f.Hg - f.cy));
   const up = Float64Array.of(start[1] * f.ay + f.cy, stop[1] * f.ay + f.cy);
   const nodes = a.stroke.kind === 'on' ? strokeNodes(xs, ys, lineStroke(theme, a.stroke.color, a.stroke.widthPt, a.stroke.style, k, none), theme, f, span) : [];
   return { nodes: nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [], lines: [{ xs, ys: up }], boxes: [], points: [], handle };
@@ -214,7 +214,7 @@ export function drawSegments(a: SegmentsArtist, f: Frame, theme: Theme, k: numbe
   for (let i = 0; i < n; i++) {
     const stroke = strokeOf(i);
     if (stroke.color.alpha <= 0 || stroke.width <= 0) continue;
-    const tyDev = single ? -f.cy : f.H - f.cy;
+    const tyDev = single ? -f.cy : f.Hg - f.cy;
     const xs = Float64Array.of(X0[i] * f.ax + f.cx, X1[i] * f.ax + f.cx);
     const ys = Float64Array.of(Y0[i] * -f.ay + tyDev, Y1[i] * -f.ay + tyDev);
     if (!xs.every(Number.isFinite) || !ys.every(Number.isFinite)) continue;
@@ -222,7 +222,7 @@ export function drawSegments(a: SegmentsArtist, f: Frame, theme: Theme, k: numbe
     const fix = (v: number): number => (isRectilinear(xs, ys) ? Math.floor(v + 0.5) + off : single ? v + 0.5 : v);
     const segs: Seg[] = [['M', fix(xs[0]), fix(ys[0])], ['L', fix(xs[1]), fix(ys[1])]];
     nodes.push(single
-      ? { kind: 'markers', shape: segs, xs: Float64Array.of(0), ys: Float64Array.of(f.H), ink: { kind: 'stroke', stroke } }
+      ? { kind: 'markers', shape: segs, xs: Float64Array.of(0), ys: Float64Array.of(f.Hg), ink: { kind: 'stroke', stroke } }
       : pathNode(segs, { kind: 'stroke', stroke }));
   }
   return { nodes: nodes.length > 0 ? [{ kind: 'group', clip, nodes, tag: '' }] : [], lines: [], boxes: [], points: [], handle };
@@ -236,7 +236,7 @@ export function drawPolygon(a: PolygonArtist, f: Frame, k: number, clip: Clip): 
   const n = Math.min(a.x.length, a.y.length);
   const X = forwardAll(f.xscale, a.x), Y = forwardAll(f.yscale, a.y);
   const xs = new Float64Array(n), ys = new Float64Array(n), up = new Float64Array(n);
-  for (let i = 0; i < n; i++) { xs[i] = X[i] * f.ax + f.cx; ys[i] = Y[i] * -f.ay + (f.H - f.cy); up[i] = Y[i] * f.ay + f.cy; }
+  for (let i = 0; i < n; i++) { xs[i] = X[i] * f.ax + f.cx; ys[i] = Y[i] * -f.ay + (f.Hg - f.cy); up[i] = Y[i] * f.ay + f.cy; }
   const lines = [{ xs, ys: up }];
   // an unfilled, open outline fills nothing (Patch fill=False)
   const ink = inkOf(a.closed ? a.face : { kind: 'none' }, stroke);
@@ -268,7 +268,7 @@ export function drawBar(a: BarArtist, f: Frame, k: number, clip: Clip, span: Spa
   const boxes: Box[] = [];
   for (let i = 0; i < a.x.length; i++) {
     const xa = tx(f, a.x[i]), xb = tx(f, a.x[i] + a.w[i]), ya = ty(f, a.y[i]), yb = ty(f, a.y[i] + a.h[i]);
-    boxes.push({ x0: Math.min(xa, xb), x1: Math.max(xa, xb), y0: f.H - Math.max(ya, yb), y1: f.H - Math.min(ya, yb) });
+    boxes.push({ x0: Math.min(xa, xb), x1: Math.max(xa, xb), y0: f.Hg - Math.max(ya, yb), y1: f.Hg - Math.min(ya, yb) });
     const x0 = snap(Math.min(xa, xb), lw), x1 = snap(Math.max(xa, xb), lw);
     const y0 = snap(Math.min(ya, yb), lw), y1 = snap(Math.max(ya, yb), lw);
     const r: Pending = { x: x0, w: x1 - x0, y: y0, h: y1 - y0, i };
@@ -309,7 +309,7 @@ export function drawFill(a: FillArtist, f: Frame, k: number, clip: Clip): Drawn 
   // i.e. an ordinary path: y = y·(−ay) + (H − cy).
   const asMarker = a.edge.kind === 'on';
   const X = forwardAll(f.xscale, a.x), Y1 = forwardAll(f.yscale, a.y1), Y2 = forwardAll(f.yscale, a.y2);
-  const ty0 = asMarker ? -f.cy : f.H - f.cy, nay = -f.ay;
+  const ty0 = asMarker ? -f.cy : f.Hg - f.cy, nay = -f.ay;
   const ptsX: number[] = [X[0] * f.ax + f.cx], ptsY: number[] = [Y2[0] * nay + ty0];
   const push = (x: number, y: number): void => { ptsX.push(x * f.ax + f.cx); ptsY.push(y * nay + ty0); };
   for (let i = 0; i < n; i++) push(X[i], Y1[i]);
@@ -328,7 +328,7 @@ export function drawFill(a: FillArtist, f: Frame, k: number, clip: Clip): Drawn 
   const up = new Float64Array(2 * n), xs = new Float64Array(2 * n);
   for (let i = 0; i < n; i++) { xs[i] = X[i] * f.ax + f.cx; up[i] = Y1[i] * f.ay + f.cy; xs[n + i] = X[n - 1 - i] * f.ax + f.cx; up[n + i] = Y2[n - 1 - i] * f.ay + f.cy; }
   const node: Node = asMarker
-    ? { kind: 'markers', shape: segs, xs: Float64Array.of(0), ys: Float64Array.of(f.H), ink: ink.value }
+    ? { kind: 'markers', shape: segs, xs: Float64Array.of(0), ys: Float64Array.of(f.Hg), ink: ink.value }
     : { kind: 'path', segs, ink: ink.value, antialiased: true };
   return { nodes: [{ kind: 'group', clip, nodes: [node], tag: '' }], lines: [{ xs, ys: up }], boxes: [], points: [], handle };
 }
@@ -337,7 +337,7 @@ export function drawFill(a: FillArtist, f: Frame, k: number, clip: Clip): Drawn 
 export function drawText(a: TextArtist, f: Frame, dpi: number, face: Face): Drawn {
   const k = pxPerPt(dpi);
   const x = a.coords === 'data' ? tx(f, a.x) : a.x * f.box.w + f.box.x0;
-  const y = a.coords === 'data' ? ty(f, a.y) : a.y * -f.box.h + (f.H - f.box.b);
+  const y = a.coords === 'data' ? tyText(f, a.y) : a.y * -f.box.h + (f.H - f.box.b);
   const layout = measure(a.text, a.sizePt, dpi, face, a.ha);
   const nodes = a.text === '' ? [] : labelNodes(placeLayout(layout, x, y, { kind: 'horizontal', ha: a.ha, va: a.va }), k, a.color);
   // Legend._auto_legend_data: every Text child's window extent is a loc='best' obstacle (an empty one is a point)
@@ -371,8 +371,8 @@ export function drawAnnotation(a: AnnotationArtist, f: Frame, W: number, dpi: nu
   const layout = measure(a.text, a.sizePt, dpi, face, a.ha);
   const box = placeLayout(layout, x1, y1, { kind: 'horizontal', ha: a.ha, va: a.va });
   const textNodes = a.text === '' ? [] : labelNodes(box, k, a.color);
-  // matplotlib works in y-up display space; Agg flips with height - y
-  const up = (y: number): number => f.H - y;
+  // matplotlib works in y-up display space; Agg flips the arrow path with its int height - y
+  const up = (y: number): number => f.Hg - y;
   // Text.get_window_extent in y-up display px, computed as matplotlib does (not flipped from the top-left box)
   const bbox = a.text === '' ? { x0: x1, y0: textUp[1], x1, y1: textUp[1] } : windowExtent(layout, textUp[0], textUp[1], a.ha, a.va);
   const extent: Box[] = [bbox];
@@ -495,7 +495,7 @@ export function drawSpan(a: SpanArtist, f: Frame, k: number, clip: Clip): Drawn 
   const off = stroke.kind === 'some' ? snapOffset(stroke.value.width) : 0;
   if (a.orientation === 'vertical') {
     const x0 = tx(f, a.a0), x1 = tx(f, a.a1);
-    const y0 = a.f0 * -f.box.h + (f.H - f.box.b), y1 = a.f1 * -f.box.h + (f.H - f.box.b);
+    const y0 = a.f0 * -f.box.h + (f.Hg - f.box.b), y1 = a.f1 * -f.box.h + (f.Hg - f.box.b);
     const X0 = Math.floor(Math.min(x0, x1) + 0.5) + off, X1 = Math.floor(Math.max(x0, x1) + 0.5) + off;
     const Y0 = Math.floor(Math.min(y0, y1) + 0.5) + off, Y1 = Math.floor(Math.max(y0, y1) + 0.5) + off;
     const rect = rectNode(X0, Y0, X1 - X0, Y1 - Y0, ink.value);
@@ -548,7 +548,7 @@ export function drawImage(a: ImageArtist, f: Frame, clip: Clip): Drawn {
       ixCol[ox] = ix;
     }
     for (let oy = 0; oy < outH; oy++) {
-      const yData = inverse(f.yscale, (f.H - (y0 + oy + 0.5) - f.cy) / f.ay);
+      const yData = inverse(f.yscale, (f.Hg - (y0 + oy + 0.5) - f.cy) / f.ay);
       const v = a.origin === 'upper' ? ((T - yData) / ySpan) * a.rows : ((yData - B) / ySpan) * a.rows;
       let iy = Math.floor(v - 1e-9);
       if (iy < 0) iy = 0; else if (iy >= a.rows) iy = a.rows - 1;
@@ -579,7 +579,7 @@ export function drawImage(a: ImageArtist, f: Frame, clip: Clip): Drawn {
       ixCol[ox] = ix;
     }
     for (let oy = 0; oy < outH; oy++) {
-      const yData = inverse(f.yscale, (f.H - (y0 + oy + 0.5) - f.cy) / f.ay);
+      const yData = inverse(f.yscale, (f.Hg - (y0 + oy + 0.5) - f.cy) / f.ay);
       const v = a.origin === 'upper' ? ((T - yData) / ySpan) * a.rows : ((yData - B) / ySpan) * a.rows;
       let iy = Math.floor(v - 1e-9);
       if (iy < 0) iy = 0; else if (iy >= a.rows) iy = a.rows - 1;
