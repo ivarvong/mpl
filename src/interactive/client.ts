@@ -11,8 +11,8 @@
 
 /** One axis of an Axes as the sidecar describes it. `lim` is the view interval (inverted when lim[0] > lim[1]); `g` the
  *  index of the Axes that leads its share group (sharex/sharey/twinx), -1 when the sidecar predates it; `t` the axis
- *  label; `step` the resolution of the value being formatted (days on a date axis; 0 when unknown: the client fills it in). */
-export type AxisInfo = { readonly s: string; readonly lim: readonly [number, number]; readonly b: number; readonly names: readonly string[]; readonly px: number; readonly g: number; readonly t: string; readonly step: number };
+ *  label; `fixed` whether the axis has fixed tick labels (set_xticklabels) and `tk` those labels as [loc, text] pairs; `step` the resolution of the value being formatted (days on a date axis; 0 when unknown: the client fills it in). */
+export type AxisInfo = { readonly s: string; readonly lim: readonly [number, number]; readonly b: number; readonly names: readonly string[]; readonly px: number; readonly g: number; readonly t: string; readonly step: number; readonly fixed: boolean; readonly tk: readonly (readonly [number, string])[] };
 /** One artist: its kind, label, colour and points (data `d` and pixel `p`, flat x/y pairs), as the sidecar has them. */
 export type ArtistInfo = {
   readonly i: number; readonly k: string; readonly l: string; readonly c: string; readonly s: string; readonly ds: string;
@@ -34,10 +34,17 @@ const nums = (v: unknown): number[] => (Array.isArray(v) ? v.filter((n): n is nu
 const str = (v: unknown, d = ''): string => (typeof v === 'string' ? v : d);
 const num = (v: unknown, d: number): number => (typeof v === 'number' ? v : d);
 
+/** A sidecar axis' fixed tick labels: [loc, text] pairs. Bad rows are dropped. */
+const tickLabels = (v: unknown): readonly (readonly [number, string])[] =>
+  (Array.isArray(v) ? v.flatMap((r): (readonly [number, string])[] => (Array.isArray(r) && typeof r[0] === 'number' && typeof r[1] === 'string' ? [[r[0], r[1]]] : [])) : []);
+/** The fixed label of a tick exactly at v (within rounding of the sidecar's numbers), or '': the axis shows nothing there. */
+const tickLabelAt = (tk: readonly (readonly [number, string])[], v: number): string =>
+  tk.reduce((found, [loc, text]) => (found === '' && Math.abs(loc - v) <= 1e-9 * Math.max(1, Math.abs(loc)) ? text : found), '');
+
 function axisOf(o: unknown, px: number): AxisInfo {
   const lim = nums(field(o, 'lim')), b = field(o, 'b'), names = field(o, 'names'), g = field(o, 'g');
   return { s: str(field(o, 's'), 'linear'), lim: [lim[0] || 0, lim.length > 1 ? lim[1] : 1], b: typeof b === 'number' ? b : 10,
-           names: Array.isArray(names) ? names.map((n) => String(n)) : [], px, g: typeof g === 'number' && Object.hasOwn(Object(o), 'g') ? g : -1, t: str(field(o, 't')), step: 0 };
+           names: Array.isArray(names) ? names.map((n) => String(n)) : [], px, g: typeof g === 'number' && Object.hasOwn(Object(o), 'g') ? g : -1, t: str(field(o, 't')), step: 0, fixed: Array.isArray(field(o, 'tk')), tk: tickLabels(field(o, 'tk')) };
 }
 
 /** The sidecar JSON of one Axes, parsed. Throws on text that is not JSON. */
@@ -413,9 +420,11 @@ function wireContent(svg: SVGSVGElement, tip: Tip, offs: Map<number, Set<number>
       if (!custom && vu.muted !== '') head.append(' ', html('u', vu.muted));
       rows.push(head);
       const px1 = format(art.d[2 * j + (horiz ? 1 : 0)], pos, pw, true, svg);
-      const under = [custom || P.s === 'date' || P.s === 'cat' ? px1 : glue(px1, pu.plain)];
+      // a coordinate the axis does not show is not printed: with fixed tick labels, only a point on a tick reads as that label
+      const fixedAxis = !custom && P.fixed, onTick = fixedAxis ? tickLabelAt(P.tk, art.d[2 * j + (horiz ? 1 : 0)]) : '';
+      const under = fixedAxis && onTick === '' ? [] : [fixedAxis ? onTick : custom || P.s === 'date' || P.s === 'cat' ? px1 : glue(px1, pu.plain)];
       if (stacked) under.push(`${custom ? format(val, V, vw, true, svg) : glue(format(val, V, vw, true, svg), vu.plain)} total`);
-      rows.push(html('small', under.join(' · ')));
+      if (under.length > 0) rows.push(html('small', under.join(' · ')));
       // only series in the Axes under the pointer (twins included) give way to the hovered one: other panels stay as they are
       for (const a of here) for (const [i, es] of a.groups) {
         const kind = a.info.a[i];

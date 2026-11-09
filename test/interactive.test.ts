@@ -86,7 +86,7 @@ try {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await page.setContent(html, { waitUntil: 'load' });
-    await page.waitForFunction(() => document.querySelectorAll('.mpl-overlay').length === 5);
+    await page.waitForFunction(() => document.querySelectorAll('.mpl-overlay').length === 6);
     const at = `@${width}px`;
 
     // several SVGs in one page: no id is defined twice
@@ -175,7 +175,7 @@ try {
     page.on('pageerror', (e) => errors.push(e.message));
     await page.evaluate(([c, f]) => { const w = window as unknown as Record<string, unknown>; w['mplAttach'] = c; w['mplFormat'] = f; }, [config, format] as const);   // setContent keeps this window
     await page.setContent(html, { waitUntil: 'load' });
-    await page.waitForFunction(() => document.querySelectorAll('.mpl-overlay').length === 5);
+    await page.waitForFunction(() => document.querySelectorAll('.mpl-overlay').length === 6);
     return { page, errors };
   };
   const within = (t: Box, c: Box, m = 4): boolean => t.left >= c.left + m - 1 && t.right <= c.right - m + 1 && t.top >= c.top + m - 1 && t.bottom <= c.bottom - m + 1;
@@ -388,6 +388,23 @@ try {
     await hover(page, 'one', 0, 2, 60);
     const a = await synced(page, 'two', 0), b = await synced(page, 'two', 3);
     check(a.line && a.dots === 3 && !b.line, "sync: 'ops' links two figures by the same rule, across idPrefixes", JSON.stringify([a, b]));
+    await page.close();
+  }
+
+  // a tooltip never prints an x the axis does not show. Expected values are the chart spec's own (examples/interactive.ts 'ticks': x hours,
+  // set_xticks at 6, 18, ... and set_xticklabels Mon..Sun). The numeric and date charts are the controls: they keep their x.
+  {
+    const DAY_AT: Readonly<Record<number, string>> = { 6: 'Mon', 18: 'Tue', 30: 'Wed', 42: 'Thu', 54: 'Fri', 66: 'Sat', 78: 'Sun' };
+    const DAYS = Object.values(DAY_AT);
+    const { page } = await open(1280, false, {}, false);
+    const onTick = await hover(page, 'ticks', 0, 0, 42);
+    check(onTick.includes(DAY_AT[42] as string) && !/\b42\b/.test(onTick), 'fixed tick labels: a point on a tick shows that tick\'s label, not its x', onTick);
+    const between = await hover(page, 'ticks', 0, 0, 44);
+    check(between.startsWith('this week') && !/\b44\b/.test(between) && !DAYS.some((d) => between.includes(d)), 'fixed tick labels: a point between ticks shows no x line, no guessed day', between);
+    const numeric = await hover(page, 'lines', 0, 0, 12);
+    check(/\b2\b/.test(numeric.replace(/^sin [^ ]+/, '')), 'control: a plain numeric axis keeps its x', numeric);
+    const dates = await hover(page, 'dates', 0, 0, 5);
+    check(/Oct/.test(dates), 'control: a date axis keeps its date', dates);
     await page.close();
   }
 
