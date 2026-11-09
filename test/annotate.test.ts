@@ -245,7 +245,7 @@ const u = (s: string): readonly string[] => { const r = unitOf(s); return [r.pla
 // ---- 6. value text: dates at their own resolution, numbers to the axis' resolution, units read off the axis label
 {
   const t0 = Date.UTC(2026, 10, 5, 8, 40) / 864e5;
-  const axis = { s: 'date', lim: [t0 - 1, t0 + 1], b: 10, names: [], px: 400, g: 0, t: '', step: 1 / 1440 } as const;
+  const axis = { s: 'date', lim: [t0 - 1, t0 + 1], b: 10, names: [], px: 400, g: 0, t: '', step: 1 / 1440, fixed: false, tk: [] } as const;
   // 08:40 stored to the sidecar's 12 significant digits used to print 08:39:59.999
   assert.equal(formatValue(Number(t0.toPrecision(12)), axis, 'x', true), 'Nov 5, 08:40');
   assert.equal(formatValue(t0, { ...axis, step: 1 }, 'x', true), 'Nov 5');
@@ -253,7 +253,7 @@ const u = (s: string): readonly string[] => { const r = unitOf(s); return [r.pla
   assert.equal(formatValue(t0, { ...axis, step: 30 }, 'x', true), 'Nov 2026');
   assert.equal(formatValue(t0, { ...axis, step: 365 }, 'x', true), '2026');
   assert.equal(formatValue(t0, { ...axis, step: 1, lim: [Date.UTC(2025, 11, 20) / 864e5, Date.UTC(2026, 0, 20) / 864e5] }, 'x', true), 'Nov 5, 2026', 'the year when the axis crosses one');
-  const lin = { s: 'linear', lim: [40, 90], b: 10, names: [], px: 300, g: 0, t: '', step: 0 } as const;
+  const lin = { s: 'linear', lim: [40, 90], b: 10, names: [], px: 300, g: 0, t: '', step: 0, fixed: false, tk: [] } as const;
   assert.equal(formatValue(75.6199, lin, 'y', true), '75.6');
   assert.equal(formatValue(72, lin, 'y', true), '72');
   assert.equal(formatValue(0.012345, { ...lin, lim: [0, 1000] }, 'y', true), '0.0123', 'at least 3 significant digits');

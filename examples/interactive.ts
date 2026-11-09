@@ -26,6 +26,14 @@ a1.scatter([1, 3, 5, 7, 9], [0.5, -0.4, 0.8, -0.9, 0.2], { label: 'samples', col
 a1.set_title('Lines and points');
 a1.legend({ loc: 'upper right' });
 
+// fixed tick labels: the axis shows day names over hour numbers (set_xticks + set_xticklabels), so a point between days must not print its x
+const hours = Array.from({ length: 84 }, (_, i) => i);
+const [f0, a0] = subplots({ figsize: [6.4, 3.2], rc });
+a0.plot(hours, hours.map((h) => 3000 + 1000 * Math.sin(h / 4)), { label: 'this week' });
+a0.set_xticks([6, 18, 30, 42, 54, 66, 78]);
+a0.set_xticklabels(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
+a0.set_title('Fixed tick labels');
+
 // 2. a date axis, steps
 const day = 864e5, t0 = Date.UTC(2026, 9, 1);
 const dates = Array.from({ length: 30 }, (_, i) => new Date(t0 + i * day));
@@ -75,6 +83,7 @@ ${inline(f2, 'dates')}
 ${inline(f3, 'logtwin')}
 ${inline(f4, 'grid')}
 ${inline(dashboard(), 'dash')}
+${inline(f0, 'ticks')}
 </main>
 <script type="module">
 ${client}

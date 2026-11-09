@@ -441,6 +441,8 @@ any other and get a sidecar, but no readout of the colormap value. The client ne
 line vertices at precision 0–2, within 0.005 px above); markers sit at their exact positions, as matplotlib's SVG
 backend writes them.
 
+A tooltip never prints a coordinate the axis does not show. On an axis with fixed tick labels (`set_xticks` + `set_xticklabels`), a point exactly on a tick reads as that tick's label, and a point between ticks has no x line at all; a label is never interpolated or guessed. Numeric and date axes keep their values.
+
 ## Zoom and pan (mpl/zoom)
 
 Every frame is a real mpljs render. The page keeps its server-rendered annotated SVG as the first paint (no JS needed,

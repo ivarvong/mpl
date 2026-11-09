@@ -2,7 +2,8 @@
 // (src/interactive/client.ts) can do hover readouts, nearest-point tooltips, highlighting and legend toggles over
 // the server-rendered SVG without re-rendering anything. Schema (v1), all pixel values in SVG user units, y down:
 //   { v: 1, box: [x0, yTop, x1, yBot],
-//     x | y: { s: 'linear' | 'log' | 'date' | 'cat', lim: [lo, hi], inv: bool, g: share group, b?: log base, names?: categories, t?: axis label },
+//     x | y: { s: 'linear' | 'log' | 'date' | 'cat', lim: [lo, hi], inv: bool, g: share group, b?: log base, names?: categories, t?: axis label,
+//             tk?: [[loc, text], …] fixed tick labels (set_xticklabels); [] when the locations are not fixed },
 //     cb?: 1 (a colorbar's Axes), ti?: the Axes title,
 //     a: [ { k: kind, l?: label, c?: color, s?: 'x' | 'y' | 'xy' (how the pointer snaps), ds?: 'pre' | 'mid' | 'post',
 //            o?: 'h' (horizontal bars), d?: [x0, y0, x1, y1, …] data, p?: [px0, py0, …] pixels, b?: bar bases, n?: points before decimation,
@@ -36,7 +37,10 @@ const num = (v: number): number => Number(v.toPrecision(12));
 const xmlText = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 function axisJson(spec: AxisSpec, sc: Scale, lim: readonly [number, number], g: number, label: string): Json {
-  const base = { lim: [num(lim[0]), num(lim[1])], inv: lim[0] > lim[1], g, ...(label === '' ? {} : { t: label }) };
+  // set_xticklabels replaced the tick text: the sidecar carries it, so the client never prints a coordinate the axis does not show
+  const lb: readonly string[] = spec.labels.kind === 'fixed' ? spec.labels.labels : [];
+  const fixed: Json = spec.labels.kind === 'fixed' ? { tk: spec.ticks.kind === 'fixed' ? spec.ticks.locs.flatMap((l, i) => (i < lb.length ? [[num(l), lb[i]]] : [])) : [] } : {};
+  const base = { lim: [num(lim[0]), num(lim[1])], inv: lim[0] > lim[1], g, ...(label === '' ? {} : { t: label }), ...fixed };
   switch (spec.kind) {
     case 'datetime': return { s: 'date', ...base };
     case 'category': return { s: 'cat', ...base, names: spec.names };
