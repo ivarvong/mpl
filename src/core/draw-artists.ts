@@ -8,7 +8,8 @@ import type { XY } from './path.ts';
 import { cleanupStroke, decimateMinMax, isRectilinear } from './path.ts';
 import { inkOf, pathNode, rectNode, snapIf, snapOffset } from './scene.ts';
 import { MARKERS } from './data/markers.ts';
-import { arrowExtents, yaArrowPath } from './arrow.ts';
+import type { ArrowPiece } from './arrow.ts';
+import { arrowExtents, styledArrowPaths, yaArrowPath } from './arrow.ts';
 import { lookup } from './std.ts';
 import { forward, forwardAll, inverse } from './scale.ts';
 import { applyNorm, autoscaleNorm, getColormap, logNorm, mapBytes, normalize, requireColormapRgba } from './colormap.ts';
@@ -379,22 +380,33 @@ export function drawAnnotation(a: AnnotationArtist, f: Frame, W: number, dpi: nu
   const arrowNodes = ((): readonly Node[] => {
     if (a.arrow.kind === 'none') return [];
     const ar = a.arrow.value;
-    const path = yaArrowPath(bbox, xyUp, a.text !== '',
-      { widthPt: ar.widthPt, headWidthPt: ar.headWidthPt, headLengthPt: ar.headLengthPt, shrink: ar.shrink, mutationPt: a.sizePt }, k);
-    extent.push(arrowExtents(path));
-    const segs = path.map((sg): Seg => {
-      switch (sg.kind) {
-        case 'M': return ['M', sg.p[0], up(sg.p[1])];
-        case 'L': return ['L', sg.p[0], up(sg.p[1])];
-        case 'Q': return ['Q', sg.c[0], up(sg.c[1]), sg.p[0], up(sg.p[1])];
-        case 'Z': return ['Z'];
-        default: return assertNever(sg);
-      }
+    const pieces: readonly ArrowPiece[] = ar.kind === 'yaarrow'
+      ? [{ segs: yaArrowPath(bbox, xyUp, a.text !== '', { widthPt: ar.widthPt, headWidthPt: ar.headWidthPt, headLengthPt: ar.headLengthPt, shrink: ar.shrink, mutationPt: a.sizePt }, k), fillable: true }]
+      : styledArrowPaths(bbox, xyUp, a.text !== '', {
+        style: ar.style, rad: ar.rad, relpos: ar.relpos, shrinkAPt: ar.shrinkAPt, shrinkBPt: ar.shrinkBPt,
+        mutationPt: ar.mutationPt.kind === 'some' ? ar.mutationPt.value : a.sizePt, linewidthPt: ar.linewidthPt,
+      }, k);
+    // Annotation.get_window_extent counts the compound path of every piece
+    extent.push(arrowExtents(pieces.flatMap((pc) => pc.segs)));
+    const width = strokePx(ar.linewidthPt, k);
+    // FancyArrowPatch: round join and cap; the face only on a fillable path (and not when transparent)
+    const stroke: Option<Stroke> = ar.linewidthPt > 0 && ar.edge.kind === 'solid' ? some({ color: ar.edge.color, width, cap: 'round', join: 'round', dash: { kind: 'solid' } }) : none;
+    return pieces.flatMap((pc): readonly Node[] => {
+      const flipped = pc.segs.map((sg): Seg => {
+        switch (sg.kind) {
+          case 'M': return ['M', sg.p[0], up(sg.p[1])];
+          case 'L': return ['L', sg.p[0], up(sg.p[1])];
+          case 'Q': return ['Q', sg.c[0], up(sg.c[1]), sg.p[0], up(sg.p[1])];
+          case 'Z': return ['Z'];
+          default: return assertNever(sg);
+        }
+      });
+      // each piece is its own draw_path, snapped by PathSnapper's SNAP_AUTO test (a curve never snaps; an
+      // axis-aligned bracket does)
+      const segs = f.snap ? snapRectilinear(flipped, snapOffset(width)) : flipped;
+      const ink = inkOf(pc.fillable ? ar.face : { kind: 'none' }, stroke);
+      return ink.kind === 'some' ? [pathNode(segs, ink.value)] : [];
     });
-    // FancyArrowPatch: round join and cap; a curved path is never snapped
-    const stroke: Option<Stroke> = ar.linewidthPt > 0 ? some({ color: ar.edge, width: strokePx(ar.linewidthPt, k), cap: 'round', join: 'round', dash: { kind: 'solid' } }) : none;
-    const ink = inkOf({ kind: 'solid', color: ar.face }, stroke);
-    return ink.kind === 'some' ? [pathNode(segs, ink.value)] : [];
   })();
   const nodes: readonly Node[] = [{ kind: 'group', clip, nodes: [...arrowNodes, ...textNodes], tag: '' }];
   // Annotation.get_window_extent: Bbox.union of the text's and the arrow patch's, a loc='best' obstacle like any Text

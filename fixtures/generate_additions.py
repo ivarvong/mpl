@@ -174,6 +174,43 @@ ANN = [
 case("annotate_coords_mixed", ("plot", [x, sx]), *ANN)
 case("annotate_coords_dpi", ("$rc", [], {"figure.dpi": 72, "figure.figsize": [5.0, 3.5]}), ("plot", [x, sx]), *ANN)
 
+# Issue #69: arrowprops arrowstyle (FancyArrowPatch: the _Curve family, brackets, simple / fancy / wedge), with
+# connectionstyle arc3 rad, relpos, shrinkA / shrinkB, mutation_scale, linewidth, alpha and the colour precedence
+def _sty(style, i, n, dx, dy, **kw):
+    y = 1 - (i + 0.5) / n
+    return ("annotate", [style, [0.62, y]], {"xycoords": "axes fraction", "xytext": [0.62 - dx, y - dy], "textcoords": "axes fraction",
+                                           "va": "center", "ha": "right", "fontsize": 9, "arrowprops": {"arrowstyle": style, **kw}})
+CURVE_STYLES = ["-", "->", "-|>", "<-", "<->", "<|-", "<|-|>"]
+case("annotate_arrowstyle_curves", ("set_xlim", [0, 1]), ("set_ylim", [0, 1]),
+     *[_sty(st, i, len(CURVE_STYLES), 0.3, 0.0) for i, st in enumerate(CURVE_STYLES)],
+     ("annotate", ["diag ->", [0.95, 0.9]], {"xycoords": "axes fraction", "xytext": [0.72, 0.55], "textcoords": "axes fraction", "arrowprops": {"arrowstyle": "->", "color": "C3", "lw": 2}}),
+     ("annotate", ["diag <|-|>", [0.96, 0.08]], {"xycoords": "axes fraction", "xytext": [0.7, 0.3], "textcoords": "axes fraction", "arrowprops": {"arrowstyle": "<|-|>"}}),
+     ("annotate", ["params", [0.98, 0.45]], {"xycoords": "axes fraction", "xytext": [0.7, 0.75], "textcoords": "axes fraction",
+                                           "arrowprops": {"arrowstyle": "-|>,head_length=0.8,head_width=0.4", "fc": "C2", "ec": "C1"}}))
+BRACKETS = ["]-", "-[", "]-[", "|-|", "]->", "<-["]
+case("annotate_arrowstyle_brackets", ("set_xlim", [0, 1]), ("set_ylim", [0, 1]),
+     *[_sty(st, i, len(BRACKETS), 0.3, 0.0, lw=1 + (i % 2)) for i, st in enumerate(BRACKETS)],
+     ("annotate", ["vertical ]-[", [0.85, 0.1]], {"xycoords": "axes fraction", "xytext": [0.85, 0.85], "textcoords": "axes fraction", "ha": "center", "arrowprops": {"arrowstyle": "]-[,widthA=0.5,lengthB=0.6"}}),
+     ("annotate", ["diagonal |-|", [0.98, 0.4]], {"xycoords": "axes fraction", "xytext": [0.72, 0.62], "textcoords": "axes fraction", "arrowprops": {"arrowstyle": "|-|,widthA=0.4,widthB=0.8", "color": "C4"}}),
+     ("annotate", ["scaled", [0.98, 0.05]], {"xycoords": "axes fraction", "xytext": [0.72, 0.2], "textcoords": "axes fraction", "arrowprops": {"arrowstyle": "-[,widthB=2", "mutation_scale": 6}}))
+case("annotate_arrowstyle_patches", ("plot", [x, sx]),
+     ("annotate", ["simple", [1.5, math.sin(1.5)]], {"xytext": [0.5, -0.6], "arrowprops": {"arrowstyle": "simple"}}),
+     ("annotate", ["fancy", [4.7, math.sin(4.7)]], {"xytext": [3.0, 0.6], "arrowprops": {"arrowstyle": "fancy", "connectionstyle": "arc3,rad=0.3", "color": "C1"}}),
+     ("annotate", ["wedge", [7.8, math.sin(7.8)]], {"xytext": [6.2, -0.5], "arrowprops": {"arrowstyle": "wedge,tail_width=0.7", "fc": "C2", "ec": "none", "alpha": 0.6}}),
+     ("annotate", ["simple rad", [9.5, math.sin(9.5)]], {"xytext": [8.0, 0.75], "arrowprops": {"arrowstyle": "Simple, tail_width=0.4, head_width=1.2", "connectionstyle": "arc3,rad=-0.4", "mutation_scale": 14, "fc": "0.8"}}),
+     ("annotate", ["fancy short", [2.6, math.sin(2.6)]], {"xytext": [2.2, 0.15], "arrowprops": {"arrowstyle": "fancy,head_length=1.2"}}))
+case("annotate_arrowstyle_props", ("plot", [x, sx]),
+     ("annotate", ["rad ->", [2.0, math.sin(2.0)]], {"xytext": [0.2, -0.4], "arrowprops": {"arrowstyle": "->", "connectionstyle": "arc3,rad=0.5", "lw": 1.5, "color": "C3"}}),
+     ("annotate", ["relpos, shrinkA 0", [5.0, math.sin(5.0)]], {"xytext": [3.4, 0.5], "arrowprops": {"arrowstyle": "-|>", "relpos": [0, 0], "shrinkA": 0, "shrinkB": 8}}),
+     ("annotate", ["", [7.0, math.sin(7.0)]], {"xytext": [-30, -30], "textcoords": "offset points", "arrowprops": {"arrowstyle": "<->", "color": "C2", "shrinkA": 0, "shrinkB": 0}}),
+     ("annotate", ["alpha + mutation", [8.5, math.sin(8.5)]], {"xytext": [6.0, -0.8], "fontsize": 14, "arrowprops": {"arrowstyle": "<|-", "alpha": 0.5, "mutation_scale": 25, "lw": 2}}),
+     ("annotate", ["color wins", [3.9, math.sin(3.9)]], {"xytext": [4.4, -0.2], "arrowprops": {"arrowstyle": "-|>", "color": "C4", "facecolor": "C1", "edgecolor": "C2"}}),
+     ("annotate", ["ya: color wins", [1.0, math.sin(1.0)]], {"xytext": [1.3, 0.3], "arrowprops": {"color": "C5", "facecolor": "C1", "headwidth": 6, "headlength": 6, "width": 2}}))
+case("annotate_arrowstyle_dpi", ("$rc", [], {"figure.dpi": 72, "figure.figsize": [5.0, 3.5]}), ("plot", [x, sx]),
+     ("annotate", ["->", [2.0, math.sin(2.0)]], {"xytext": [0.5, -0.5], "arrowprops": {"arrowstyle": "->"}}),
+     ("annotate", ["]-[", [5.0, math.sin(5.0)]], {"xytext": [5.0, 0.5], "ha": "center", "arrowprops": {"arrowstyle": "]-["}}),
+     ("annotate", ["fancy", [8.0, math.sin(8.0)]], {"xytext": [6.0, -0.6], "arrowprops": {"arrowstyle": "fancy", "connectionstyle": "arc3,rad=0.2"}}))
+
 # Subplot grids: ("$subplots", [nrows, ncols], kwargs) first; ("sca", [i]) picks fig.axes[i]
 def panel(i, **kw):
     """Distinct data per panel: a damped sine with its own phase and scale."""

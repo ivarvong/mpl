@@ -228,16 +228,44 @@ export type AnnotationCoords = { readonly kind: 'data' } | { readonly kind: 'rel
 /** xycoords / textcoords per axis: a string sets both (pair false); a (x, y) tuple sets each, as
  *  blended_transform_factory. Only the string 'data' hides an annotation whose xy leaves the axes (_check_xy). */
 export type AnnotationCoordPair = { readonly x: AnnotationCoords; readonly y: AnnotationCoords; readonly pair: boolean };
+/** One end of an ArrowStyle._Curve: nothing, an open head ('<', '>'), a filled head ('<|', '|>'), or a bracket (']', '[', '|'). */
+export type CurveEnd = 'none' | 'open' | 'filled' | 'bracket';
+/** The ArrowStyle classes annotate draws, with their parameters (fractions of the mutation scale). */
+export type ArrowStyle =
+  | {
+    readonly kind: 'curve'; readonly name: string; readonly begin: CurveEnd; readonly end: CurveEnd;
+    readonly headLength: number; readonly headWidth: number;
+    readonly widthA: number; readonly widthB: number; readonly lengthA: number; readonly lengthB: number;
+    /** scaleA / scaleB in px; none is the mutation size */
+    readonly scaleA: Option<number>; readonly scaleB: Option<number>;
+  }
+  | { readonly kind: 'simple'; readonly headLength: number; readonly headWidth: number; readonly tailWidth: number }
+  | { readonly kind: 'fancy'; readonly headLength: number; readonly headWidth: number; readonly tailWidth: number }
+  | { readonly kind: 'wedge'; readonly tailWidth: number; readonly shrinkFactor: number };
+/**
+ * annotate's arrowprops. Without an 'arrowstyle' matplotlib simulates the YAArrow (ArrowStyle.Simple sized by
+ * width / headwidth / headlength in pt, shrink a fraction); with one it is a FancyArrowPatch of that style along
+ * ConnectionStyle.Arc3(rad), starting at relpos of the text box, shrunk by shrinkA / shrinkB pt.
+ */
+export type AnnotationArrow =
+  | {
+    readonly kind: 'yaarrow'; readonly face: Paint; readonly edge: Paint; readonly linewidthPt: number;
+    readonly widthPt: number; readonly headLengthPt: number; readonly headWidthPt: number; readonly shrink: number;
+  }
+  | {
+    readonly kind: 'styled'; readonly face: Paint; readonly edge: Paint; readonly linewidthPt: number;
+    readonly style: ArrowStyle; readonly rad: number; readonly relpos: readonly [number, number];
+    readonly shrinkAPt: number; readonly shrinkBPt: number;
+    /** mutation_scale in pt; none is the annotation's font size */
+    readonly mutationPt: Option<number>;
+  };
 export type AnnotationArtist = {
   readonly kind: 'annotation';
   readonly x: number; readonly y: number; readonly xycoords: AnnotationCoordPair;
   readonly tx: number; readonly ty: number; readonly textcoords: AnnotationCoordPair;
   readonly text: string; readonly sizePt: number; readonly weight: number; readonly color: Rgb; readonly ha: HAlign; readonly va: VAlign;
-  /** arrowprops without an arrowstyle (FancyArrowPatch + ArrowStyle.Simple); none when arrowprops is absent */
-  readonly arrow: Option<{
-    readonly face: Rgb; readonly edge: Rgb; readonly linewidthPt: number;
-    readonly widthPt: number; readonly headLengthPt: number; readonly headWidthPt: number; readonly shrink: number;
-  }>;
+  /** the FancyArrowPatch arrowprops build; none when arrowprops is absent */
+  readonly arrow: Option<AnnotationArrow>;
   readonly clip: boolean;
 };
 /** axvspan/axhspan bands: oriented spans that may use axes-fraction extents on the non-data axis. */

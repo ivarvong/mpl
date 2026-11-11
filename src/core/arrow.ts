@@ -1,10 +1,12 @@
-// Annotation arrows without an arrowstyle: matplotlib 3.11.2 Annotation.update_positions ("approximately
-// simulate the YAArrow") feeding FancyArrowPatch with ConnectionStyle.Arc3(rad=0) and ArrowStyle.Simple.
+// Annotation arrows: matplotlib 3.11.2 Annotation.update_positions feeding FancyArrowPatch. Without an arrowstyle
+// it "approximately simulates the YAArrow" with ConnectionStyle.Arc3(rad=0) and ArrowStyle.Simple; with one it is
+// that ArrowStyle (the _Curve family, Simple, Fancy, Wedge) along Arc3(rad).
 // Ported from text.py, patches.py and bezier.py so the vertices match to the last bit (pure).
 // All coordinates are display px with y UP, as matplotlib computes them; the caller flips for Agg.
 
-import type { Option } from './types.ts';
+import type { ArrowStyle, CurveEnd, Option } from './types.ts';
 import { assertNever, none, some } from './types.ts';
+import { lookup } from './std.ts';
 
 export type Pt = readonly [number, number];
 type Quad = readonly [Pt, Pt, Pt];
@@ -127,32 +129,34 @@ function parallels(q: Quad, width: number): readonly [Quad, Quad] {
 const controlPoints = (c1: Pt, mm: Pt, c2: Pt): Quad =>
   [c1, [0.5 * (4 * mm[0] - (c1[0] + c2[0])), 0.5 * (4 * mm[1] - (c1[1] + c2[1]))], c2];
 
-/** bezier.make_wedged_bezier2(w1=1, wm=0.5, w2=0): (left, right) */
-function wedged(q: Quad, width: number): readonly [Quad, Quad] {
+/** bezier.make_wedged_bezier2: (left, right) */
+function wedged(q: Quad, width: number, w1: number, wm: number, w2: number): readonly [Quad, Quad] {
   const [[c1x, c1y], [cmx, cmy], [c3x, c3y]] = q;
   const cs1 = cosSin(c1x, c1y, cmx, cmy), cs2 = cosSin(cmx, cmy, c3x, c3y);
-  const [l1, r1] = normalPoints(c1x, c1y, cs1[0], cs1[1], width * 1);
-  const [l3, r3] = normalPoints(c3x, c3y, cs2[0], cs2[1], width * 0);
+  const [l1, r1] = normalPoints(c1x, c1y, cs1[0], cs1[1], width * w1);
+  const [l3, r3] = normalPoints(c3x, c3y, cs2[0], cs2[1], width * w2);
   const c12x = (c1x + cmx) * 0.5, c12y = (c1y + cmy) * 0.5, c23x = (cmx + c3x) * 0.5, c23y = (cmy + c3y) * 0.5;
   const c123x = (c12x + c23x) * 0.5, c123y = (c12y + c23y) * 0.5;
   const cs123 = cosSin(c12x, c12y, c23x, c23y);
-  const [lm, rm] = normalPoints(c123x, c123y, cs123[0], cs123[1], width * 0.5);
+  const [lm, rm] = normalPoints(c123x, c123y, cs123[0], cs123[1], width * wm);
   return [controlPoints(l1, lm, l3), controlPoints(r1, rm, r3)];
 }
+
+/** patches._point_along_a_line: the point on (x0, y0)-(x1, y1) at distance d from (x0, y0) */
+const pointAlong = (p0: Pt, p1: Pt, d: number): Pt => {
+  const dx = p0[0] - p1[0], dy = p0[1] - p1[1], ff = d / (dx * dx + dy * dy) ** 0.5;
+  return [p0[0] - ff * dx, p0[1] - ff * dy];
+};
 
 /** ArrowStyle.Simple.transmute */
 function simple(q: Quad, mutation: number, headLength: number, headWidth: number, tailWidth: number): readonly ArrowSeg[] {
   const [, p1, p2] = q;
   const hl = headLength * mutation;
   const split = splitAt(q, insideCircle(p2[0], p2[1], hl));
-  const along = (): Pt => {   // _point_along_a_line(x2, y2, x1, y1, head_length)
-    const dx = p2[0] - p1[0], dy = p2[1] - p1[1], ff = hl / (dx * dx + dy * dy) ** 0.5;
-    return [p2[0] - ff * dx, p2[1] - ff * dy];
-  };
   const arrowIn: Quad = split.kind === 'none'
-    ? ((a: Pt): Quad => [a, [0.5 * (a[0] + p2[0]), 0.5 * (a[1] + p2[1])], p2])(along())
+    ? ((a: Pt): Quad => [a, [0.5 * (a[0] + p2[0]), 0.5 * (a[1] + p2[1])], p2])(pointAlong(p2, p1, hl))
     : split.value[1];
-  const [hl0, hr0] = wedged(arrowIn, (headWidth * mutation) / 2);
+  const [hl0, hr0] = wedged(arrowIn, (headWidth * mutation) / 2, 1, 0.5, 0);
   if (split.kind === 'none') {
     return [{ kind: 'M', p: hr0[0] }, { kind: 'Q', c: hr0[1], p: hr0[2] }, { kind: 'Q', c: hl0[1], p: hl0[0] }, { kind: 'Z' }];
   }
@@ -217,4 +221,217 @@ export function arrowExtents(path: readonly ArrowSeg[]): Box {
     }
   }
   return { x0, y0, x1, y1 };
+}
+
+// ---- annotate(arrowprops={'arrowstyle': ...}): FancyArrowPatch with an explicit ArrowStyle ----
+
+/** An arrowstyle or connectionstyle matplotlib has that this port does not draw (or does not know). */
+export class UnsupportedArrowStyleError extends Error {
+  readonly style: string;
+  constructor(style: string, detail: string) {
+    super(`UnsupportedArrowStyleError: ${JSON.stringify(style)}: ${detail}`);
+    this.name = 'UnsupportedArrowStyleError';
+    this.style = style;
+  }
+}
+
+/** The _Curve family by registered name: the bracket/head ends and the keyword arguments each __init__ takes. */
+const CURVE_FULL = ['head_length', 'head_width', 'widthA', 'widthB', 'lengthA', 'lengthB', 'angleA', 'angleB', 'scaleA', 'scaleB'];
+const CURVES: ReadonlyMap<string, readonly string[]> = new Map([
+  ['-', []], ['<-', CURVE_FULL], ['->', CURVE_FULL], ['<->', CURVE_FULL], ['<|-', CURVE_FULL], ['-|>', CURVE_FULL], ['<|-|>', CURVE_FULL],
+  [']-', ['widthA', 'lengthA', 'angleA']], ['-[', ['widthB', 'lengthB', 'angleB']],
+  [']-[', ['widthA', 'lengthA', 'angleA', 'widthB', 'lengthB', 'angleB']], ['|-|', ['widthA', 'angleA', 'widthB', 'angleB']],
+  [']->', ['widthA', 'lengthA', 'angleA']], ['<-[', ['widthB', 'lengthB', 'angleB']],
+]);
+const PATCH_STYLES: ReadonlyMap<string, readonly string[]> = new Map([
+  ['simple', ['head_length', 'head_width', 'tail_width']], ['fancy', ['head_length', 'head_width', 'tail_width']],
+  ['wedge', ['tail_width', 'shrink_factor']],
+]);
+/** Every arrowstyle name this port draws, in ArrowStyle's registry order. */
+export const ARROW_STYLES: readonly string[] = [...CURVES.keys(), ...PATCH_STYLES.keys()];
+
+/** _Style.__new__: "name,key=value,..." with spaces removed, the name lower-cased and every value a float. */
+function styleArgs(spec: string, what: string): readonly [string, ReadonlyMap<string, number>] {
+  const [head, ...rest] = spec.replaceAll(' ', '').split(',');
+  const args = new Map<string, number>();
+  for (const pair of rest) {
+    const kv = pair.split('=');
+    const v = kv.length === 2 && kv[1] !== '' ? Number(kv[1]) : Number.NaN;
+    if (kv.length !== 2 || Number.isNaN(v)) throw new TypeError(`${what}: incorrect style argument ${JSON.stringify(pair)} in ${JSON.stringify(spec)}`);
+    args.set(kv[0], v);
+  }
+  return [head.toLowerCase(), args];
+}
+
+const END_KINDS: ReadonlyMap<string, CurveEnd> = new Map([
+  ['', 'none'], ['<', 'open'], ['>', 'open'], ['<|', 'filled'], ['|>', 'filled'], [']', 'bracket'], ['[', 'bracket'], ['|', 'bracket'],
+]);
+const endOf = (s: string): CurveEnd => { const e = lookup(END_KINDS, s); return e.kind === 'some' ? e.value : 'none'; };
+
+/**
+ * ArrowStyle(spec): a registered name with optional ",key=value" parameters. An unknown name, or a style this port
+ * does not draw, throws UnsupportedArrowStyleError; a parameter the style's __init__ does not take throws TypeError
+ * as matplotlib does. A rotated bracket (angleA / angleB other than 0) is unsupported.
+ */
+export function parseArrowStyle(spec: string): ArrowStyle {
+  const [name, args] = styleArgs(spec, 'arrowstyle');
+  const curveKeys = lookup(CURVES, name), patchKeys = lookup(PATCH_STYLES, name);
+  const allowed = curveKeys.kind === 'some' ? curveKeys.value : patchKeys.kind === 'some' ? patchKeys.value : [];
+  if (curveKeys.kind === 'none' && patchKeys.kind === 'none') throw new UnsupportedArrowStyleError(spec, `unknown arrowstyle; supported: ${ARROW_STYLES.join(' ')}`);
+  for (const key of args.keys()) {
+    if (!allowed.includes(key)) throw new TypeError(`arrowstyle ${JSON.stringify(name)}: unexpected keyword argument '${key}'`);
+  }
+  const scale = (key: string): Option<number> => lookup(args, key);
+  const get = (key: string, d: number): number => { const v = scale(key); return v.kind === 'some' ? v.value : d; };
+  if (name === 'simple') return { kind: 'simple', headLength: get('head_length', 0.5), headWidth: get('head_width', 0.5), tailWidth: get('tail_width', 0.2) };
+  if (name === 'fancy') return { kind: 'fancy', headLength: get('head_length', 0.4), headWidth: get('head_width', 0.4), tailWidth: get('tail_width', 0.4) };
+  if (name === 'wedge') return { kind: 'wedge', tailWidth: get('tail_width', 0.3), shrinkFactor: get('shrink_factor', 0.5) };
+  for (const a of ['angleA', 'angleB']) {
+    if (get(a, 0) !== 0) throw new UnsupportedArrowStyleError(spec, `${a} (a rotated bracket) is not supported`);
+  }
+  const dash = name.indexOf('-');
+  const bar = name === '|-|';
+  return {
+    kind: 'curve', name, begin: endOf(name.slice(0, dash)), end: endOf(name.slice(dash + 1)),
+    headLength: get('head_length', name === '-' ? 0.2 : 0.4), headWidth: get('head_width', name === '-' ? 0.1 : 0.2),
+    widthA: get('widthA', 1), widthB: get('widthB', 1), lengthA: bar ? 0 : get('lengthA', 0.2), lengthB: bar ? 0 : get('lengthB', 0.2),
+    scaleA: scale('scaleA'), scaleB: scale('scaleB'),
+  };
+}
+
+/** ConnectionStyle(spec): only "arc3" (optionally ",rad=r") is drawn; the result is rad. */
+export function parseConnectionStyle(spec: string): number {
+  const [name, args] = styleArgs(spec, 'connectionstyle');
+  if (name !== 'arc3') throw new UnsupportedArrowStyleError(spec, 'only the arc3 connectionstyle is supported');
+  for (const key of args.keys()) {
+    if (key !== 'rad') throw new TypeError(`connectionstyle "arc3": unexpected keyword argument '${key}'`);
+  }
+  const rad = lookup(args, 'rad');
+  return rad.kind === 'some' ? rad.value : 0;
+}
+
+/** One path of a FancyArrowPatch: `fillable` paths take the facecolor (when it is not transparent). */
+export type ArrowPiece = { readonly segs: readonly ArrowSeg[]; readonly fillable: boolean };
+
+const quadSegs = (q: Quad): readonly ArrowSeg[] => [{ kind: 'M', p: q[0] }, { kind: 'Q', c: q[1], p: q[2] }];
+
+/** ArrowStyle._Curve._get_arrow_wedge: the head's three vertices and the shaft's pad (ddx, ddy). */
+function arrowWedge(x0: number, y0: number, x1: number, y1: number, headDist: number, cos: number, sin: number, linewidth: number): readonly [readonly [Pt, Pt, Pt], Pt] {
+  const dx0 = x0 - x1, dy0 = y0 - y1;
+  const d = Math.hypot(dx0, dy0);
+  const padProjected = (0.5 * linewidth) / sin;
+  const cp = d === 0 ? 1 : d;
+  const ddx = (padProjected * dx0) / cp, ddy = (padProjected * dy0) / cp;
+  const dx = (dx0 / cp) * headDist, dy = (dy0 / cp) * headDist;
+  const dx1 = cos * dx + sin * dy, dy1 = -sin * dx + cos * dy;
+  const dx2 = cos * dx - sin * dy, dy2 = sin * dx + cos * dy;
+  return [[[x1 + ddx + dx1, y1 + ddy + dy1], [x1 + ddx, y1 + ddy], [x1 + ddx + dx2, y1 + ddy + dy2]], [ddx, ddy]];
+}
+
+/** ArrowStyle._Curve._get_bracket (angle 0) */
+function bracket(x0: number, y0: number, x1: number, y1: number, width: number, length: number): readonly ArrowSeg[] {
+  const [cos, sin] = cosSin(x1, y1, x0, y0);
+  const [a, b] = normalPoints(x0, y0, cos, sin, width);
+  const dx = length * cos, dy = length * sin;
+  return [{ kind: 'M', p: [a[0] + dx, a[1] + dy] }, { kind: 'L', p: a }, { kind: 'L', p: b }, { kind: 'L', p: [b[0] + dx, b[1] + dy] }];
+}
+
+const isHead = (end: CurveEnd): boolean => end === 'open' || end === 'filled';
+/** A _Curve head: open (M L L) or, for '<|' / '|>', closed and fillable. */
+const headPiece = (v: readonly [Pt, Pt, Pt], filled: boolean): ArrowPiece => ({
+  segs: [{ kind: 'M', p: v[0] }, { kind: 'L', p: v[1] }, { kind: 'L', p: v[2] }, ...(filled ? [{ kind: 'Z' } as const] : [])],
+  fillable: filled,
+});
+
+/** ArrowStyle._Curve.transmute on an Arc3 quadratic: the shaft, then the start's head or bracket, then the end's. */
+function curve(st: Extract<ArrowStyle, { kind: 'curve' }>, q: Quad, mutation: number, linewidth: number): readonly ArrowPiece[] {
+  const hl = st.headLength * mutation, hw = st.headWidth * mutation;
+  const headDist = Math.hypot(hl, hw);
+  const cos = hl / headDist, sin = hw / headDist;
+  const scaleA = st.scaleA.kind === 'some' ? st.scaleA.value : mutation;
+  const scaleB = st.scaleB.kind === 'some' ? st.scaleB.value : mutation;
+  const [[x0, y0], [x1, y1], [x3, y3]] = q;
+  const x2 = x1, y2 = y1;   // path.vertices[-2] of a three-vertex path is the control point
+  const hasBegin = isHead(st.begin) && !(x0 === x1 && y0 === y1);
+  const hasEnd = isHead(st.end) && !(x2 === x3 && y2 === y3);
+  const wA = hasBegin ? some(arrowWedge(x1, y1, x0, y0, headDist, cos, sin, linewidth)) : none;
+  const wB = hasEnd ? some(arrowWedge(x2, y2, x3, y3, headDist, cos, sin, linewidth)) : none;
+  const [ddxA, ddyA] = wA.kind === 'some' ? wA.value[1] : [0, 0];
+  const [ddxB, ddyB] = wB.kind === 'some' ? wB.value[1] : [0, 0];
+  const shaft: ArrowPiece = { segs: quadSegs([[x0 + ddxA, y0 + ddyA], [x1, y1], [x3 + ddxB, y3 + ddyB]]), fillable: false };
+  const begin: readonly ArrowPiece[] = wA.kind === 'some' ? [headPiece(wA.value[0], st.begin === 'filled')]
+    : st.begin === 'bracket' ? [{ segs: bracket(x0, y0, x1, y1, st.widthA * scaleA, st.lengthA * scaleA), fillable: false }] : [];
+  const end: readonly ArrowPiece[] = wB.kind === 'some' ? [headPiece(wB.value[0], st.end === 'filled')]
+    : st.end === 'bracket' ? [{ segs: bracket(x3, y3, x2, y2, st.widthB * scaleB, st.lengthB * scaleB), fillable: false }] : [];
+  return [shaft, ...begin, ...end];
+}
+
+/** split_bezier_intersecting_with_closedpath where matplotlib lets NonIntersectingPathException escape draw(). */
+function mustSplit(q: Quad, inside: Inside, what: string): readonly [Quad, Quad] {
+  const s = splitAt(q, inside);
+  if (s.kind === 'none') throw new RangeError(`arrowstyle "fancy": the arrow is too short for its ${what} (matplotlib raises NonIntersectingPathException)`);
+  return s.value;
+}
+
+/** ArrowStyle.Fancy.transmute */
+function fancy(q: Quad, mutation: number, headLength: number, headWidth: number, tailWidth: number): readonly ArrowSeg[] {
+  const [, p1, p2] = q;
+  const hl = headLength * mutation;
+  const split = splitAt(q, insideCircle(p2[0], p2[1], hl));
+  const p0: Pt = split.kind === 'none' ? pointAlong(p2, p1, hl) : q[0];
+  const arrowPath: Quad = split.kind === 'none' ? [p0, [0.5 * (p0[0] + p2[0]), 0.5 * (p0[1] + p2[1])], p2] : q;
+  const pathHead = split.kind === 'none' ? arrowPath : split.value[1];
+  const pathTail = mustSplit(arrowPath, insideCircle(p2[0], p2[1], hl * 0.8), 'head')[0];
+  const [headL, headR] = wedged(pathHead, (headWidth * mutation) / 2, 1, 0.6, 0);
+  const tw = tailWidth * mutation;
+  const [tailL, tailR] = wedged(pathTail, tw * 0.5, 1, 0.6, 0.3);
+  const tailStart = mustSplit(arrowPath, insideCircle(p0[0], p0[1], tw * 0.3), 'tail')[0][2];
+  return [
+    { kind: 'M', p: tailStart }, { kind: 'L', p: tailR[0] }, { kind: 'Q', c: tailR[1], p: tailR[2] },
+    { kind: 'L', p: headR[0] }, { kind: 'Q', c: headR[1], p: headR[2] }, { kind: 'Q', c: headL[1], p: headL[0] },
+    { kind: 'L', p: tailL[2] }, { kind: 'Q', c: tailL[1], p: tailL[0] }, { kind: 'L', p: tailStart }, { kind: 'Z' },
+  ];
+}
+
+/** ArrowStyle.Wedge.transmute */
+function wedge(q: Quad, mutation: number, tailWidth: number, shrinkFactor: number): readonly ArrowSeg[] {
+  const [bPlus, bMinus] = wedged(q, (tailWidth * mutation) / 2, 1, shrinkFactor, 0);
+  return [
+    { kind: 'M', p: bPlus[0] }, { kind: 'Q', c: bPlus[1], p: bPlus[2] },
+    { kind: 'L', p: bMinus[2] }, { kind: 'Q', c: bMinus[1], p: bMinus[0] }, { kind: 'Z' },
+  ];
+}
+
+export type StyledArrowSpec = {
+  readonly style: ArrowStyle; readonly rad: number; readonly relpos: Pt;
+  readonly shrinkAPt: number; readonly shrinkBPt: number; readonly mutationPt: number; readonly linewidthPt: number;
+};
+
+/**
+ * The FancyArrowPatch paths for annotate(..., arrowprops={'arrowstyle': ...}), display px y-up: from relpos of the
+ * text's window extent `bbox` to `xy` along Arc3(rad), clipped by the padded text box, shrunk by shrinkA / shrinkB,
+ * then the style's transmute at mutation_scale * dpi_cor. `k` is points_to_pixels(1).
+ */
+export function styledArrowPaths(bbox: Box, xy: Pt, hasText: boolean, spec: StyledArrowSpec, k: number): readonly ArrowPiece[] {
+  const w = bbox.x1 - bbox.x0, h = bbox.y1 - bbox.y0;
+  const [xa, ya]: Pt = [bbox.x0 + w * spec.relpos[0], bbox.y0 + h * spec.relpos[1]];
+  const [xb, yb] = xy;
+  // ConnectionStyle.Arc3.connect
+  const x12 = (xa + xb) / 2, y12 = (ya + yb) / 2, dx = xb - xa, dy = yb - ya;
+  const q0: Quad = [[xa, ya], [x12 + spec.rad * dy, y12 - spec.rad * dx], [xb, yb]];
+  const pad = 4 * k;
+  const rx0 = bbox.x0 - pad / 2, ry0 = bbox.y0 - pad / 2, rx1 = rx0 + (w + pad), ry1 = ry0 + (h + pad);
+  const inA: Option<Inside> = hasText ? some(([px, py]: Pt) => px >= rx0 && px <= rx1 && py >= ry0 && py <= ry1) : none;
+  const q1 = clip(q0, inA, none);
+  const sa = spec.shrinkAPt * k, sb = spec.shrinkBPt * k;
+  const q2 = clip(q1, sa !== 0 ? some(insideCircle(q1[0][0], q1[0][1], sa)) : none, sb !== 0 ? some(insideCircle(q1[2][0], q1[2][1], sb)) : none);
+  const ms = spec.mutationPt * k;
+  const st = spec.style;
+  switch (st.kind) {
+    case 'curve': return curve(st, q2, ms, spec.linewidthPt * k);
+    case 'simple': return [{ segs: simple(q2, ms, st.headLength, st.headWidth, st.tailWidth), fillable: true }];
+    case 'fancy': return [{ segs: fancy(q2, ms, st.headLength, st.headWidth, st.tailWidth), fillable: true }];
+    case 'wedge': return [{ segs: wedge(q2, ms, st.tailWidth, st.shrinkFactor), fillable: true }];
+    default: return assertNever(st);
+  }
 }
