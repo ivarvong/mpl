@@ -132,7 +132,7 @@ Keyword arguments (unknown keys throw): `bottom`, `rotation`, `ha`, `which`
 
 ### `Figure.tight_layout(kwargs?)`
 
-tight_layout({ pad = 1.08, h_pad, w_pad, rect }) — _tight_layout.get_tight_layout_figure: lay out now, measure each subplot cell's tight bbox (an Axes and its twins), then subplots_adjust margins and wspace/hspace so the decorations fit with `pad` (h_pad/w_pad between cells) font sizes to spare. As in matplotlib it runs once, at call time: call it after the plot is complete.
+tight_layout({ pad = 1.08, h_pad, w_pad, rect }) — _tight_layout.get_tight_layout_figure: lay out now, measure each subplot cell's tight bbox (an Axes and its twins), then subplots_adjust margins and wspace/hspace so the decorations fit with `pad` (h_pad/w_pad between cells) font sizes to spare. A colorbar made for one Axes joins that Axes' cell (their topmost SubplotSpec), so it works in a grid. Axes with no SubplotSpec (a colorbar for a list of Axes) or on a gridspec_kw-adjusted GridSpec are left where they are, with matplotlib's warning. As in matplotlib it runs once, at call time: call it after the plot is complete.
 
 Keyword arguments (unknown keys throw): `pad`, `h_pad`, `w_pad`, `rect`
 
