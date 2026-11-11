@@ -88,8 +88,8 @@ to add. It never draws a different face instead. The face table and details are 
 Text uses DejaVu Sans/Serif or Inter (`scripts/gen_fonts.py` bakes them).
 - DejaVu carries ASCII plus Latin-1, Latin Extended-A, Greek letters, general punctuation, super/subscripts, currency,
   arrows, math operators, box drawing, block elements, geometric shapes and ✓/✗.
-- Inter carries ASCII and a few Latin-1 signs (− × µ ² ³ √ ° ± ·), plus General Punctuation, Arrows, Geometric
-  Shapes and the check marks, as far as Inter v4.0 maps them (■ ● ‒ ▲ ✓ …). Each further block costs every Inter
+- Inter carries ASCII and a few Latin-1 signs (− × µ ² ³ √ ° ± ·), the math signs ≥ ≤ ∞ ≈ ≠, plus General
+  Punctuation, Arrows, Geometric Shapes and the check marks, as far as Inter v4.0 maps them (■ ● ‒ ▲ ✓ …). Each further block costs every Inter
   module its outlines and kerning: Latin-1 letters alone would add 50 KB per face.
 - Font fallback works as in matplotlib 3.11: each `font.family` entry resolves to one font (`'sans-serif'` to the first
   `font.sans-serif` name shipped), and a character the first font lacks comes from the next entry that has it.
