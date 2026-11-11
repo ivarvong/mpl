@@ -28,7 +28,7 @@ def date(s): return {"$date": s}
 def decode(a):
     """JSON spec -> matplotlib args. Tags (at any depth):
     {"$dates": [...]} / {"$date": s} → datetime64; {"$float": "nan"|"inf"|"-inf"} → float;
-    {"$uint8rgb": rows} → uint8 ndarray; {"$arange": [n, step]} → [i * step for i < n] (a dense x axis, stored small); {"$array": rows} → float ndarray (imshow only —
+    {"$uint8rgb": rows} → uint8 ndarray; {"$tuple": items} → tuple (a dash linestyle such as (0, [1, 2])); {"$arange": [n, step]} → [i * step for i < n] (a dense x axis, stored small); {"$array": rows} → float ndarray (imshow only —
     a bare list-of-lists must stay a list so hist treats rows as datasets, not columns).
     """
     if isinstance(a, dict) and "$dates" in a:
@@ -44,6 +44,8 @@ def decode(a):
         return (np.arange(n, dtype=float) * step).tolist()
     if isinstance(a, dict) and "$array" in a:
         return np.asarray(decode(a["$array"]), dtype=float)
+    if isinstance(a, dict) and "$tuple" in a:
+        return tuple(decode(v) for v in a["$tuple"])
     if isinstance(a, list):
         return [decode(v) for v in a]
     return a
@@ -173,6 +175,29 @@ ANN = [
 ]
 case("annotate_coords_mixed", ("plot", [x, sx]), *ANN)
 case("annotate_coords_dpi", ("$rc", [], {"figure.dpi": 72, "figure.figsize": [5.0, 3.5]}), ("plot", [x, sx]), *ANN)
+
+# Issue #68: (offset, [on, off, ...]) dash tuples wherever a linestyle goes, scaled by linewidth (lines.scale_dashes)
+def T(off, seq): return {"$tuple": [off, seq]}
+NONUNIFORM = T(0, [1, 2, 4, 2])
+case("linestyle_dash_tuples",
+     *[("plot", [x, L(np.asarray(sx) + 2.6 * i)], {"linestyle": ls, "linewidth": lw, "label": f"{tuple(ls['$tuple'])} lw {lw}"})
+       for i, (ls, lw) in enumerate([(NONUNIFORM, 1), (NONUNIFORM, 2.5), (T(5, [6, 2]), 1.5), (T(-3, [1, 2, 4, 2]), 1.5),
+                                     (T(0, [5]), 2), (T(0, [1, 2, 4]), 2), (T(0, None), 6), (T(0, []), 6), (T(17.5, [3, 1.5, 0.5, 1.5]), 1)])],
+     ("legend", [], {"loc": "upper left", "fontsize": 7, "ncols": 3}))
+case("linestyle_dash_tuples_reflines", ("plot", [x, sx], {"linestyle": NONUNIFORM}),
+     ("axhline", [0.5], {"linestyle": T(2, [8, 3]), "linewidth": 2, "color": "C1", "label": "axhline"}),
+     ("axvline", [3.3], {"linestyle": T(0, [0.5, 1.5]), "linewidth": 3, "color": "C2", "label": "axvline"}),
+     ("grid", [True], {"linestyle": T(0, [4, 1, 1, 1]), "linewidth": 0.8}),
+     ("legend", [], {"loc": "lower left"}))
+case("linestyle_dash_tuples_collections",
+     ("hlines", [[0.2, 0.5, 0.8], 0.1, 0.9], {"linestyles": NONUNIFORM, "linewidth": 2, "label": "hlines"}),
+     ("vlines", [[0.3, 0.6], 0.05, 0.95], {"linestyles": [T(0, [3, 1]), T(1.5, [1, 1, 3, 1])], "colors": ["C1", "C2"], "label": "vlines"}),
+     ("errorbar", [[0.15, 0.45, 0.75], [0.3, 0.6, 0.4]], {"yerr": 0.08, "fmt": "o", "elinestyle": T(0, [2, 1]), "capsize": 3, "label": "errorbar"}),
+     ("legend", [], {"loc": "upper right"}))
+case("linestyle_dash_tuples_unscaled", ("$rc", [], {"lines.scale_dashes": False, "figure.dpi": 72}),
+     ("plot", [x, sx], {"linestyle": NONUNIFORM, "linewidth": 3, "label": "unscaled"}),
+     ("plot", [x, cx], {"linestyle": T(4, [6, 2]), "linewidth": 1, "label": "offset 4"}),
+     ("legend", []))
 
 # Issue #69: arrowprops arrowstyle (FancyArrowPatch: the _Curve family, brackets, simple / fancy / wedge), with
 # connectionstyle arc3 rad, relpos, shrinkA / shrinkB, mutation_scale, linewidth, alpha and the colour precedence

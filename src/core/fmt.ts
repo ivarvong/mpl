@@ -2,8 +2,9 @@
 // Port of matplotlib.axes._base._process_plot_format.
 import { MARKERS, MARKER_NAMES } from './data/markers.ts';
 import { parsePaint } from './colors.ts';
-import type { LineStyleName, MarkerName, Option, Result } from './types.ts';
+import type { LineStyle, LineStyleName, MarkerName, Option, Result } from './types.ts';
 import { err, none, ok, some } from './types.ts';
+import { isNullish } from './std.ts';
 
 /** What a fmt string says about shape. 'default' = neither given (rc decides); naming one implies the other is off. */
 export type FmtShape =
@@ -56,8 +57,20 @@ export function parseFmt(fmt: string): Result<Fmt> {
 }
 
 /** '-', 'solid', '--', 'dashed', ... ; 'None' / 'none' / '' / ' ' parse to none. */
-export function parseLinestyle(v: unknown): Result<Option<LineStyleName>> {
-  if (typeof v !== 'string') return err(`linestyle must be a string, got ${typeof v}`);
+/** Python's float modulo (the result takes the divisor's sign), as _get_dash_pattern's `offset %= dsum`. */
+function pyMod(x: number, d: number): number {
+  const m = x % d;
+  return m !== 0 ? ((d < 0) !== (m < 0) ? m + d : m) : 0;
+}
+
+/**
+ * A linestyle: a name ('-', '--', '-.', ':' or their long forms; 'None', 'none', '' and ' ' draw nothing) or an
+ * [offset, [on, off, ...]] dash tuple in pt, as lines._get_dash_pattern and GraphicsContextBase.set_dashes accept
+ * it: the offset wraps into one cycle, a null or empty sequence is solid, values are non-negative and one positive.
+ */
+export function parseLinestyle(v: unknown): Result<Option<LineStyle>> {
+  if (Array.isArray(v)) { const t = parseDashTuple(v); return t.ok ? ok(some(t.value)) : t; }
+  if (typeof v !== 'string') return err(`linestyle must be a string or an [offset, [on, off, ...]] dash tuple, got ${typeof v}`);
   switch (v) {
     case '-': case 'solid': return ok(some('solid'));
     case '--': case 'dashed': return ok(some('dashed'));
@@ -66,6 +79,25 @@ export function parseLinestyle(v: unknown): Result<Option<LineStyleName>> {
     case 'None': case 'none': case '': case ' ': return ok(none);
     default: return err(`unknown linestyle ${JSON.stringify(v)}`);
   }
+}
+
+function parseDashTuple(v: readonly unknown[]): Result<LineStyle> {
+  const shown = JSON.stringify(v);
+  if (v.length !== 2) return err(`unrecognized linestyle ${shown}: a dash tuple is [offset, [on, off, ...]]`);
+  const [offset, seq] = v;
+  if (typeof offset !== 'number' || !Number.isFinite(offset)) return err(`unrecognized linestyle ${shown}: the offset must be a finite number`);
+  if (isNullish(seq)) return ok({ kind: 'dashes', offset, onoff: none });
+  if (!Array.isArray(seq)) return err(`unrecognized linestyle ${shown}: the on-off sequence must be an array of numbers`);
+  const onoff: number[] = [];
+  for (const d of seq) {
+    if (typeof d !== 'number' || !Number.isFinite(d)) return err(`unrecognized linestyle ${shown}: the on-off sequence must be finite numbers`);
+    onoff.push(d);
+  }
+  if (onoff.length === 0) return ok({ kind: 'dashes', offset, onoff: none });
+  if (onoff.some((d) => d < 0)) return err(`linestyle ${shown}: all values in the dash list must be non-negative`);
+  if (!onoff.some((d) => d > 0)) return err(`linestyle ${shown}: at least one value in the dash list must be positive`);
+  const dsum = onoff.reduce((a, b) => a + b, 0);
+  return ok({ kind: 'dashes', offset: pyMod(offset, dsum), onoff: some(onoff) });
 }
 
 /** Marker codes matplotlib accepts as integers (CARETLEFTBASE..CARETDOWNBASE). */

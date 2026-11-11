@@ -34,7 +34,7 @@ import type {
   AnnotationArrow,
   Artist, Aspect, AxesMeta, AxesTitle, AxesTitles, DateLocatorSpec, SpinePosition, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
   AxLineArtist, AxLineThrough, Decimate, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist, StickyArtist,
-  Cap, LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, TightBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, ImageArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
+  Cap, LineArtist, LineMarkers, LineStroke, LineStyle, MarkerName, Option, Orientation, Paint, Position, TightBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, ImageArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
 } from './core/types.ts';
 import { assertNever, err, none, ok, some, unwrap } from './core/types.ts';
 import { iolistToString } from './render/iolist.ts';
@@ -382,7 +382,7 @@ const propsDict = (name: string) => (v: unknown): Result<Kwargs> => {
 
 type MergedLine = { readonly stroke: LineStroke; readonly face: Option<Paint> };
 /** Merge boxplot.*props rc with a caller props dict. patchArtist maps color → edge and allows facecolor. */
-function mergeLineProps(rc: { readonly color: Rgb; readonly linewidthPt: number; readonly style: LineStyleName }, props: Kwargs, patchArtist: boolean, cycle: readonly Rgb[]): MergedLine {
+function mergeLineProps(rc: { readonly color: Rgb; readonly linewidthPt: number; readonly style: LineStyle }, props: Kwargs, patchArtist: boolean, cycle: readonly Rgb[]): MergedLine {
   const kw = new KwReader(props, 'boxplot props');
   // For patchArtist, color is an alias of edgecolor (matplotlib pops color → edgecolor)
   let edge: Rgb = rc.color;
@@ -423,7 +423,7 @@ function mergeMeanProps(
   const color = kw.read(['color', 'c'], (v) => parseRgb(v, cycle), () => rc.color);
   const lw = kw.read(['linewidth', 'lw'], num('linewidth'), () => rc.linewidthPt);
   const styleR = kw.get(['linestyle', 'ls']);
-  const style: Option<LineStyleName> = styleR.kind === 'some'
+  const style: Option<LineStyle> = styleR.kind === 'some'
     ? unwrap(parseLinestyle(styleR.value))
     : (meanline ? some(rc.style) : none);
   // when meanline, default no marker unless explicitly set; when !meanline, default marker and no line
@@ -591,7 +591,7 @@ function parseSpinePosition(p: unknown): Result<SpinePosition> {
   }
 }
 
-function shapeDefaults(shape: FmtShape, theme: Theme): { readonly line: Option<LineStyleName>; readonly marker: Option<MarkerName> } {
+function shapeDefaults(shape: FmtShape, theme: Theme): { readonly line: Option<LineStyle>; readonly marker: Option<MarkerName> } {
   switch (shape.kind) {
     case 'default': return { line: theme.lines.style, marker: theme.lines.marker };
     case 'line': return { line: some(shape.line), marker: none };
@@ -875,14 +875,14 @@ export class Axes {
       return ok(out);
     };
     const colors0 = kw.read(['colors', 'color', 'c'], rgbs, (): readonly Rgb[] => [this.theme.lines.color]);
-    const styles = kw.read(['linestyles', 'linestyle', 'ls'], (v): Result<readonly LineStyleName[]> => {
+    const styles = kw.read(['linestyles', 'linestyle', 'ls'], (v): Result<readonly LineStyle[]> => {
       const one = parseLinestyle(v);
       if (one.ok) return one.value.kind === 'some' ? ok([one.value.value]) : err('linestyles: none is not supported');
       if (!Array.isArray(v) || v.length === 0) return err('linestyles must be a line style or a list of them');
-      const out: LineStyleName[] = [];
+      const out: LineStyle[] = [];
       for (const s of v) { const r = parseLinestyle(s); if (!r.ok) return r; if (r.value.kind === 'some') out.push(r.value.value); }
       return out.length === v.length ? ok(out) : err('linestyles: none is not supported');
-    }, (): readonly LineStyleName[] => ['solid']);
+    }, (): readonly LineStyle[] => ['solid']);
     const widthPt = kw.read(['linewidths', 'linewidth', 'lw'], num('linewidth'), () => this.theme.lines.widthPt);
     const alpha = kw.read(['alpha'], alphaOf, (): Option<number> => none);
     const zorder = kw.read(['zorder'], num('zorder'), () => 2);
@@ -916,7 +916,7 @@ export class Axes {
     const fmt = fmtNone ? NO_FMT : unwrap(parseFmt(fmtS));
     const ecolorK = kw.read(['ecolor'], (v) => mapResult(parseRgb(v, this.theme.axes.cycle), some), (): Option<Rgb> => none);
     const elw = kw.read(['elinewidth'], (v) => (typeof v === 'number' ? ok(some(v)) : err('elinewidth must be a number')), () => this.theme.errorbar.elinewidthPt);
-    const elstyle = kw.read(['elinestyle'], (v) => mapResult(parseLinestyle(v), (s) => s), (): Option<LineStyleName> => none);
+    const elstyle = kw.read(['elinestyle'], (v) => mapResult(parseLinestyle(v), (s) => s), (): Option<LineStyle> => none);
     const capsize = kw.read(['capsize'], num('capsize'), () => this.theme.errorbar.capsizePt);
     const capthick = kw.read(['capthick'], (v) => (typeof v === 'number' ? ok(some(v)) : err('capthick must be a number')), () => this.theme.errorbar.capthickPt);
     const barsabove = kw.read(['barsabove'], bool('barsabove'), () => false);
@@ -941,7 +941,7 @@ export class Axes {
     });
     if (dataLine.kind === 'some') this.artists.push(dataLine.value);
     const barWidth = elw.kind === 'some' ? elw.value : lp.lw.kind === 'some' ? lp.lw.value : this.theme.lines.widthPt;
-    const barStyle: LineStyleName = elstyle.kind === 'some' ? elstyle.value : 'solid';
+    const barStyle: LineStyle = elstyle.kind === 'some' ? elstyle.value : 'solid';
     const capSizePt = capsize > 0 ? 2 * capsize : this.theme.lines.markerSizePt;
     const capMew = lp.mew.kind === 'some' ? lp.mew.value : capthick.kind === 'some' ? capthick.value : this.theme.lines.markerEdgeWidthPt;
     const capEdge: Paint = { kind: 'solid', color: alphaRgb(ecolor) };
@@ -1968,7 +1968,7 @@ export class Axes {
     const which = kw.read(['which'], (v): Result<'major' | 'minor' | 'both'> => (v === 'major' || v === 'minor' || v === 'both' ? ok(v) : err(`grid which must be 'major', 'minor' or 'both'`)), () => 'major' as const);
     const color = kw.read(['color', 'c'], (v) => parseRgb(v, this.theme.axes.cycle).ok ? ok(some(unwrap(parseRgb(v, this.theme.axes.cycle)))) : err(`grid color: ${JSON.stringify(v)} is not a color`), (): Option<Rgb> => none);
     const widthPt = kw.read(['linewidth', 'lw'], (v) => (typeof v === 'number' && v >= 0 ? ok(some(v)) : err('grid linewidth must be a number >= 0')), (): Option<number> => none);
-    const style = kw.read(['linestyle', 'ls'], (v) => { const r = parseLinestyle(v); return r.ok ? ok(some(r.value)) : r; }, (): Option<Option<LineStyleName>> => none);
+    const style = kw.read(['linestyle', 'ls'], (v) => { const r = parseLinestyle(v); return r.ok ? ok(some(r.value)) : r; }, (): Option<Option<LineStyle>> => none);
     const alpha = kw.read(['alpha'], (v) => (typeof v === 'number' && v >= 0 && v <= 1 ? ok(some(v)) : err('grid alpha must be in [0, 1]')), (): Option<number> => none);
     kw.done();
     const styled = color.kind === 'some' || widthPt.kind === 'some' || style.kind === 'some' || alpha.kind === 'some';
