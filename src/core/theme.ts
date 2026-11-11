@@ -6,7 +6,7 @@ import { parseWeight } from './fonts.ts';
 import { parseLinestyle, parseMarker } from './fmt.ts';
 import type { RcLayer, RcValue } from './rc.ts';
 import { lookup } from './std.ts';
-import type { AnchorCode, AxisBelow, Cap, GridWhich, HAlign, Join, LegendLoc, LineStyleName, Option, Paint, Result, Rgb, Theme, TickDirection, TickTheme, WhisRc, BoxplotLineRc, BoxplotMeanRc, BoxplotFlierRc } from './types.ts';
+import type { AnchorCode, AxisBelow, Cap, GridWhich, HAlign, Join, LegendLoc, LineStyleName, Option, Paint, Result, Rgb, Theme, TitleColor, TickDirection, TickTheme, WhisRc, BoxplotLineRc, BoxplotMeanRc, BoxplotFlierRc } from './types.ts';
 import { err, none, ok, some } from './types.ts';
 
 const FONT_SCALES: ReadonlyMap<string, number> = new Map([
@@ -160,7 +160,7 @@ export function parseTheme(rc: RcLayer): Result<Theme> {
   const axesFace = r.paint('axes.facecolor', cycle);
   const axesEdge = r.rgb('axes.edgecolor', cycle);
   const savefig = r.raw('savefig.facecolor');
-  const titleColor = r.raw('axes.titlecolor') === 'auto' ? textColor : r.rgb('axes.titlecolor', cycle);
+  const titleColor: TitleColor = r.raw('axes.titlecolor') === 'auto' ? { kind: 'auto', color: textColor } : { kind: 'set', color: r.rgb('axes.titlecolor', cycle) };
   // svg.fonttype: 'none' -> <text>, 'path' -> glyph outlines; default to 'text' for viewer-laid-out text
   const svgR = lookup(rc, 'svg.fonttype');
   const svgText = svgR.kind === 'some' && typeof svgR.value === 'string' && svgR.value.toLowerCase() === 'path' ? 'glyphs' as const : 'text';

@@ -151,6 +151,12 @@ function artistJson(a: Artist, f: Frame, rp: (v: number) => number, dpi: number)
   return out;
 }
 
+/** The Axes title a sidecar names: the centred one, else the left, else the right ('' when none is set). */
+const axesTitle = (ax: AxesSpec): string => {
+  const T = ax.titles;
+  return T.center.text !== '' ? T.center.text : T.left.text !== '' ? T.left.text : T.right.text;
+};
+
 /** The sidecar of one Axes, as XML-escaped JSON text (it sits inside an SVG <metadata> element). */
 export function axesSidecar(ax: AxesSpec, an: AxesAnnot, dp = 2, dpi = 100): string {
   const f = an.frame, b = f.box;
@@ -159,7 +165,7 @@ export function axesSidecar(ax: AxesSpec, an: AxesAnnot, dp = 2, dpi = 100): str
     v: 1, box: [b.x0, b.yTop, b.x1, b.yBot].map((v) => Math.round(v * 1e4) / 1e4),
     x: axisJson(ax.x, f.xscale, f.xlim, ax.xShare, ax.xlabel), y: axisJson(ax.y, f.yscale, f.ylim, ax.yShare, ax.ylabel),
     ...(ax.role.kind === 'colorbar' ? { cb: 1 } : {}),
-    ...(ax.title === '' ? {} : { ti: ax.title }),
+    ...(axesTitle(ax) === '' ? {} : { ti: axesTitle(ax) }),
     a: ax.artists.map((a) => artistJson(a, f, pxAt(Math.max(0, Math.min(2, dp))), dpi)),
     lg: an.legend.map((e) => [e.artist, px(e.box.x0), px(e.box.y0), px(e.box.x1), px(e.box.y1)]),
   };

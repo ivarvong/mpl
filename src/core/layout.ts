@@ -221,9 +221,11 @@ type AxisOut = { readonly near: readonly TextBox[]; readonly far: readonly TextB
 /** What each decoration occupies, for Axes.get_tightbbox. An empty Text's extent is a point,
  *  which Axis.get_tightbbox drops (Bbox._is_finite), so empty labels take no room. */
 type DecoBoxes = {
-  readonly x: readonly PxBox[]; readonly y: readonly PxBox[]; readonly title: Option<PxBox>;
-  /** display y-up bottoms of the x offset text and xlabel (as `x`), and the title's top, in matplotlib's arithmetic */
-  readonly xUp: readonly UpEdges[]; readonly titleUp: Option<UpEdges>;
+  readonly x: readonly PxBox[]; readonly y: readonly PxBox[];
+  /** display y-up bottoms of the x offset text and xlabel (as `x`), in matplotlib's arithmetic */
+  readonly xUp: readonly UpEdges[];
+  /** each drawn title's box (1 px of its width kept) and its display y-up edges */
+  readonly titles: readonly TightPart[];
 };
 /** x and y: each Axis' offset text and label, drawn with that Axis (its zorder, after its ticks); title: the Axes title (zorder 3). */
 type Decorated = { readonly x: readonly Node[]; readonly y: readonly Node[]; readonly title: readonly Node[]; readonly boxes: DecoBoxes };
@@ -287,18 +289,24 @@ function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: numb
     if (!ax.hiddenLabels.y) yBoxes.push(...optBox(put(yt.offset, b.x0, b.yTop - pad, { kind: 'horizontal', ha: 'left', va: 'baseline' }, theme.ytick.labelSizePt, theme.ytick.color)));
     yBoxes.push(...optBox(put(ax.ylabel, left - lp, b.yTop + (b.yBot - b.yTop) / 2, { kind: 'ylabel' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseY));
   }
-  // Agg BboxTransform: x0 + frac*w. (x0+x1)/2 is 1 ulp off when x0+x1 is not dyadic (shifts FreeType 26.6 half-pen).
-  const tx0 = ax.titleLoc === 'left' ? b.x0 : ax.titleLoc === 'right' ? b.x1 : b.x0 + (b.x1 - b.x0) / 2;
-  // Agg flips after ScaledTranslation pad in y-up: H - (bbox.t + pad). yTop - pad is 1 ulp off when t*H is not dyadic.
+  // Axes.get_children: title, _left_title, _right_title (all zorder 3, drawn in that order)
   out = titleOut;
-  const tb = put(ax.title, tx0, f.H - (b.t + A.titlePadPt * k), { kind: 'horizontal', ha: ax.titleLoc, va: 'baseline' }, A.titleSizePt, A.titleColor, ax.titleWeight);
-  // the title's top in display y-up: transAxes + ScaledTranslation(0, pad/72) maps (x, 1) to h·1 + (b + pad/72·dpi)
-  // (moved above top tick labels, it has no exact form here: fall back to the flipped box)
-  const titleUp: Option<UpEdges> = tb.kind !== 'some' ? none
-    : some(xb.far.length > 0 ? { b: f.H - tb.value.y1, t: f.H - tb.value.y0 }
-      : edges(windowExtent(measure(ax.title, A.titleSizePt, dpi, resolveFace(theme.font.families, ax.titleWeight), ax.titleLoc), tx0, b.h * 1.0 + (b.b + (A.titlePadPt / 72) * dpi), ax.titleLoc, 'baseline')));
-  // Axes.get_tightbbox keeps 1 px of a title's width; zero-size boxes (empty titles) drop out
-  return { x: xOut, y: yOut, title: titleOut, boxes: { x: xBoxes, y: yBoxes, title: tb.kind === 'some' ? some(collapseX(tb.value)) : none, xUp, titleUp } };
+  const T = ax.titles;
+  const titleParts = ([['center', T.center], ['left', T.left], ['right', T.right]] as const).flatMap(([loc, t]): TightPart[] => {
+    // Agg BboxTransform: x0 + frac*w. (x0+x1)/2 is 1 ulp off when x0+x1 is not dyadic (shifts FreeType 26.6 half-pen).
+    const tx0 = loc === 'left' ? b.x0 : loc === 'right' ? b.x1 : b.x0 + (b.x1 - b.x0) / 2;
+    // transAxes + ScaledTranslation(0, pad/72): (x, y) maps to h·y + (b + pad/72·dpi). Agg flips after the pad: at the
+    // top (y = 1) H - (bbox.t + pad), since yTop - pad is 1 ulp off when t*H is not dyadic.
+    const yDraw = t.y === 1 ? f.H - (b.t + T.padPt * k) : f.H - (b.h * t.y + (b.b + T.padPt * k));
+    const tb = put(t.text, tx0, yDraw, { kind: 'horizontal', ha: loc, va: 'baseline' }, t.sizePt, t.color, t.weight);
+    if (tb.kind !== 'some') return [];
+    // the title's top in display y-up (moved above top tick labels, it has no exact form here: fall back to the flipped box)
+    const up: UpEdges = xb.far.length > 0 ? { b: f.H - tb.value.y1, t: f.H - tb.value.y0 }
+      : edges(windowExtent(measure(t.text, t.sizePt, dpi, resolveFace(theme.font.families, t.weight), loc), tx0, b.h * t.y + (b.b + (T.padPt / 72) * dpi), loc, 'baseline'));
+    // Axes.get_tightbbox keeps 1 px of a title's width; zero-size boxes (empty titles) drop out
+    return [{ box: collapseX(tb.value), up }];
+  });
+  return { x: xOut, y: yOut, title: titleOut, boxes: { x: xBoxes, y: yBoxes, xUp, titles: titleParts } };
 }
 
 /** Spine.get_window_extent: the spine's path, padded by the ticks it carries (not their labels). */
@@ -509,7 +517,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, dev: Device,
         ...(roles.y.kind === 'shown' ? [
           ...ya.nearBoxes.map((bx, i) => ({ box: bx, up: ya.nearUp[i] })), ...ya.farBoxes.map((bx, i) => ({ box: bx, up: ya.farUp[i] })),
           ...deco.boxes.y.map(flip(H))] : []),
-        ...(deco.boxes.title.kind === 'some' && deco.boxes.titleUp.kind === 'some' ? [{ box: deco.boxes.title.value, up: deco.boxes.titleUp.value }] : []),
+        ...deco.boxes.titles,
         ...spineBoxes(ax, roles, f, k, xt, yt).map(flip(H)),
         ...(legend.kind === 'some' ? [{ box: { x0: legend.value.out.box.x0, x1: legend.value.out.box.x1, y0: H - legend.value.out.box.y1, y1: H - legend.value.out.box.y0 },
                                         up: { b: legend.value.out.box.y0, t: legend.value.out.box.y1 } }] : []),

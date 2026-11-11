@@ -100,6 +100,16 @@ case("api_multiline_real", ("plot", [x, sx]), ("set_title", ["A title\nwith two 
      ("text", [0.05, 0.1, "baseline\nof the last line"], {"transform": AX}),
      ("fig.text", [0.01, 0.98, "fig\ntext"], {"va": "top"}))
 case("api_svg_fonttype_path", ("plot", [x, sx]), ("set_title", ["svg path text"]), ("$rc", [], {"svg.fonttype":"path"}))
+# Issue #67: set_title takes fontsize/fontdict/loc/pad/y, and each loc is its own title
+case("title_loc_fontsize", ("plot", [x, sx]), ("set_title", ["ops / 15 min"], {"fontsize": 10, "loc": "left"}))
+case("title_three_locs", ("plot", [x, sx]), ("set_title", ["left"], {"loc": "left", "color": "C3", "fontsize": "small"}),
+     ("set_title", ["centre"], {"fontdict": {"fontsize": 16, "fontweight": "bold"}}), ("set_title", ["right"], {"loc": "right", "fontweight": "bold", "c": "0.4"}))
+case("title_fontdict_kwarg_wins", ("plot", [x, sx]), ("set_title", ["kwarg wins"], {"fontdict": {"fontsize": 16, "color": "C1"}, "fontsize": 8}))
+case("title_pad_y", ("plot", [x, sx]), ("set_title", ["padded"], {"pad": 20}), ("set_title", ["inside"], {"loc": "right", "y": 0.88, "fontsize": "x-small"}))
+case("title_reset_on_call", ("plot", [x, sx]), ("set_title", ["first"], {"fontsize": 20, "color": "C2", "pad": 12}), ("set_title", ["second"]))
+case("title_grid_tight", ("$subplots", [2, 2]), *[c for i in range(4) for c in [("sca", [i]), ("plot", [x, L(np.sin(np.array(x) + i))]),
+     ("set_title", [f"panel {i}"], {"loc": "left", "fontsize": 9}), ("set_title", [f"n={50 + i}"], {"loc": "right", "fontsize": 9, "color": "0.5"})]],
+     ("fig.tight_layout", []))
 
 # Issue #7 gaps: glyph coverage, grid line kwargs, tight_layout, per-tick label styling
 TREE = "└ ls-refs\n├── src\n│   └── api.ts\n╰─▶ done ✓"
