@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="320" viewBox="0 0 640 320">
+<rect width="640" height="320" fill="#ffffff"/>
+<rect x="80" y="38.4" width="496" height="246.4" fill="#ffffff" stroke="none"/>
+<text x="92.1392" y="307.9771" font-family="Inter" font-size="13.8889" fill="#000000">0.0</text>
+<text x="148.5888" y="307.9771" font-family="Inter" font-size="13.8889" fill="#000000">0.5</text>
+<text x="206.2415" y="307.9771" font-family="Inter" font-size="13.8889" fill="#000000">1.0</text>
+<text x="262.6911" y="307.9771" font-family="Inter" font-size="13.8889" fill="#000000">1.5</text>
+<text x="317.5625" y="307.9771" font-family="Inter" font-size="13.8889" fill="#000000">2.0</text>
+<text x="374.0121" y="307.9771" font-family="Inter" font-size="13.8889" fill="#000000">2.5</text>
+<text x="430.3913" y="307.9771" font-family="Inter" font-size="13.8889" fill="#000000">3.0</text>
+<text x="486.8409" y="307.9771" font-family="Inter" font-size="13.8889" fill="#000000">3.5</text>
+<text x="543.0014" y="307.9771" font-family="Inter" font-size="13.8889" fill="#000000">4.0</text>
+<path d="M102.5455 284.8 L102.5455 289.6611 M158.9091 284.8 L158.9091 289.6611 M215.2727 284.8 L215.2727 289.6611 M271.6364 284.8 L271.6364 289.6611 M328 284.8 L328 289.6611 M384.3636 284.8 L384.3636 289.6611 M440.7273 284.8 L440.7273 289.6611 M497.0909 284.8 L497.0909 289.6611 M553.4545 284.8 L553.4545 289.6611" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<text x="266.5938" y="330.3377" font-family="Inter" font-size="13.8889" fill="#000000">load × 1000 · req/s</text>
+<text x="52.2153" y="259.9638" font-family="Inter" font-size="13.8889" fill="#000000">1.0</text>
+<text x="52.3872" y="209.0547" font-family="Inter" font-size="13.8889" fill="#000000">1.5</text>
+<text x="49.4028" y="158.1456" font-family="Inter" font-size="13.8889" fill="#000000">2.0</text>
+<text x="49.5747" y="107.2365" font-family="Inter" font-size="13.8889" fill="#000000">2.5</text>
+<text x="49.6059" y="56.3274" font-family="Inter" font-size="13.8889" fill="#000000">3.0</text>
+<path d="M80 253.2364 L75.1389 253.2364 M80 202.3273 L75.1389 202.3273 M80 151.4182 L75.1389 151.4182 M80 100.5091 L75.1389 100.5091 M80 49.6 L75.1389 49.6" fill="none" stroke="#000000" stroke-width="1.1111"/>
+<clipPath id="c0"><rect x="80" y="38.4" width="496" height="246.4"/></clipPath>
+<g clip-path="url(#c0)" data-artist="artist/0/line">
+<path d="M102.5455 49.6L215.2727 202.3273L328 131.0545L440.7273 273.6L553.4545 243.0545" fill="none" stroke="#1f77b4" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c1"><rect x="80" y="38.4" width="496" height="246.4"/></clipPath>
+<g clip-path="url(#c1)" data-artist="artist/1/line">
+<path d="M102.5455 253.2364L215.2727 110.6909L328 181.9636L440.7273 59.7818L553.4545 90.3273" fill="none" stroke="#ff7f0e" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+</g>
+<clipPath id="c2"><rect x="80" y="38.4" width="496" height="246.4"/></clipPath>
+<g clip-path="url(#c2)" data-artist="artist/2/line">
+<path d="M80 151.4182L576 151.4182" fill="none" stroke="#808080" stroke-width="2.0833" stroke-linejoin="round" stroke-dasharray="7.7083 3.3333"/>
+</g>
+<path d="M80 284.8 L80 38.4" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M576 284.8 L576 38.4" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M80 284.8 L576 284.8" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<path d="M80 38.4 L576 38.4" fill="none" stroke="#000000" stroke-width="1.1111" stroke-linecap="square"/>
+<text x="213.1953" y="30.0667" font-family="Inter" font-size="16.6667" fill="#000000">Latency ≠ throughput: n → ∞</text>
+<path d="M423.9427 120.7595 L566.2778 120.7595 Q569.0556 120.7595 569.0556 117.9817 L569.0556 48.1222 Q569.0556 45.3444 566.2778 45.3444 L423.9427 45.3444 Q421.1649 45.3444 421.1649 48.1222 L421.1649 117.9817 Q421.1649 120.7595 423.9427 120.7595 Z" fill="#ffffff" fill-opacity="0.8" stroke="#cccccc" stroke-width="1.3889" stroke-opacity="0.8"/>
+<path d="M426.7205 59.4937L440.6094 59.4937L454.4983 59.4937" fill="none" stroke="#1f77b4" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+<text x="465.6094" y="64.3549" font-family="Inter" font-size="13.8889" fill="#000000">p ≤ 0.05</text>
+<path d="M426.7205 83.2432L440.6094 83.2432L454.4983 83.2432" fill="none" stroke="#ff7f0e" stroke-width="2.0833" stroke-linecap="square" stroke-linejoin="round"/>
+<text x="465.6094" y="88.1043" font-family="Inter" font-size="13.8889" fill="#000000">dt ≥ 2 s</text>
+<path d="M426.7205 106.9927L440.6094 106.9927L454.4983 106.9927" fill="none" stroke="#808080" stroke-width="2.0833" stroke-linejoin="round" stroke-dasharray="7.7083 3.3333"/>
+<text x="465.6094" y="111.8538" font-family="Inter" font-size="13.8889" fill="#000000">target ≈ 2 ± 0.1</text>
+</svg>

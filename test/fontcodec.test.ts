@@ -9,16 +9,16 @@ import { encodeFace } from '../scripts/encode_fonts.ts';
 
 // 1. lossless: each face decodes to exactly the JSON scripts/gen_fonts.py baked before the split
 //    (sha256 of JSON.stringify of the original src/core/data/fonts/<name>.ts object, at 3e8352f; the Inter faces re-baked
-//    with General Punctuation, Arrows, Geometric Shapes and check marks)
+//    with General Punctuation, Arrows, Geometric Shapes and check marks, then ≥ ≤ ∞ ≈ ≠ (#71), from Inter v4.0)
 const BAKED_SHA256: Readonly<Record<string, string>> = {
   'dejavu-sans': 'd2f7faa48bc489114a5c98bf79f99956ab13535a7889d60f3e9956dd8116ece5',
   'dejavu-sans-bold': '76c5e15c215b28a5975d19ca08aee47ff1a84f3a78a7f940649c873616072f1a',
   'dejavu-serif': 'dcd708f6cd093db9b3bb19201f40f93e14526ea0f9e5b47dc5c2dc8f82187e06',
   'dejavu-serif-bold': '45d6b481dd91bc044ba89189946fe1661cb7e78e3db934e07e7988b37eecffed',
-  'inter-regular': 'bcba567bc231fa3ec3f600dd4707e50ef47bbb51e250b245ffc053e412662c3a',
-  'inter-medium': 'cdaf7c766878613d476250dc37bf5ba9c3f7647f4d53a3426424ce830b25a213',
-  'inter-semibold': '2a65fbbbe11f7698775e059dd554395e14344778f4648bfe438badc0e9ed424f',
-  'inter-bold': '8f0769124b142027183ea46aaae8e46bf06585bbfcc58d05cfcf0a918b9a9bec',
+  'inter-regular': '9f632f05b11574985dd0cce50515d36fd8f725b0bc6ad5e2a2d6f85c9181db2c',
+  'inter-medium': 'fba7e3cce90887364c957ccdb33a95f96c1c046388a7472890f0d4d8415d4fc7',
+  'inter-semibold': '6c77f5ab4fe46b1f0e2720b136295493317172c824d692aa3837ac4afbeff82c',
+  'inter-bold': '82b0eafcebdc77e7e80e1c7e6193175f26aa4288ff5c989b33b68f08e8392531',
 };
 assert.equal(allFonts.length, FACE_CATALOG.length);
 FACE_CATALOG.forEach((e, i) => {

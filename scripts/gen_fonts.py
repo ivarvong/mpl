@@ -58,8 +58,11 @@ DEJAVU_CHARS = list(dict.fromkeys(CHARS + [chr(c) for a, b in DEJAVU_BLOCKS for 
 # ■ ● ‒ ▲ ✓ … draw from Inter, as matplotlib draws them. The rest of DejaVu's blocks stay out of Inter (each block's
 # outlines and kerning cost every Inter module); such characters fall back along font.family (src/core/text.ts), where
 # matplotlib would draw Inter's own if Inter has them.
+# Of Mathematical Operators, Inter takes only the comparison and approximation signs tick labels and annotations use
+# (≥ ≤ ∞ ≈ ≠; ± × · → − are in CHARS): the whole block would cost every Inter module for glyphs charts rarely draw.
 INTER_BLOCKS = [(0x2000, 0x206F), (0x2190, 0x21FF), (0x25A0, 0x25FF), (0x2713, 0x2718)]
-INTER_CHARS = list(dict.fromkeys(CHARS + [chr(c) for a, b in INTER_BLOCKS for c in range(a, b + 1)]))
+INTER_MATH = list("≥≤∞≈≠")
+INTER_CHARS = list(dict.fromkeys(CHARS + INTER_MATH + [chr(c) for a, b in INTER_BLOCKS for c in range(a, b + 1)]))
 FEATURES = ["ccmp", "locl", "rlig", "calt", "clig", "liga"]
 
 

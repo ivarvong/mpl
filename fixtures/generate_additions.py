@@ -795,6 +795,15 @@ case("font_fallback_chain", ("$rc", [], {"font.family": ["Inter", "DejaVu Sans"]
      ("text", [0.2, 2.5, "x∈A∧B, AV∀To"]))
 case("font_fallback_chain_bold", ("$rc", [], {"font.family": ["Inter", "DejaVu Sans"], "axes.titleweight": "bold"}),
      ("plot", [[0, 1], [0, 1]]), ("set_title", ["Bold ∀ ∈ ■ ‒ fallback"]))
+# Issue #71: Inter also bakes ≥ ≤ ∞ ≈ ≠ (with ± × · → − already there), each face, kerned against Latin as Inter kerns
+MATH = "x ≥ 1, y ≤ 0.05, T ≈ V, A ≠ B, n → ∞, 3 × 4 · 2 ± 1 − 7"
+case("font_inter_math", ("$rc", [], {"font.family": ["Inter"]}),
+     ("plot", [[-2, 0, 2], [1, -1, 2]], {"label": "p ≤ 0.05"}), ("plot", [[-2, 0, 2], [0, 1, -1]], {"label": "d ≥ 2s ≈ ∞"}),
+     ("legend", []), ("set_title", [MATH]), ("set_xlabel", ["T≥V≤A≈Y≠W∞"]), ("set_ylabel", ["Value ≠ 0"]),
+     ("text", [-1.8, 1.5, "≥≤∞≈≠±×·→−"], {"fontweight": "bold"}), ("text", [-1.8, 1.2, "1≈2≠3≤4≥5"], {"fontweight": "medium"}),
+     ("text", [-1.8, 0.9, "AV≈VA ≥ LT≤TL"], {"fontweight": "semibold"}))
+case("font_inter_math_fallback", ("$rc", [], {"font.family": ["Inter", "DejaVu Sans"]}),
+     ("plot", [[0, 1], [0, 1]]), ("set_title", ["Inter ≥ ≤ ∞ ≈ ≠, DejaVu ∀ ∈ ∇"]), ("set_xlabel", ["x≥∀y≈∈z"]))
 
 def run_case(name, calls):
     style = STYLES.get(name)
