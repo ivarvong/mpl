@@ -2107,6 +2107,20 @@ const NO_OVERRIDES: GridSpec['overrides'] = { left: none, bottom: none, right: n
 const sameCell = (a: SubplotSpec, b: SubplotSpec): boolean =>
   a.grid === b.grid && a.rows[0] === b.rows[0] && a.rows[1] === b.rows[1] && a.cols[0] === b.cols[0] && a.cols[1] === b.cols[1];
 
+/** SubplotSpec.get_topmost_subplotspec: up through GridSpecFromSubplotSpec parents. */
+const topmostSpec = (ss: SubplotSpec): SubplotSpec => (ss.grid.parent.kind === 'some' ? topmostSpec(ss.grid.parent.value) : ss);
+/** GridSpec.locally_modified_subplot_params: any of left..hspace set to a truthy value (0 counts as unset, as `if getattr(...)`). */
+const locallyModified = (gs: GridSpec): boolean => {
+  const o = gs.overrides;
+  return [o.left, o.bottom, o.right, o.top, o.wspace, o.hspace].some((v) => v.kind === 'some' && v.value !== 0);
+};
+/** _tight_layout.get_subplotspec_list for one Axes. */
+const tightSubplotSpec = (ss: Option<SubplotSpec>): Option<SubplotSpec> => {
+  if (ss.kind === 'none') return none;
+  const top = topmostSpec(ss.value);
+  return locallyModified(top.grid) ? none : some(top);
+};
+
 /** sharex / sharey after GridSpec.subplots maps a bool to 'all' or 'none'. */
 type Share = 'none' | 'all' | 'row' | 'col';
 const parseShare = (what: string) => (v: unknown): Result<Share> => {
@@ -2707,7 +2721,10 @@ export class Figure {
   /** tight_layout({ pad = 1.08, h_pad, w_pad, rect }) — _tight_layout.get_tight_layout_figure: lay out now,
    *  measure each subplot cell's tight bbox (an Axes and its twins), then subplots_adjust margins and
    *  wspace/hspace so the decorations fit with `pad` (h_pad/w_pad between cells) font sizes to spare.
-   *  As in matplotlib it runs once, at call time: call it after the plot is complete. */
+   *  A colorbar made for one Axes joins that Axes' cell (their topmost SubplotSpec), so it works in a grid.
+   *  Axes with no SubplotSpec (a colorbar for a list of Axes) or on a gridspec_kw-adjusted GridSpec are left
+   *  where they are, with matplotlib's warning. As in matplotlib it runs once, at call time: call it after
+   *  the plot is complete. */
   tight_layout(kwargs: Kwargs = {}): this {
     const kw = new KwReader(kwargs, 'Figure.tight_layout');
     const pad = kw.read(['pad'], num('pad'), () => 1.08);
@@ -2754,7 +2771,9 @@ export class Figure {
     const cells: { readonly cell: SubplotSpec; readonly members: number[] }[] = [];
     let unplaced = false;
     this.axes.forEach((ax, i) => {
-      const ss = ax.subplotspec;
+      // get_subplotspec_list: the topmost SubplotSpec (a make_axes_gridspec colorbar and its parent share their
+      // original cell), none for a free Axes or a GridSpec with locally modified subplot params (gridspec_kw)
+      const ss = tightSubplotSpec(ax.subplotspec);
       if (ss.kind === 'none') { unplaced = true; return; }
       const found = cells.find((c) => sameCell(c.cell, ss.value));
       if (found) found.members.push(i); else cells.push({ cell: ss.value, members: [i] });

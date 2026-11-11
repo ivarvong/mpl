@@ -622,8 +622,8 @@ for st, cmap, vmin, heat in [("pro-dark", "viridis", -20, "magma"), ("pro-mono",
                   ("set_ylim", [0, 2.6]), ("set_xticks", [TICKS]), ("set_xticklabels", [TICKL]), ("set_title", [f"{svc} error rate (%)"])]
     calls += [("sca", [5]),("scatter", [D["size"], D["dur"]], {"c": D["cache"], "cmap": cmap, "vmin": vmin, "vmax": 100, "s": 14, "alpha": 0.9}),
              ("set_title", ["Duration vs payload (colour: cache hit %)"]), ("set_xscale", ["log"]), ("set_xlabel", ["payload (kB)"])]
-    calls += [("fig.suptitle", [f"checkout service \u00b7 last 24 h \u00b7 {st}"]),
-              ("fig.subplots_adjust", [], {"left": 0.045, "right": 0.975, "bottom": 0.07, "top": 0.89, "wspace": 0.3, "hspace": 0.42})]
+    # issue #72: tight_layout handles the colorbar in the grid, so no hand-tuned subplots_adjust
+    calls += [("fig.suptitle", [f"checkout service \u00b7 last 24 h \u00b7 {st}"]), ("fig.tight_layout", [])]
     styled(st, f"theme_{st.replace('-', '_')}_dashboard", *calls)
 # marker paths at full precision: a 6-digit unit circle flattens differently, moving antialiased edge pixels
 MPX = [round(0.37 * i % 10, 4) for i in range(300)]
@@ -847,6 +847,33 @@ case("colorbar_ax_list_twinx", ("$subplots", [1, 2]),
      ("sca", [0]), ("plot", [[0, 1, 2], [0, 1, 0]]), ("twinx", []), ("plot", [[0, 1, 2], [5, 3, 4]], {"color": "C1"}),
      ("sca", [1]), ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}),
      ("fig.colorbar", [], {"ax": {"$axes": [0, 1]}, "location": "top", "shrink": 0.5}))
+
+# Issue #72: tight_layout takes a make_axes_gridspec colorbar (and its parent) at their topmost SubplotSpec
+def grid23(tight, **cb):
+    steps = [("$subplots", [2, 3])]
+    for i in range(6):
+        steps.append(("sca", [i]))
+        if i in (0, 4, 5):
+            steps += [("imshow", [{"$array": [[(r * 3 + c + i) % 7 for c in range(4)] for r in range(3)]}], {"cmap": ["viridis", "magma", "cividis"][i % 3], "interpolation": "nearest"}),
+                      ("fig.colorbar", [], {**cb, "label": f"v{i}"}), ("set_title", [f"panel {i}"])]
+        else:
+            steps += [("plot", [[0, 1, 2, 3], [i, i + 2, i + 1, i + 3]]), ("set_xlabel", ["x"]), ("set_ylabel", ["y"]), ("set_title", [f"panel {i}"])]
+    return steps + ([("fig.tight_layout", [])] if tight else [])
+case("colorbar_grid_2x3", *grid23(False))
+case("colorbar_grid_2x3_tight", *grid23(True))
+case("colorbar_grid_2x3_tight_bottom", *grid23(True, location="bottom", shrink=0.8))
+case("colorbar_grid_2x3_tight_pads", *grid23(False), ("fig.tight_layout", [], {"pad": 0.5, "w_pad": 2, "h_pad": 1.5}))
+case("colorbar_grid_tight_suptitle", ("$subplots", [1, 2]), ("sca", [0]), ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"location": "left", "label": "left"}), ("sca", [1]), ("plot", [[0, 1], [1, 0]]),
+     ("fig.suptitle", ["two panels, one colorbar"]), ("fig.tight_layout", []))
+# a GridSpec with locally modified subplot params is not tight_layout's to move: matplotlib warns and leaves it
+case("colorbar_grid_tight_gridspec_kw", ("$subplots", [1, 2], {"gridspec_kw": {"wspace": 0.4}}), ("sca", [0]),
+     ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}), ("fig.colorbar", []), ("sca", [1]), ("plot", [[0, 1], [1, 0]]), ("fig.tight_layout", []))
+# a make_axes colorbar (ax=[...]) has no SubplotSpec: tight_layout lays out the rest and warns
+case("colorbar_ax_list_tight", ("$subplots", [1, 2]), ("sca", [0]), ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}),
+     ("sca", [1]), ("plot", [[0, 1], [1, 0]]), ("set_ylabel", ["y"]), ("sca", [0]), ("fig.colorbar", [], {"ax": {"$axes": [0, 1]}}), ("fig.tight_layout", []))
+case("colorbar_location_top_tight", ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"location": "top", "label": "top label"}), ("set_title", ["tight under a top colorbar"]), ("fig.tight_layout", []))
 
 def run_case(name, calls):
     style = STYLES.get(name)
