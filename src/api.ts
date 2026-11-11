@@ -30,7 +30,7 @@ import type { StyleSpec } from './core/style.ts';
 import { composeStyles } from './core/style.ts';
 import { parseFontSize, parseLegendLoc, parseTheme, scatterPointsOf } from './core/theme.ts';
 import type {
-  Artist, Aspect, AxesMeta, DateLocatorSpec, SpinePosition, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
+  Artist, Aspect, AxesMeta, AxesTitle, AxesTitles, DateLocatorSpec, SpinePosition, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
   AxLineArtist, AxLineThrough, Decimate, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist, StickyArtist,
   Cap, LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, TightBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, ImageArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
 } from './core/types.ts';
@@ -611,7 +611,9 @@ export class Axes {
   readonly yaxis: Axis;
   /** _label_outer_xaxis / _label_outer_yaxis: tick labels (major and minor) and offset text hidden */
   private hiddenLabels = { x: false, y: false };
-  title = ''; titleLoc: HAlign = 'center'; titleWeight = 400; xlabel = ''; ylabel = '';
+  /** set_title's three slots (left, center, right) and their shared pad */
+  private titles: AxesTitles;
+  xlabel = ''; ylabel = '';
   private grid_: AxesGrid;
   legendSpec: LegendSpec = { kind: 'off' };
   private spineOv: {
@@ -644,7 +646,8 @@ export class Axes {
 
   constructor(fig: Figure, role: AxesRole, cell: SubplotSpec, xaxis: Axis, yaxis: Axis) {
     this.fig = fig; this.role = role; this.theme = fig.theme; this.cell = cell; this.yaxis = yaxis;
-    this.titleWeight = this.theme.font.titleWeight; this.titleLoc = this.theme.axes.titleLoc;
+    const blank: AxesTitle = { text: '', sizePt: this.theme.axes.titleSizePt, weight: this.theme.font.titleWeight, color: this.theme.axes.titleColor.color, y: 1 };
+    this.titles = { left: blank, center: blank, right: blank, padPt: this.theme.axes.titlePadPt };
     this.xaxis = xaxis; this.grid_ = initialGrid(fig.theme);
     this.tickXOv = { ...this.theme.xtick }; this.tickYOv = { ...this.theme.ytick };
     // rc axes.spines.* only sets each spine's initial visibility (Spine.set_visible(False) at creation); set_visible wins
@@ -1728,14 +1731,41 @@ export class Axes {
     this.artists.push(sp); this.yaxis.request(); return sp;
   }
 
-  /** set_title(s, { loc: 'left' | 'center' | 'right' }) */
+  /**
+   * set_title(label, { loc, pad, y, fontdict, fontsize|size, fontweight|weight, color|c }) — Axes.set_title: each
+   * loc ('left' | 'center' | 'right', default axes.titlelocation) is its own title, so a left and a right title can
+   * sit beside the centred one. Every call resets that title's size and weight to axes.titlesize/titleweight (and its
+   * colour to axes.titlecolor unless 'auto'), applies `fontdict`, then the keywords; `pad` (points, default
+   * axes.titlepad) moves every title; `y` is the baseline in axes fractions (default 1, the top).
+   */
   set_title(s: unknown, kwargs: Kwargs = {}): this {
     const kw = new KwReader(kwargs, 'set_title');
-    this.titleLoc = kw.read(['loc'], parseHAlign, () => this.theme.axes.titleLoc);
-    this.titleWeight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.titleWeight);
+    const loc = kw.read(['loc'], parseHAlign, () => this.theme.axes.titleLoc);
+    const padPt = kw.read(['pad'], num('pad'), () => this.theme.axes.titlePadPt);
+    const y = kw.read(['y'], num('y'), () => 1);
+    const fontdict = kw.read(['fontdict'], (v): Result<Kwargs> => (isPlainObject(v) ? ok(v) : err('fontdict must be an object of text properties')), (): Kwargs => ({}));
+    const sizeP = (v: unknown): Result<number> => parseFontSize(v, this.theme.font.sizePt);
+    const colorP = (v: unknown): Result<Rgb> => parseRgb(v, this.theme.axes.cycle);
+    const sizeKw = kw.read(['fontsize', 'size'], optionOf(sizeP), (): Option<number> => none);
+    const weightKw = kw.read(['fontweight', 'weight'], optionOf(weightOf), (): Option<number> => none);
+    const colorKw = kw.read(['color', 'c'], optionOf(colorP), (): Option<Rgb> => none);
     kw.done();
-    this.title = str(s);
+    // Text.update(default), then update(fontdict), then the keywords: a keyword wins over the same key in fontdict
+    const tc = this.theme.axes.titleColor;
+    const fd = new KwReader(fontdict, 'set_title(fontdict)');
+    const fromDict = {
+      sizePt: fd.read(['fontsize', 'size'], sizeP, () => this.theme.axes.titleSizePt),
+      weight: fd.read(['fontweight', 'weight'], weightOf, () => this.theme.font.titleWeight),
+      color: fd.read(['color', 'c'], colorP, () => (tc.kind === 'set' ? tc.color : this.titles[loc].color)),
+    };
+    fd.done();
+    const style = { sizePt: orElse(sizeKw, fromDict.sizePt), weight: orElse(weightKw, fromDict.weight), color: orElse(colorKw, fromDict.color) };
+    this.titles = { ...this.titles, [loc]: { text: str(s), ...style, y }, padPt };
     return this;
+  }
+  /** get_title(loc = 'center') — the text of one of the three titles ('' when unset). */
+  get_title(loc: unknown = 'center'): string {
+    return this.titles[unwrap(parseHAlign(loc))].text;
   }
   /**
    * ax.spines[side]: set_visible, set_color, set_linewidth and set_position. set_position takes 'center', 'zero' or
@@ -1947,7 +1977,7 @@ export class Axes {
   /** The Axes as plain data (what layout consumes); mostly for tooling and tests. */
   spec(): AxesSpec {
     return {
-      role: this.role, position: this.position, artists: [...this.artists], title: this.title, titleLoc: this.titleLoc, titleWeight: this.titleWeight, xlabel: this.xlabel, ylabel: this.ylabel,
+      role: this.role, position: this.position, artists: [...this.artists], titles: this.titles, xlabel: this.xlabel, ylabel: this.ylabel,
       x: this.xaxis.spec(), y: this.yaxis.spec(), grid: this.grid_, legend: this.legendSpec, aspect: this.aspect, boxAspect: this.boxAspect, anchor: this.anchorXY, colorbarExtend: this.colorbarExtend,
       spines: {
         left: { visible: this.spineOv.left.visible, color: this.spineOv.left.color, widthPt: this.spineOv.left.widthPt, position: this.spineOv.left.position },
@@ -2755,6 +2785,9 @@ export type TickLabelText = {
 };
 export type TransformRef = { readonly kind: 'transform'; readonly coords: TextCoords };
 const parseCoords = (o: Option<unknown>): Result<TextCoords> => (o.kind === 'some' && (o.value === 'data' || o.value === 'axes') ? ok(o.value) : err('unknown transform'));
+/** A parser for an optional keyword: its value as some(v), so a default can be chosen later. */
+const optionOf = <T>(p: (v: unknown) => Result<T>) => (v: unknown): Result<Option<T>> => { const r = p(v); return r.ok ? ok(some(r.value)) : err(r.error); };
+const orElse = <T>(o: Option<T>, d: T): T => (o.kind === 'some' ? o.value : d);
 const weightOf = (v: unknown): Result<number> => (typeof v === 'number' || typeof v === 'string' ? ok(parseWeight(v)) : err('fontweight must be a number or a weight name'));
 /** 'data' | '<figure|axes|offset> <points|pixels|fontsize|fraction>'; 'offset …' only for textcoords. */
 /** A palette PNG's color budget: an integer in 1..256 (a PNG palette holds at most 256 entries). */

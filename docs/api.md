@@ -346,9 +346,13 @@ Keyword arguments (unknown keys throw): `xmin`, `xmax`, `color`, `facecolor | fc
 
 ### `Axes.set_title(s, kwargs?)`
 
-set_title(s, { loc: 'left' | 'center' | 'right' })
+set_title(label, { loc, pad, y, fontdict, fontsize|size, fontweight|weight, color|c }) — Axes.set_title: each loc ('left' | 'center' | 'right', default axes.titlelocation) is its own title, so a left and a right title can sit beside the centred one. Every call resets that title's size and weight to axes.titlesize/titleweight (and its colour to axes.titlecolor unless 'auto'), applies `fontdict`, then the keywords; `pad` (points, default axes.titlepad) moves every title; `y` is the baseline in axes fractions (default 1, the top).
 
-Keyword arguments (unknown keys throw): `loc`, `fontweight | weight`
+Keyword arguments (unknown keys throw): `loc`, `pad`, `y`, `fontdict`, `fontsize | size`, `fontweight | weight`, `color | c`
+
+### `Axes.get_title(loc?)`
+
+get_title(loc = 'center') — the text of one of the three titles ('' when unset).
 
 ### `Axes.get spines()`
 

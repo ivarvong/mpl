@@ -363,11 +363,19 @@ export type LegendMarkers = { readonly scatterPoints: number; readonly scatterYO
 /** A twinx Axes shares its host's x axis; its y axis, label and offset text live on the right. */
 export type AxesRole = { readonly kind: 'primary' } | { readonly kind: 'twinx'; readonly host: number } | { readonly kind: 'colorbar'; readonly orientation: 'vertical' | 'horizontal' };
 
+/** One of an Axes' three titles (matplotlib's _left_title, title, _right_title); '' draws nothing. y is the
+ *  baseline's height in axes fractions (1: the top), before the shared pad. */
+export type AxesTitle = { readonly text: string; readonly sizePt: number; readonly weight: number; readonly color: Rgb; readonly y: number };
+/** set_title's three slots, each its own Text, and the pad (points) every one of them is offset by. */
+export type AxesTitles = { readonly left: AxesTitle; readonly center: AxesTitle; readonly right: AxesTitle; readonly padPt: number };
+/** axes.titlecolor: 'auto' leaves a title's colour as it was (text.color at first); a colour resets it on every set_title. */
+export type TitleColor = { readonly kind: 'auto' | 'set'; readonly color: Rgb };
+
 /** Fractions of the figure: left, bottom, right, top. */
 export type Position = readonly [number, number, number, number];
 export type AxesSpec = {
   readonly role: AxesRole; readonly position: Position; readonly artists: readonly Artist[];
-  readonly title: string; readonly titleLoc: HAlign; readonly titleWeight: number; readonly xlabel: string; readonly ylabel: string;
+  readonly titles: AxesTitles; readonly xlabel: string; readonly ylabel: string;
   readonly x: AxisSpec; readonly y: AxisSpec; readonly grid: AxesGrid; readonly legend: LegendSpec;
   /** set_aspect: applied at draw (adjustable='box'). */
   readonly aspect: Aspect;
@@ -427,7 +435,7 @@ export type Theme = {
     readonly spines: { readonly left: boolean; readonly bottom: boolean; readonly top: boolean; readonly right: boolean };
     readonly grid: GridSpec; readonly axisBelow: AxisBelow;
     readonly labelSizePt: number; readonly labelColor: Rgb; readonly labelPadPt: number;
-    readonly titleSizePt: number; readonly titleColor: Rgb; readonly titlePadPt: number; readonly titleLoc: HAlign;
+    readonly titleSizePt: number; readonly titleColor: TitleColor; readonly titlePadPt: number; readonly titleLoc: HAlign;
     readonly xmargin: number; readonly ymargin: number;
     readonly formatter: { readonly limits: readonly [number, number]; readonly offsetThreshold: number; readonly useOffset: boolean };
     readonly unicodeMinus: boolean;
