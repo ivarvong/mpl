@@ -394,7 +394,7 @@ export type LegendSpec =
 export type LegendMarkers = { readonly scatterPoints: number; readonly scatterYOffsets: readonly number[]; readonly markerScale: number };
 
 /** A twinx Axes shares its host's x axis; its y axis, label and offset text live on the right. */
-export type AxesRole = { readonly kind: 'primary' } | { readonly kind: 'twinx'; readonly host: number } | { readonly kind: 'colorbar'; readonly orientation: 'vertical' | 'horizontal' };
+export type AxesRole = { readonly kind: 'primary' } | { readonly kind: 'twinx'; readonly host: number } | { readonly kind: 'colorbar'; readonly orientation: 'vertical' | 'horizontal'; readonly ticklocation: 'left' | 'right' | 'top' | 'bottom' };
 
 /** One of an Axes' three titles (matplotlib's _left_title, title, _right_title); '' draws nothing. y is the
  *  baseline's height in axes fractions (1: the top), before the shared pad. */

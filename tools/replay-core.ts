@@ -69,7 +69,9 @@ export function buildWith(fx: Fixture, subplots: Subplots, dates?: DateCtors): F
           if (a.kind === 'scatter' && a.mappable.kind === 'some') { mappable = a; break; }
         }
         if (mappable === undefined) throw new Error('fig.colorbar: no mappable on current Axes');
-        F['colorbar']?.(mappable, kwargs);
+        // {"$axes": [i, ...]}: a list of Axes by index (make_axes over their union)
+        const axSpec = kwargs && typeof kwargs.ax === 'object' && '$axes' in kwargs.ax ? (kwargs.ax.$axes as number[]).map((i) => axes[i]) : undefined;
+        F['colorbar']?.(mappable, axSpec ? { ...kwargs, ax: axSpec } : kwargs);
         continue;
       }
       F[ffn]?.(...args, ...(Object.keys(kwargs).length ? [kwargs] : []));

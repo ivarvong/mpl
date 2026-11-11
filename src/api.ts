@@ -602,12 +602,20 @@ function shapeDefaults(shape: FmtShape, theme: Theme): { readonly line: Option<L
 }
 
 // ---------------------------------------------------------------- Axes
+/** An Axes' place in the figure (see Axes.placement). */
+export type AxesPlacement =
+  | { readonly kind: 'cell'; readonly cell: SubplotSpec }
+  | { readonly kind: 'moved'; readonly cell: SubplotSpec; readonly pos: Position }
+  | { readonly kind: 'free'; readonly pos: Position };
+const subplotSpecOf = (p: AxesPlacement): Option<SubplotSpec> => (p.kind === 'free' ? none : some(p.cell));
+
 export class Axes {
   readonly fig: Figure;
   readonly role: AxesRole;
   readonly theme: Theme;
-  /** The SubplotSpec this Axes occupies; its position follows the figure's subplot parameters. */
-  cell: SubplotSpec;
+  /** Where this Axes sits: a SubplotSpec (following the figure's subplot parameters), a SubplotSpec Axes that
+   *  make_axes moved (_set_position: fixed until subplots_adjust re-places it), or a free rect (fig.add_axes). */
+  placement: AxesPlacement;
   readonly artists: Artist[] = [];
   readonly xaxis: Axis;
   readonly yaxis: Axis;
@@ -646,8 +654,8 @@ export class Axes {
   /** Triangular colorbar extends (axes-fraction lengths); none when extend='neither'. */
   colorbarExtend: Option<{ readonly lower: number; readonly upper: number }> = none;
 
-  constructor(fig: Figure, role: AxesRole, cell: SubplotSpec, xaxis: Axis, yaxis: Axis) {
-    this.fig = fig; this.role = role; this.theme = fig.theme; this.cell = cell; this.yaxis = yaxis;
+  constructor(fig: Figure, role: AxesRole, placement: AxesPlacement, xaxis: Axis, yaxis: Axis) {
+    this.fig = fig; this.role = role; this.theme = fig.theme; this.placement = placement; this.yaxis = yaxis;
     const blank: AxesTitle = { text: '', sizePt: this.theme.axes.titleSizePt, weight: this.theme.font.titleWeight, color: this.theme.axes.titleColor.color, y: 1 };
     this.titles = { left: blank, center: blank, right: blank, padPt: this.theme.axes.titlePadPt };
     this.xaxis = xaxis; this.grid_ = initialGrid(fig.theme);
@@ -658,19 +666,32 @@ export class Axes {
   /** A second Axes sharing this one's x axis, with its y axis on the right. */
   twinx(): Axes {
     const host = this.fig.axes.indexOf(this);
-    const twin = new Axes(this.fig, { kind: 'twinx', host }, this.cell, this.xaxis, new Axis());
+    // _make_twin_axes: add_subplot(the host's SubplotSpec) when it has one, else add_axes(its position)
+    const ss = subplotSpecOf(this.placement);
+    const twin = new Axes(this.fig, { kind: 'twinx', host }, ss.kind === 'some' ? { kind: 'cell', cell: ss.value } : { kind: 'free', pos: this.position }, this.xaxis, new Axis());
     this.fig.axes.push(twin);
     return twin;
   }
-  /** The Axes box [left, bottom, right, top] in figure fractions (SubplotSpec.get_position). */
-  get position(): Position { return cellPosition(this.cell, this.fig.subplotpars); }
+  /** The Axes box [left, bottom, right, top] in figure fractions: get_position(original=True). */
+  get position(): Position {
+    const p = this.placement;
+    switch (p.kind) {
+      case 'cell': return cellPosition(p.cell, this.fig.subplotpars);
+      case 'moved': case 'free': return p.pos;
+      default: return assertNever(p);
+    }
+  }
+  /** get_subplotspec(): none for a free Axes. */
+  get subplotspec(): Option<SubplotSpec> { return subplotSpecOf(this.placement); }
   /**
    * Axes._label_outer_xaxis / _label_outer_yaxis for a shared grid (subplots(sharex='col'|'all', …)): an
    * Axes off the bottom row loses its x tick labels and offset text, one off the left column its y ones.
    * Tick labels stay on the outer edge only; ticks are kept.
    */
   labelOuter(axis: 'x' | 'y'): void {
-    const { rows, cols, grid } = this.cell;
+    const ss = this.subplotspec;
+    if (ss.kind === 'none') return;
+    const { rows, cols, grid } = ss.value;
     if (axis === 'x' && rows[1] !== grid.nrows) { this.xlabel = ''; this.hiddenLabels = { ...this.hiddenLabels, x: true }; }
     if (axis === 'y' && cols[0] !== 0) { this.ylabel = ''; this.hiddenLabels = { ...this.hiddenLabels, y: true }; }
   }
@@ -701,8 +722,8 @@ export class Axes {
     }
     throw new Error(`set_anchor: expected 'C' or [x, y], got ${JSON.stringify(anchor)}`);
   }
-  /** Replace this Axes' SubplotSpec (colorbar make_axes_gridspec). */
-  set_subplotspec(ss: SubplotSpec): void { this.cell = ss; }
+  /** Replace this Axes' SubplotSpec and take its position (colorbar make_axes_gridspec). */
+  set_subplotspec(ss: SubplotSpec): void { this.placement = { kind: 'cell', cell: ss }; }
   private next(which: 'line' | 'patch'): Rgb {
     const c = this.theme.axes.cycle;
     return which === 'line' ? c[this.lineCycle++ % c.length] : c[this.patchCycle++ % c.length];
@@ -2132,7 +2153,7 @@ const mappableOf = (a: Artist): Option<{ readonly cmapName: string; readonly vmi
 };
 
 /** Colorbar.make_axes_gridspec for a given location: nest a GridSpec in the parent's cell. */
-function makeAxesGridspec(parent: Axes, opts: {
+function makeAxesGridspec(parent: Axes, cell: SubplotSpec, opts: {
   readonly location: 'right' | 'left' | 'top' | 'bottom';
   readonly fraction: number; readonly pad: number; readonly shrink: number; readonly aspect: number;
   readonly anchor: readonly [number, number]; readonly panchor: readonly [number, number];
@@ -2145,7 +2166,7 @@ function makeAxesGridspec(parent: Axes, opts: {
   let aspect = aspect0;
   if (location === 'left' || location === 'right') {
     const hr = [(1 - anchor[1]) * (1 - shrink), shrink, anchor[1] * (1 - shrink)];
-    gs = subgridspec(parent.cell, 3, 2, {
+    gs = subgridspec(cell, 3, 2, {
       wspace: whSpace, hspace: 0,
       heightRatios: hr,
       widthRatios: location === 'left' ? [fraction, 1 - fraction - pad] : [1 - fraction - pad, fraction],
@@ -2159,7 +2180,7 @@ function makeAxesGridspec(parent: Axes, opts: {
     }
   } else {
     const wr = [anchor[0] * (1 - shrink), shrink, (1 - anchor[0]) * (1 - shrink)];
-    gs = subgridspec(parent.cell, 2, 3, {
+    gs = subgridspec(cell, 2, 3, {
       hspace: whSpace, wspace: 0,
       widthRatios: wr,
       heightRatios: location === 'top' ? [fraction, 1 - fraction - pad] : [1 - fraction - pad, fraction],
@@ -2175,13 +2196,105 @@ function makeAxesGridspec(parent: Axes, opts: {
   }
   parent.set_subplotspec(ssMain);
   parent.set_anchor(panchor);
-  const cax = parent.fig.addAxesFromSpec(ssCb, { kind: 'colorbar', orientation: (location === 'left' || location === 'right') ? 'vertical' : 'horizontal' });
+  const cax = parent.fig.addAxesFromSpec(ssCb, { kind: 'colorbar', orientation: (location === 'left' || location === 'right') ? 'vertical' : 'horizontal', ticklocation: location });
   cax.set_anchor(anchor);
   cax.set_box_aspect(aspect);
   cax.set_aspect('auto');
   cax.colorbarMode = true;
   return { cax, orientation: (location === 'left' || location === 'right') ? 'vertical' : 'horizontal', aspect };
 }
+
+/** Bbox.splitx / splity over [lo, hi]: the pieces between 0, ...fs, 1 of the span (lo + f·(hi − lo)). */
+const splitSpan = (lo: number, hi: number, fs: readonly number[]): readonly (readonly [number, number])[] => {
+  const w = hi - lo, xf = [0, ...fs, 1];
+  return xf.slice(1).map((f1, i) => [lo + xf[i] * w, lo + f1 * w] as const);
+};
+/** Bbox.shrunk(mx, my).anchored(c, container=self), on [l, b, r, t] extents (Bbox.bounds widths are x1 − x0). */
+const shrunkAnchored = (p: Position, mx: number, my: number, c: readonly [number, number]): Position => {
+  const w = p[2] - p[0], h = p[3] - p[1];
+  const s: Position = [p[0], p[1], p[0] + mx * w, p[1] + my * h];
+  const W = s[2] - s[0], H = s[3] - s[1];
+  const dx = (p[0] + c[0] * (w - W)) - s[0], dy = (p[1] + c[1] * (h - H)) - s[1];
+  return [s[0] + dx, s[1] + dy, s[2] + dx, s[3] + dy];
+};
+
+/**
+ * Colorbar.make_axes for a list of parents: the colorbar takes `fraction` (plus `pad`) of the parents' union
+ * bbox, and every parent is mapped into what is left by BboxTransform(union, rest) — each keeps its
+ * SubplotSpec but is moved (until subplots_adjust re-places it) and anchored at `panchor`. The cax is a
+ * free Axes (fig.add_axes(pbcb)), so tight_layout leaves it out, as in matplotlib.
+ */
+function makeAxes(parents: readonly Axes[], opts: {
+  readonly location: 'right' | 'left' | 'top' | 'bottom';
+  readonly fraction: number; readonly pad: number; readonly shrink: number; readonly aspect: number;
+  readonly anchor: readonly [number, number]; readonly panchor: readonly [number, number];
+}): { readonly cax: Axes; readonly orientation: 'vertical' | 'horizontal'; readonly aspect: number } {
+  const { location, fraction, pad, shrink, anchor, panchor } = opts;
+  const fig = parents[0].fig;
+  const ps = parents.map((a) => a.position);
+  const pb: Position = [Math.min(...ps.map((q) => q[0])), Math.min(...ps.map((q) => q[1])), Math.max(...ps.map((q) => q[2])), Math.max(...ps.map((q) => q[3]))];
+  const vertical = location === 'left' || location === 'right';
+  const [lo, hi] = vertical ? [pb[0], pb[2]] : [pb[1], pb[3]];
+  const parts = location === 'left' || location === 'bottom' ? splitSpan(lo, hi, [fraction, fraction + pad]) : splitSpan(lo, hi, [1 - fraction - pad, 1 - fraction]);
+  const [cb, rest] = location === 'left' || location === 'bottom' ? [parts[0], parts[2]] : [parts[2], parts[0]];
+  const pbcb = vertical
+    ? shrunkAnchored([cb[0], pb[1], cb[1], pb[3]], 1.0, shrink, anchor)
+    : shrunkAnchored([pb[0], cb[0], pb[2], cb[1]], shrink, 1.0, anchor);
+  const pb1: Position = vertical ? [rest[0], pb[1], rest[1], pb[3]] : [pb[0], rest[0], pb[2], rest[1]];
+  // BboxTransform(parents_bbox, pb1): x·sx + (−inl·sx + outl)
+  const sx = (pb1[2] - pb1[0]) / (pb[2] - pb[0]), sy = (pb1[3] - pb1[1]) / (pb[3] - pb[1]);
+  const ex = -pb[0] * sx + pb1[0], ey = -pb[1] * sy + pb1[1];
+  for (const ax of parents) {
+    // read now, as matplotlib does: a twin listed after its host has already moved with it
+    const q = ax.position;
+    const pos: Position = [q[0] * sx + ex, q[1] * sy + ey, q[2] * sx + ex, q[3] * sy + ey];
+    // _set_position and set_anchor apply to every Axes twinned with this one
+    for (const sib of twinGroup(ax)) {
+      const ss = sib.subplotspec;
+      sib.placement = ss.kind === 'some' ? { kind: 'moved', cell: ss.value, pos } : { kind: 'free', pos };
+      sib.set_anchor(panchor);
+    }
+  }
+  const orientation = vertical ? 'vertical' : 'horizontal';
+  const cax = fig.addAxesAt(pbcb, { kind: 'colorbar', orientation, ticklocation: location });
+  const aspect = vertical ? opts.aspect : 1.0 / opts.aspect;
+  cax.set_anchor(anchor);
+  cax.set_box_aspect(aspect);
+  cax.set_aspect('auto');
+  cax.colorbarMode = true;
+  return { cax, orientation, aspect };
+}
+
+/** Figure.colorbar's anchor / panchor: an (x, y) pair. */
+const anchorPair = (name: string) => (v: unknown): Result<Option<readonly [number, number]>> =>
+  (Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === 'number' && Number.isFinite(x)) ? ok(some([Number(v[0]), Number(v[1])] as const))
+    : err(`${name} must be an [x, y] pair of numbers`));
+/** _twinned_axes.get_siblings(ax): the Axes and every twin sharing its host. */
+const twinGroup = (ax: Axes): readonly Axes[] => {
+  const all = ax.fig.axes;
+  const hostOf = (a: Axes): number => (a.role.kind === 'twinx' ? a.role.host : all.indexOf(a));
+  const h = hostOf(ax);
+  return all.filter((a) => hostOf(a) === h);
+};
+/** Figure.colorbar's ax: one Axes, or a list (nested lists flatten, as an ndarray's .flat) of them. */
+type ColorbarParents = { readonly kind: 'one'; readonly ax: Axes } | { readonly kind: 'many'; readonly axes: readonly Axes[] };
+const flattenAxes = (v: readonly unknown[]): Result<readonly Axes[]> => {
+  const out: Axes[] = [];
+  for (const x of v) {
+    if (x instanceof Axes) out.push(x);
+    else if (Array.isArray(x)) { const r = flattenAxes(x); if (!r.ok) return r; out.push(...r.value); }
+    else return err(`ax must be an Axes or a list of Axes, got ${JSON.stringify(x)} in the list`);
+  }
+  return ok(out);
+};
+const colorbarParents = (v: unknown): Result<ColorbarParents> => {
+  if (v instanceof Axes) return ok({ kind: 'one', ax: v });
+  if (!Array.isArray(v)) return err('ax must be an Axes or a list of Axes');
+  const r = flattenAxes(v);
+  if (!r.ok) return r;
+  if (r.value.length === 0) return err('ax must not be an empty list');
+  return ok({ kind: 'many', axes: r.value });
+};
 
 /** Default extendfrac when Colorbar.extendfrac is None (matplotlib colorbar.py). */
 const COLORBAR_EXTENDFRAC = 0.05;
@@ -2325,27 +2438,40 @@ export class Figure {
     const grid: GridSpec = gridSpec(1, 1, [1], [1], NO_OVERRIDES);
     return this.addCell({ grid, rows: [0, 1], cols: [0, 1] }, none, none);
   }
+  /** fig.add_axes(rect): an Axes at a fixed [left, bottom, right, top] with no SubplotSpec (make_axes cax). */
+  addAxesAt(pos: Position, role: AxesRole = { kind: 'primary' }): Axes {
+    const ax = new Axes(this, role, { kind: 'free', pos }, new Axis(), new Axis());
+    this.axes.push(ax);
+    this.touch();
+    return ax;
+  }
   /** Add an Axes for a free SubplotSpec (colorbar cax). */
   addAxesFromSpec(cell: SubplotSpec, role: AxesRole = { kind: 'primary' }): Axes {
-    const ax = new Axes(this, role, cell, new Axis(), new Axis());
+    const ax = new Axes(this, role, { kind: 'cell', cell }, new Axis(), new Axis());
     this.axes.push(ax);
     this.touch();
     return ax;
   }
 
   /**
-   * fig.colorbar(mappable, { ax, label, orientation, shrink, pad, fraction, aspect, location })
-   * — steal space from ax via make_axes_gridspec (use_gridspec=True) and draw a continuous colorbar.
+   * fig.colorbar(mappable, { ax, label, orientation, location, shrink, pad, fraction, aspect, anchor, panchor, extend })
+   * — steal space for the colorbar and draw a continuous colorbar, ticked and labelled on its `location` side.
+   * `ax` is one Axes (make_axes_gridspec: a GridSpec nested in its SubplotSpec) or a list of Axes (nested lists
+   * flatten, like an ndarray): Colorbar.make_axes takes the space from the list's union bbox and moves every
+   * listed Axes (and its twins) into the rest, so a column of panels stays aligned; that cax has no SubplotSpec
+   * and a later subplots_adjust or tight_layout puts the listed Axes back on their SubplotSpecs, as in matplotlib.
    */
   colorbar(mappable: unknown, kwargs: Kwargs = {}): Colorbar {
     const kw = new KwReader(kwargs, 'Figure.colorbar');
-    const axKw = kw.read(['ax'], (v): Result<Axes> => (v instanceof Axes ? ok(v) : err('ax must be an Axes')), (): Axes => {
+    const axKw = kw.read(['ax'], colorbarParents, (): ColorbarParents => {
       if (isArtist(mappable)) {
-        for (const a of this.axes) { if (a.artists.includes(mappable)) return a; }
+        for (const a of this.axes) { if (a.artists.includes(mappable)) return { kind: 'one', ax: a }; }
       }
       if (this.axes.length === 0) throw new Error('colorbar: no Axes to steal space from');
-      return this.axes[0];
+      return { kind: 'one', ax: this.axes[0] };
     });
+    const parents = axKw.kind === 'one' ? [axKw.ax] : axKw.axes;
+    if (parents.some((a) => a.fig !== this)) throw new Error('Figure.colorbar: Unable to create a Colorbar Axes as not all parents share the same figure.');
     const orientationKw = kw.read(['orientation'], (v): Result<Option<'vertical' | 'horizontal'>> =>
       (v === 'vertical' || v === 'horizontal' ? ok(some(v)) : err("orientation must be 'vertical'|'horizontal'")),
       (): Option<'vertical' | 'horizontal'> => none);
@@ -2356,6 +2482,10 @@ export class Figure {
     const location = kw.read(['location'], (v): Result<'right' | 'left' | 'top' | 'bottom'> =>
       (v === 'right' || v === 'left' || v === 'top' || v === 'bottom' ? ok(v) : err("location must be 'right'|'left'|'top'|'bottom'")),
       () => locationDefault);
+    // _normalize_location_orientation: a location implies its orientation; both, disagreeing, is an error
+    if (orientationKw.kind === 'some' && (orientationKw.value === 'vertical') !== (location === 'left' || location === 'right')) {
+      throw new TypeError(`Figure.colorbar: location=${JSON.stringify(location)} and orientation=${JSON.stringify(orientationKw.value)} are mutually exclusive`);
+    }
     const fraction = kw.read(['fraction'], num('fraction'), () => 0.15);
     const pad = kw.read(['pad'], num('pad'), () => (location === 'left' ? 0.1 : location === 'bottom' ? 0.15 : 0.05));
     const shrink = kw.read(['shrink'], num('shrink'), () => 1.0);
@@ -2364,6 +2494,8 @@ export class Figure {
     const extend = kw.read(['extend'], (v): Result<'neither' | 'both' | 'min' | 'max'> =>
       (v === 'neither' || v === 'both' || v === 'min' || v === 'max' ? ok(v)
         : err("extend must be 'neither'|'both'|'min'|'max'")), () => 'neither' as const);
+    const anchorKw = kw.read(['anchor'], anchorPair('anchor'), (): Option<readonly [number, number]> => none);
+    const panchorKw = kw.read(['panchor'], anchorPair('panchor'), (): Option<readonly [number, number]> => none);
     kw.done();
     const locDefaults = {
       right: { anchor: [0.0, 0.5] as const, panchor: [1.0, 0.5] as const },
@@ -2372,9 +2504,13 @@ export class Figure {
       bottom: { anchor: [0.5, 1.0] as const, panchor: [0.5, 0.0] as const },
     };
     const d = locDefaults[location];
-    const { cax, orientation: orient0, aspect: aspectMade } = makeAxesGridspec(axKw, {
-      location, fraction, pad, shrink, aspect: aspectN, anchor: d.anchor, panchor: d.panchor,
-    });
+    const made = { location, fraction, pad, shrink, aspect: aspectN,
+                   anchor: anchorKw.kind === 'some' ? anchorKw.value : d.anchor, panchor: panchorKw.kind === 'some' ? panchorKw.value : d.panchor };
+    // use_gridspec: a single Axes with a SubplotSpec nests a GridSpec in it; a list (or a free Axes) takes make_axes
+    const oneCell = axKw.kind === 'one' ? axKw.ax.subplotspec : none;
+    const { cax, orientation: orient0, aspect: aspectMade } = axKw.kind === 'one' && oneCell.kind === 'some'
+      ? makeAxesGridspec(axKw.ax, oneCell.value, made)
+      : makeAxes(parents, made);
     const orientation = orientationKw.kind === 'some' ? orientationKw.value : orient0;
     // `_ColorbarAxesLocator`: record extend lengths; layout shrinks the position, then box_aspect
     const extLower = (extend === 'min' || extend === 'both') ? COLORBAR_EXTENDFRAC : 0;
@@ -2393,9 +2529,11 @@ export class Figure {
       state = mo.value;
     } else {
       let found: Option<{ cmapName: string; vmin: number; vmax: number; normKind: 'linear' | 'log' }> = none;
-      for (let i = axKw.artists.length - 1; i >= 0; i--) {
-        const mo = mappableOf(axKw.artists[i]);
-        if (mo.kind === 'some') { found = mo; break; }
+      for (const p of parents) {
+        for (let i = p.artists.length - 1; i >= 0 && found.kind === 'none'; i--) {
+          const mo = mappableOf(p.artists[i]);
+          if (mo.kind === 'some') found = mo;
+        }
       }
       if (found.kind === 'none') throw new Error('colorbar: no mappable on Axes');
       state = found.value;
@@ -2404,7 +2542,7 @@ export class Figure {
   }
 
   private addCell(cell: SubplotSpec, sharex: Option<Axes>, sharey: Option<Axes>): Axes {
-    const ax = new Axes(this, { kind: 'primary' }, cell, sharex.kind === 'some' ? sharex.value.xaxis : new Axis(), sharey.kind === 'some' ? sharey.value.yaxis : new Axis());
+    const ax = new Axes(this, { kind: 'primary' }, { kind: 'cell', cell }, sharex.kind === 'some' ? sharex.value.xaxis : new Axis(), sharey.kind === 'some' ? sharey.value.yaxis : new Axis());
     this.axes.push(ax);
     this.touch();
     return ax;
@@ -2515,6 +2653,8 @@ export class Figure {
     const bad = validParams(next);
     if (bad.kind === 'some') throw new RangeError(`subplots_adjust: ${bad.value}`);
     this.subplotpars = next;
+    // every Axes with a SubplotSpec is re-placed from it, undoing a make_axes move
+    for (const ax of this.axes) if (ax.placement.kind === 'moved') ax.placement = { kind: 'cell', cell: ax.placement.cell };
     this.touch(); return this;
   }
 
@@ -2535,7 +2675,8 @@ export class Figure {
       throw new TypeError(`autofmt_xdate: which=${JSON.stringify(which)} is not supported yet (only 'major'); minor date labels are not implemented`);
     }
     const axes = this.axes.filter((ax) => !ax.colorbarMode && ax.role.kind !== 'colorbar');
-    const allsubplots = axes.length > 0; // every Axes we keep has a SubplotSpec cell
+    // all(ax.get_subplotspec() for ax in self.axes): a free Axes (a make_axes colorbar) has none
+    const allsubplots = axes.length > 0 && this.axes.every((ax) => ax.subplotspec.kind === 'some');
     if (axes.length === 1) {
       for (const only of axes) {
         for (const tl of only.get_xticklabels()) {
@@ -2545,8 +2686,8 @@ export class Figure {
       }
     } else if (allsubplots) {
       for (const ax of axes) {
-        const { rows, grid } = ax.cell;
-        const lastRow = rows[1] === grid.nrows;
+        const ss = ax.subplotspec;
+        const lastRow = ss.kind === 'some' && ss.value.rows[1] === ss.value.grid.nrows;
         if (lastRow) {
           for (const tl of ax.get_xticklabels()) {
             tl.set_ha(ha);
@@ -2611,10 +2752,16 @@ export class Figure {
     const W = this.widthIn * this.dpi, H = this.heightIn * this.dpi;
     // ss_to_subplots: one entry per distinct SubplotSpec, in first-seen order
     const cells: { readonly cell: SubplotSpec; readonly members: number[] }[] = [];
+    let unplaced = false;
     this.axes.forEach((ax, i) => {
-      const found = cells.find((c) => sameCell(c.cell, ax.cell));
-      if (found) found.members.push(i); else cells.push({ cell: ax.cell, members: [i] });
+      const ss = ax.subplotspec;
+      if (ss.kind === 'none') { unplaced = true; return; }
+      const found = cells.find((c) => sameCell(c.cell, ss.value));
+      if (found) found.members.push(i); else cells.push({ cell: ss.value, members: [i] });
     });
+    // ss_to_subplots.pop(None): Axes without a SubplotSpec (fig.add_axes, a make_axes colorbar) are left out
+    if (unplaced) console.warn('UserWarning: This figure includes Axes that are not compatible with tight_layout, so results might be incorrect.');
+    if (cells.length === 0) return none;
     const maxRows = Math.max(...cells.map((c) => c.cell.grid.nrows)), maxCols = Math.max(...cells.map((c) => c.cell.grid.ncols));
     if (cells.some((c) => maxRows % c.cell.grid.nrows !== 0 || maxCols % c.cell.grid.ncols !== 0)) {
       console.warn('UserWarning: tight_layout not applied: number of rows/columns in subplot specifications must be multiples of one another.');

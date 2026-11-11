@@ -48,7 +48,7 @@ const noTicksMeta = (lim: readonly [number, number]): AxisMeta => ({ lim, ticks:
 
 // ---------------------------------------------------------------- what a role implies
 type AxisVisibility = { readonly kind: 'hidden' } | { readonly kind: 'shown'; readonly sides: Sides };
-type Roles = { readonly x: AxisVisibility; readonly y: AxisVisibility; readonly patch: boolean; readonly yOnRight: boolean };
+type Roles = { readonly x: AxisVisibility; readonly y: AxisVisibility; readonly patch: boolean; readonly yOnRight: boolean; readonly xOnTop: boolean };
 const themeSides = (t: TickTheme): Sides => ({ near: t.near, far: t.far, labels: t.labelNear ? 'near' : 'none' });
 
 /** label_outer: ticks stay, their labels go. */
@@ -61,16 +61,18 @@ function roleImplies(role: AxesRole, hasTwin: boolean, theme: Theme, hidden: Axe
       case 'primary':
         return { x: { kind: 'shown', sides: themeSides(theme.xtick) },
                  y: { kind: 'shown', sides: hasTwin ? { near: true, far: false, labels: 'near' } : themeSides(theme.ytick) },
-                 patch: true, yOnRight: false };
+                 patch: true, yOnRight: false, xOnTop: false };
       case 'twinx':
-        return { x: { kind: 'hidden' }, y: { kind: 'shown', sides: { near: false, far: true, labels: 'far' } }, patch: false, yOnRight: true };
+        return { x: { kind: 'hidden' }, y: { kind: 'shown', sides: { near: false, far: true, labels: 'far' } }, patch: false, yOnRight: true, xOnTop: false };
       case 'colorbar':
-        // vertical: ticks on the right; horizontal: ticks on the bottom; patch on for solids
-        if (role.orientation === 'horizontal') {
-          return { x: { kind: 'shown', sides: { near: true, far: false, labels: 'near' } },
-                   y: { kind: 'hidden' }, patch: true, yOnRight: false };
+        // Colorbar._set_ticklocation: set_ticks_position and set_label_position on the long axis; patch on for solids
+        switch (role.ticklocation) {
+          case 'bottom': return { x: { kind: 'shown', sides: { near: true, far: false, labels: 'near' } }, y: { kind: 'hidden' }, patch: true, yOnRight: false, xOnTop: false };
+          case 'top': return { x: { kind: 'shown', sides: { near: false, far: true, labels: 'far' } }, y: { kind: 'hidden' }, patch: true, yOnRight: false, xOnTop: true };
+          case 'right': return { x: { kind: 'hidden' }, y: { kind: 'shown', sides: { near: false, far: true, labels: 'far' } }, patch: true, yOnRight: true, xOnTop: false };
+          case 'left': return { x: { kind: 'hidden' }, y: { kind: 'shown', sides: { near: true, far: false, labels: 'near' } }, patch: true, yOnRight: false, xOnTop: false };
+          default: return assertNever(role.ticklocation);
         }
-        return { x: { kind: 'hidden' }, y: { kind: 'shown', sides: { near: false, far: true, labels: 'far' } }, patch: true, yOnRight: true };
       default: return assertNever(role);
     }
   })();
@@ -216,7 +218,7 @@ function spinesForAxes(ax: AxesSpec, theme: Theme, f: Frame, k: number): readonl
   return nodes;
 }
 
-type AxisOut = { readonly near: readonly TextBox[]; readonly far: readonly TextBox[]; readonly nearUp: readonly UpEdges[] };
+type AxisOut = { readonly near: readonly TextBox[]; readonly far: readonly TextBox[]; readonly nearUp: readonly UpEdges[]; readonly farUp: readonly UpEdges[] };
 
 /** What each decoration occupies, for Axes.get_tightbbox. An empty Text's extent is a point,
  *  which Axis.get_tightbbox drops (Bbox._is_finite), so empty labels take no room. */
@@ -248,7 +250,7 @@ function tightOf(parts: readonly TightPart[]): TightBox {
 }
 
 /** Offset texts, axis labels, title (Axis._update_label_position / _update_offset_text_position). */
-function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: number, dpi: number, sp: { readonly xLeft: number; readonly xRight: number; readonly yBottom: number }, xt: TickSet, yt: TickSet, xb: AxisOut, yb: AxisOut): Decorated {
+function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: number, dpi: number, sp: { readonly xLeft: number; readonly xRight: number; readonly yBottom: number; readonly yTop: number }, xt: TickSet, yt: TickSet, xb: AxisOut, yb: AxisOut): Decorated {
   const b = f.box, A = theme.axes, xOut: Node[] = [], yOut: Node[] = [], titleOut: Node[] = [];
   let out = xOut;
   const half = A.linewidthPt * k / 2;
@@ -264,7 +266,26 @@ function decorations(ax: AxesSpec, roles: Roles, theme: Theme, f: Frame, k: numb
   // union(tick labels, spine).y0 − pad·dpi/72, then Text.get_window_extent (va='top')
   const bottomUp = (s: string, x: number, padPt: number, ha: HAlign, sizePt: number, weight: number): UpEdges =>
     edges(windowExtent(measure(s, sizePt, dpi, resolveFace(theme.font.families, weight), ha), x, Math.min(f.H - (sp.yBottom + half), ...xb.nearUp.map((e) => e.b)) - padPt * dpi / 72, ha, 'top'));
-  if (roles.x.kind === 'shown') {
+  // the top twin of bottomUp: union(top tick labels, spine).y1 + pad·dpi/72; set_label_position('top') makes the label
+  // va='baseline', set_ticks_position('top') the offset text va='bottom'
+  const topUp = (s: string, x: number, from: number, padPt: number, ha: HAlign, va: 'bottom' | 'baseline', sizePt: number, weight: number): UpEdges =>
+    edges(windowExtent(measure(s, sizePt, dpi, resolveFace(theme.font.families, weight), ha), x, from + padPt * dpi / 72, ha, va));
+  if (roles.x.kind === 'shown' && roles.xOnTop) {
+    // the label sits above union(top tick labels, top spine); the offset text above the tick labels (else the axes top)
+    let top = sp.yTop - half;
+    for (const lb of xb.far) top = Math.min(top, lb.y0);
+    const topLabelsUp = Math.max(f.H - (sp.yTop - half), ...xb.farUp.map((e) => e.t));
+    const offFrom = xb.far.length > 0 ? Math.min(...xb.far.map((lb) => lb.y0)) : b.yTop;
+    const offFromUp = xb.farUp.length > 0 ? Math.max(...xb.farUp.map((e) => e.t)) : b.t;
+    if (!ax.hiddenLabels.x) {
+      const o = optBox(put(xt.offset, b.x1, offFrom - pad, { kind: 'horizontal', ha: 'right', va: 'bottom' }, theme.xtick.labelSizePt, theme.xtick.color));
+      xBoxes.push(...o);
+      if (o.length > 0) xUp.push(topUp(xt.offset, b.x1, offFromUp, theme.offsetTextPadPt, 'right', 'bottom', theme.xtick.labelSizePt, theme.font.weight));
+    }
+    const l = optBox(put(ax.xlabel, b.x0 + (b.x1 - b.x0) / 2, top - lp, { kind: 'horizontal', ha: 'center', va: 'baseline' }, A.labelSizePt, A.labelColor, theme.font.labelWeight), collapseX);
+    xBoxes.push(...l);
+    if (l.length > 0) xUp.push(topUp(ax.xlabel, b.x0 + (b.x1 - b.x0) / 2, topLabelsUp, A.labelPadPt, 'center', 'baseline', A.labelSizePt, theme.font.labelWeight));
+  } else if (roles.x.kind === 'shown') {
     // the bottom spine's extent (where set_position put it) joins the tick labels'
     let bottom = sp.yBottom + half;
     for (const lb of xb.near) bottom = Math.max(bottom, lb.y1);
@@ -376,8 +397,10 @@ function shrinkToBoxAspect(position: Position, boxAspect: number, figW: number, 
   const Htry = w * boxAspect / figAspect;
   let W: number, HH: number;
   if (Htry <= h) { W = w; HH = Htry; } else { W = h * figAspect / boxAspect; HH = h; }
-  const L = l + anchor[0] * (w - W), B = b + anchor[1] * (h - HH);
-  return [L, B, L + W, B + HH];
+  // Bbox([p0, p0 + (W, H)]).anchored(anchor, container): its bounds (x1 − x0) and the shift, as matplotlib rounds them
+  const x1 = l + W, y1 = b + HH, Ws = x1 - l, Hs = y1 - b;
+  const dx = (l + anchor[0] * (w - Ws)) - l, dy = (b + anchor[1] * (h - Hs)) - b;
+  return [l + dx, b + dy, x1 + dx, y1 + dy];
 }
 
 /** matplotlib.colorbar._ColorbarAxesLocator: shrink axes for triangular/rectangular extends. */
@@ -475,7 +498,7 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, dev: Device,
     drawAxis('y', yt, ax.tick.y, sides, ax.grid.y, ax.tickLabels.y, f, theme, dpi, tracer, bases)));
   const decTheme: Theme = { ...theme, xtick: ax.tick.x, ytick: ax.tick.y };
   const deco = tracer.span('decorations', { role: ax.role.kind }, () =>
-    decorations(ax, roles, decTheme, f, k, dpi, bases, xt, yt, { near: xa.nearBoxes, far: xa.farBoxes, nearUp: xa.nearUp }, { near: ya.nearBoxes, far: ya.farBoxes, nearUp: ya.nearUp }));
+    decorations(ax, roles, decTheme, f, k, dpi, bases, xt, yt, { near: xa.nearBoxes, far: xa.farBoxes, nearUp: xa.nearUp, farUp: xa.farUp }, { near: ya.nearBoxes, far: ya.farBoxes, nearUp: ya.nearUp, farUp: ya.farUp }));
 
   const sourced = legendEntries(ax, drawn), entries = sourced.map((e) => e.entry);
   const axesUp: Box = { x0: box.x0, x1: box.x1, y0: box.b, y1: box.t };

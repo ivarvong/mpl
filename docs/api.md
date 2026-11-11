@@ -74,15 +74,19 @@ Create one with `subplots()` or `new Figure({ style, rc, figsize, dpi })`.
 
 add_subplot() — one Axes filling a 1x1 GridSpec, placed by the subplot parameters.
 
+### `Figure.addAxesAt(pos, role?)`
+
+fig.add_axes(rect): an Axes at a fixed [left, bottom, right, top] with no SubplotSpec (make_axes cax).
+
 ### `Figure.addAxesFromSpec(cell, role?)`
 
 Add an Axes for a free SubplotSpec (colorbar cax).
 
 ### `Figure.colorbar(mappable, kwargs?)`
 
-fig.colorbar(mappable, { ax, label, orientation, shrink, pad, fraction, aspect, location }) — steal space from ax via make_axes_gridspec (use_gridspec=True) and draw a continuous colorbar.
+fig.colorbar(mappable, { ax, label, orientation, location, shrink, pad, fraction, aspect, anchor, panchor, extend }) — steal space for the colorbar and draw a continuous colorbar, ticked and labelled on its `location` side. `ax` is one Axes (make_axes_gridspec: a GridSpec nested in its SubplotSpec) or a list of Axes (nested lists flatten, like an ndarray): Colorbar.make_axes takes the space from the list's union bbox and moves every listed Axes (and its twins) into the rest, so a column of panels stays aligned; that cax has no SubplotSpec and a later subplots_adjust or tight_layout puts the listed Axes back on their SubplotSpecs, as in matplotlib.
 
-Keyword arguments (unknown keys throw): `ax`, `orientation`, `location`, `fraction`, `pad`, `shrink`, `aspect`, `label`, `extend`
+Keyword arguments (unknown keys throw): `ax`, `orientation`, `location`, `fraction`, `pad`, `shrink`, `aspect`, `label`, `extend`, `anchor`, `panchor`
 
 ### `Figure.subplots(nrows, ncols, kwargs?)`
 
@@ -192,7 +196,11 @@ A second Axes sharing this one's x axis, with its y axis on the right.
 
 ### `Axes.get position()`
 
-The Axes box [left, bottom, right, top] in figure fractions (SubplotSpec.get_position).
+The Axes box [left, bottom, right, top] in figure fractions: get_position(original=True).
+
+### `Axes.get subplotspec()`
+
+get_subplotspec(): none for a free Axes.
 
 ### `Axes.labelOuter(axis)`
 
@@ -220,7 +228,7 @@ set_anchor(anchor) — 'C' or [x, y] in [0, 1]; where a shrunk box sits in the o
 
 ### `Axes.set_subplotspec(ss)`
 
-Replace this Axes' SubplotSpec (colorbar make_axes_gridspec).
+Replace this Axes' SubplotSpec and take its position (colorbar make_axes_gridspec).
 
 ### `Axes.plot(...args)`
 
