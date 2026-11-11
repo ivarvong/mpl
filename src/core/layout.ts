@@ -36,6 +36,16 @@ const axisZ = (b: AxisBelow): number => {
 const axisMeta = (lim: readonly [number, number], t: TickSet, hidden: boolean): AxisMeta =>
   ({ lim, ticks: t.locs, labels: hidden ? [] : t.labels.map(tickLabelText), offset: t.offset, minor: t.minor, minorLabels: hidden ? [] : t.minorLabels.map(tickLabelText) });
 
+/** A colorbar's short axis: Colorbar sets its ticks (major and minor) to [], so it lists none. */
+const shortAxisOf = (role: AxesRole): 'x' | 'y' | 'none' => {
+  switch (role.kind) {
+    case 'colorbar': return role.orientation === 'vertical' ? 'x' : 'y';
+    case 'primary': case 'twinx': return 'none';
+    default: return assertNever(role);
+  }
+};
+const noTicksMeta = (lim: readonly [number, number]): AxisMeta => ({ lim, ticks: [], labels: [], offset: '', minor: [], minorLabels: [] });
+
 // ---------------------------------------------------------------- what a role implies
 type AxisVisibility = { readonly kind: 'hidden' } | { readonly kind: 'shown'; readonly sides: Sides };
 type Roles = { readonly x: AxisVisibility; readonly y: AxisVisibility; readonly patch: boolean; readonly yOnRight: boolean };
@@ -486,7 +496,8 @@ function layoutAxes(inp: AxesIn, fig: FigureSpec, mode: LayoutMode, dev: Device,
     nodes,
     annot: { nodes: nodes.length, frame: f, legend: legendBoxes },
     meta: {
-      x: axisMeta(xlim, xt, ax.hiddenLabels.x), y: axisMeta(ylim, yt, ax.hiddenLabels.y),
+      x: shortAxisOf(ax.role) === 'x' ? noTicksMeta(xlim) : axisMeta(xlim, xt, ax.hiddenLabels.x),
+      y: shortAxisOf(ax.role) === 'y' ? noTicksMeta(ylim) : axisMeta(ylim, yt, ax.hiddenLabels.y),
       frame: { box: { x0: box.x0, x1: box.x1, yTop: box.yTop, yBot: box.yBot }, xlim, ylim, xscale: xs, yscale: ys, H },
       tight: tightOf([
         { box: { x0: box.x0, y0: box.yTop, x1: box.x1, y1: box.yBot }, up: { b: box.b, t: box.t } },

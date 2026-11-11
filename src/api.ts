@@ -2,7 +2,8 @@
 // `unknown` until parsed here into the typed model (parse, don't validate);
 // unknown keyword arguments are errors, as in matplotlib.
 import { parsePaint, parseRgb } from './core/colors.ts';
-import { isNumericColorArray, mapPaints, parseColormap, parseNormKw, requireColormap, scalarToPaints } from './core/colormap.ts';
+import { colorbarAxesToData, colorbarBands } from './core/colorbar.ts';
+import { isNumericColorArray, mapPaints, normLimits, parseColormap, parseNormKw, requireColormap, scalarToPaints } from './core/colormap.ts';
 import { date2num, fromEpochMs } from './core/dates.ts';
 import { ConciseDateFormatter, DateFormatter, formatterSpecOf, isDateLocator, type MajorFormatter } from './core/date-formatters.ts';
 import { MARKERS } from './core/data/markers.ts';
@@ -1562,7 +1563,9 @@ export class Axes {
     const normParsed = unwrap(parseNormKw({ vmin: vminO, vmax: vmaxO, norm: normKw }));
     let lo = vminO.kind === 'some' ? vminO.value : NaN;
     let hi = vmaxO.kind === 'some' ? vmaxO.value : NaN;
-    if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+    // LogNorm autoscales a missing limit from the positive values only (LogNorm.autoscale_None)
+    if (normParsed.kind === 'log') [lo, hi] = normLimits(normParsed, values);
+    else if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
       lo = Infinity; hi = -Infinity;
       for (let i = 0; i < values.length; i++) {
         const v = values[i]; if (!Number.isFinite(v)) continue;
@@ -1644,10 +1647,12 @@ export class Axes {
         : (() => { throw new Error('c must be a numeric array'); })();
       if (arr.length !== 1 && arr.length !== n) throw new Error(`c has ${arr.length} values, expected 1 or ${n}`);
       const norm = unwrap(parseNormKw({ vmin, vmax, norm: normKw }));
+      if (norm.kind === 'log') normLimits(norm, arr);   // a LogNorm with no positive limit throws a RangeError before mapping
       colorList0 = scalarToPaints(cmap, norm, arr);
       let lo = vmin.kind === 'some' ? vmin.value : Infinity;
       let hi = vmax.kind === 'some' ? vmax.value : -Infinity;
-      if (!(Number.isFinite(lo) && Number.isFinite(hi))) {
+      if (norm.kind === 'log') [lo, hi] = normLimits(norm, arr);
+      else if (!(Number.isFinite(lo) && Number.isFinite(hi))) {
         lo = Infinity; hi = -Infinity;
         for (let i = 0; i < arr.length; i++) {
           const v = arr[i]; if (!Number.isFinite(v)) continue;
@@ -2126,21 +2131,21 @@ export class Colorbar {
     this.orientation = orientation;
     const cmap = requireColormap(m.cmapName);
     const N = cmap.N;
-    const lo = m.vmin, hi = m.vmax;
-    const span = hi - lo;
-    const b = new Float64Array(N + 1);
-    for (let i = 0; i <= N; i++) b[i] = lo + span * (i / N);
-    const mid = new Float64Array(N);
-    for (let i = 0; i < N; i++) mid[i] = (i + 0.5) / N;
-    const faces = mapPaints(cmap, mid);
+    // LogNorm: the long axis takes the norm's log scale; bands sit at LogNorm.inverse of a uniform grid
+    const bands = colorbarBands({ kind: m.normKind, vmin: m.vmin, vmax: m.vmax }, N);
+    const b = bands.edges;
+    const [lo, hi] = bands.lim;
+    const faces = mapPaints(cmap, bands.colorAt);
     const x = new Float64Array(N), y = new Float64Array(N), w = new Float64Array(N), h = new Float64Array(N);
     if (orientation === 'vertical') {
       for (let i = 0; i < N; i++) { x[i] = 0; w[i] = 1; y[i] = b[i]; h[i] = b[i + 1] - b[i]; }
       cax.set_xlim(0, 1);
+      if (bands.scale === 'log') cax.set_yscale('log');
       cax.set_ylim(lo, hi);
     } else {
       for (let i = 0; i < N; i++) { y[i] = 0; h[i] = 1; x[i] = b[i]; w[i] = b[i + 1] - b[i]; }
       cax.set_ylim(0, 1);
+      if (bands.scale === 'log') cax.set_xscale('log');
       cax.set_xlim(lo, hi);
     }
     // under / over from cmap LUT indices N / N+1 (matplotlib Colorbar._do_extends → cmap(norm(values)))
@@ -2152,7 +2157,7 @@ export class Colorbar {
     const top = extendUpper ? 1 + COLORBAR_EXTENDFRAC : 1;
     // axes-fraction → data (colorbar ylim/xlim stay vmin/vmax; tips sit outside)
     const axToData = (u: number, v: number): readonly [number, number] =>
-      orientation === 'vertical' ? [u, lo + v * span] : [lo + u * span, v];
+      orientation === 'vertical' ? [u, colorbarAxesToData(bands, v)] : [colorbarAxesToData(bands, u), v];
     // Extend triangles behind solids (zorder just below bar=1), clip_on=False
     if (extendLower) {
       const tri = orientation === 'vertical'
