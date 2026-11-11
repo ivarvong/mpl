@@ -1,0 +1,862 @@
+[
+{
+"linestyle": [
+0,
+[
+1,
+2,
+4,
+2
+]
+],
+"linewidth": 0.5,
+"offset": 0.0,
+"dashes": [
+0.5,
+1.0,
+2.0,
+1.0
+],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[
+1,
+2,
+4,
+2
+]
+],
+"linewidth": 1,
+"offset": 0.0,
+"dashes": [
+1.0,
+2.0,
+4.0,
+2.0
+],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[
+1,
+2,
+4,
+2
+]
+],
+"linewidth": 2.5,
+"offset": 0.0,
+"dashes": [
+2.5,
+5.0,
+10.0,
+5.0
+],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[
+1,
+2,
+4,
+2
+]
+],
+"linewidth": 3.7,
+"offset": 0.0,
+"dashes": [
+3.7,
+7.4,
+14.8,
+7.4
+],
+"dashed": true
+},
+{
+"linestyle": [
+5,
+[
+6,
+2
+]
+],
+"linewidth": 0.5,
+"offset": 2.5,
+"dashes": [
+3.0,
+1.0
+],
+"dashed": true
+},
+{
+"linestyle": [
+5,
+[
+6,
+2
+]
+],
+"linewidth": 1,
+"offset": 5.0,
+"dashes": [
+6.0,
+2.0
+],
+"dashed": true
+},
+{
+"linestyle": [
+5,
+[
+6,
+2
+]
+],
+"linewidth": 2.5,
+"offset": 12.5,
+"dashes": [
+15.0,
+5.0
+],
+"dashed": true
+},
+{
+"linestyle": [
+5,
+[
+6,
+2
+]
+],
+"linewidth": 3.7,
+"offset": 18.5,
+"dashes": [
+22.200000000000003,
+7.4
+],
+"dashed": true
+},
+{
+"linestyle": [
+-3,
+[
+1,
+2,
+4,
+2
+]
+],
+"linewidth": 0.5,
+"offset": 3.0,
+"dashes": [
+0.5,
+1.0,
+2.0,
+1.0
+],
+"dashed": true
+},
+{
+"linestyle": [
+-3,
+[
+1,
+2,
+4,
+2
+]
+],
+"linewidth": 1,
+"offset": 6.0,
+"dashes": [
+1.0,
+2.0,
+4.0,
+2.0
+],
+"dashed": true
+},
+{
+"linestyle": [
+-3,
+[
+1,
+2,
+4,
+2
+]
+],
+"linewidth": 2.5,
+"offset": 15.0,
+"dashes": [
+2.5,
+5.0,
+10.0,
+5.0
+],
+"dashed": true
+},
+{
+"linestyle": [
+-3,
+[
+1,
+2,
+4,
+2
+]
+],
+"linewidth": 3.7,
+"offset": 22.200000000000003,
+"dashes": [
+3.7,
+7.4,
+14.8,
+7.4
+],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[
+5
+]
+],
+"linewidth": 0.5,
+"offset": 0.0,
+"dashes": [
+2.5
+],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[
+5
+]
+],
+"linewidth": 1,
+"offset": 0.0,
+"dashes": [
+5.0
+],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[
+5
+]
+],
+"linewidth": 2.5,
+"offset": 0.0,
+"dashes": [
+12.5
+],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[
+5
+]
+],
+"linewidth": 3.7,
+"offset": 0.0,
+"dashes": [
+18.5
+],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[
+1,
+2,
+4
+]
+],
+"linewidth": 0.5,
+"offset": 0.0,
+"dashes": [
+0.5,
+1.0,
+2.0
+],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[
+1,
+2,
+4
+]
+],
+"linewidth": 1,
+"offset": 0.0,
+"dashes": [
+1.0,
+2.0,
+4.0
+],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[
+1,
+2,
+4
+]
+],
+"linewidth": 2.5,
+"offset": 0.0,
+"dashes": [
+2.5,
+5.0,
+10.0
+],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[
+1,
+2,
+4
+]
+],
+"linewidth": 3.7,
+"offset": 0.0,
+"dashes": [
+3.7,
+7.4,
+14.8
+],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+null
+],
+"linewidth": 0.5,
+"offset": 0.0,
+"dashes": null,
+"dashed": true
+},
+{
+"linestyle": [
+0,
+null
+],
+"linewidth": 1,
+"offset": 0.0,
+"dashes": null,
+"dashed": true
+},
+{
+"linestyle": [
+0,
+null
+],
+"linewidth": 2.5,
+"offset": 0.0,
+"dashes": null,
+"dashed": true
+},
+{
+"linestyle": [
+0,
+null
+],
+"linewidth": 3.7,
+"offset": 0.0,
+"dashes": null,
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[]
+],
+"linewidth": 0.5,
+"offset": 0.0,
+"dashes": [],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[]
+],
+"linewidth": 1,
+"offset": 0.0,
+"dashes": [],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[]
+],
+"linewidth": 2.5,
+"offset": 0.0,
+"dashes": [],
+"dashed": true
+},
+{
+"linestyle": [
+0,
+[]
+],
+"linewidth": 3.7,
+"offset": 0.0,
+"dashes": [],
+"dashed": true
+},
+{
+"linestyle": [
+17.5,
+[
+3,
+1.5,
+0.5,
+1.5
+]
+],
+"linewidth": 0.5,
+"offset": 2.25,
+"dashes": [
+1.5,
+0.75,
+0.25,
+0.75
+],
+"dashed": true
+},
+{
+"linestyle": [
+17.5,
+[
+3,
+1.5,
+0.5,
+1.5
+]
+],
+"linewidth": 1,
+"offset": 4.5,
+"dashes": [
+3.0,
+1.5,
+0.5,
+1.5
+],
+"dashed": true
+},
+{
+"linestyle": [
+17.5,
+[
+3,
+1.5,
+0.5,
+1.5
+]
+],
+"linewidth": 2.5,
+"offset": 11.25,
+"dashes": [
+7.5,
+3.75,
+1.25,
+3.75
+],
+"dashed": true
+},
+{
+"linestyle": [
+17.5,
+[
+3,
+1.5,
+0.5,
+1.5
+]
+],
+"linewidth": 3.7,
+"offset": 16.650000000000002,
+"dashes": [
+11.100000000000001,
+5.550000000000001,
+1.85,
+5.550000000000001
+],
+"dashed": true
+},
+{
+"linestyle": [
+-0.1,
+[
+0.3,
+0.7
+]
+],
+"linewidth": 0.5,
+"offset": 0.45,
+"dashes": [
+0.15,
+0.35
+],
+"dashed": true
+},
+{
+"linestyle": [
+-0.1,
+[
+0.3,
+0.7
+]
+],
+"linewidth": 1,
+"offset": 0.9,
+"dashes": [
+0.3,
+0.7
+],
+"dashed": true
+},
+{
+"linestyle": [
+-0.1,
+[
+0.3,
+0.7
+]
+],
+"linewidth": 2.5,
+"offset": 2.25,
+"dashes": [
+0.75,
+1.75
+],
+"dashed": true
+},
+{
+"linestyle": [
+-0.1,
+[
+0.3,
+0.7
+]
+],
+"linewidth": 3.7,
+"offset": 3.33,
+"dashes": [
+1.11,
+2.59
+],
+"dashed": true
+},
+{
+"linestyle": [
+1000000000.25,
+[
+0.1,
+0.2
+]
+],
+"linewidth": 0.5,
+"offset": 0.024999925985131677,
+"dashes": [
+0.05,
+0.1
+],
+"dashed": true
+},
+{
+"linestyle": [
+1000000000.25,
+[
+0.1,
+0.2
+]
+],
+"linewidth": 1,
+"offset": 0.049999851970263354,
+"dashes": [
+0.1,
+0.2
+],
+"dashed": true
+},
+{
+"linestyle": [
+1000000000.25,
+[
+0.1,
+0.2
+]
+],
+"linewidth": 2.5,
+"offset": 0.12499962992565838,
+"dashes": [
+0.25,
+0.5
+],
+"dashed": true
+},
+{
+"linestyle": [
+1000000000.25,
+[
+0.1,
+0.2
+]
+],
+"linewidth": 3.7,
+"offset": 0.18499945228997441,
+"dashes": [
+0.37000000000000005,
+0.7400000000000001
+],
+"dashed": true
+},
+{
+"linestyle": [
+2,
+[
+0,
+3
+]
+],
+"linewidth": 0.5,
+"offset": 1.0,
+"dashes": [
+0.0,
+1.5
+],
+"dashed": true
+},
+{
+"linestyle": [
+2,
+[
+0,
+3
+]
+],
+"linewidth": 1,
+"offset": 2.0,
+"dashes": [
+0.0,
+3.0
+],
+"dashed": true
+},
+{
+"linestyle": [
+2,
+[
+0,
+3
+]
+],
+"linewidth": 2.5,
+"offset": 5.0,
+"dashes": [
+0.0,
+7.5
+],
+"dashed": true
+},
+{
+"linestyle": [
+2,
+[
+0,
+3
+]
+],
+"linewidth": 3.7,
+"offset": 7.4,
+"dashes": [
+0.0,
+11.100000000000001
+],
+"dashed": true
+},
+{
+"linestyle": "-",
+"linewidth": 0.5,
+"offset": 0.0,
+"dashes": null,
+"dashed": false
+},
+{
+"linestyle": "-",
+"linewidth": 1,
+"offset": 0.0,
+"dashes": null,
+"dashed": false
+},
+{
+"linestyle": "-",
+"linewidth": 2.5,
+"offset": 0.0,
+"dashes": null,
+"dashed": false
+},
+{
+"linestyle": "-",
+"linewidth": 3.7,
+"offset": 0.0,
+"dashes": null,
+"dashed": false
+},
+{
+"linestyle": "--",
+"linewidth": 0.5,
+"offset": 0.0,
+"dashes": [
+1.85,
+0.8
+],
+"dashed": true
+},
+{
+"linestyle": "--",
+"linewidth": 1,
+"offset": 0.0,
+"dashes": [
+3.7,
+1.6
+],
+"dashed": true
+},
+{
+"linestyle": "--",
+"linewidth": 2.5,
+"offset": 0.0,
+"dashes": [
+9.25,
+4.0
+],
+"dashed": true
+},
+{
+"linestyle": "--",
+"linewidth": 3.7,
+"offset": 0.0,
+"dashes": [
+13.690000000000001,
+5.920000000000001
+],
+"dashed": true
+},
+{
+"linestyle": "-.",
+"linewidth": 0.5,
+"offset": 0.0,
+"dashes": [
+3.2,
+0.8,
+0.5,
+0.8
+],
+"dashed": true
+},
+{
+"linestyle": "-.",
+"linewidth": 1,
+"offset": 0.0,
+"dashes": [
+6.4,
+1.6,
+1.0,
+1.6
+],
+"dashed": true
+},
+{
+"linestyle": "-.",
+"linewidth": 2.5,
+"offset": 0.0,
+"dashes": [
+16.0,
+4.0,
+2.5,
+4.0
+],
+"dashed": true
+},
+{
+"linestyle": "-.",
+"linewidth": 3.7,
+"offset": 0.0,
+"dashes": [
+23.680000000000003,
+5.920000000000001,
+3.7,
+5.920000000000001
+],
+"dashed": true
+},
+{
+"linestyle": ":",
+"linewidth": 0.5,
+"offset": 0.0,
+"dashes": [
+0.5,
+0.825
+],
+"dashed": true
+},
+{
+"linestyle": ":",
+"linewidth": 1,
+"offset": 0.0,
+"dashes": [
+1.0,
+1.65
+],
+"dashed": true
+},
+{
+"linestyle": ":",
+"linewidth": 2.5,
+"offset": 0.0,
+"dashes": [
+2.5,
+4.125
+],
+"dashed": true
+},
+{
+"linestyle": ":",
+"linewidth": 3.7,
+"offset": 0.0,
+"dashes": [
+3.7,
+6.1049999999999995
+],
+"dashed": true
+}
+]

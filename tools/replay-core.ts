@@ -38,6 +38,8 @@ export const decode = (a: unknown): unknown => {
   }
   // {"$array": rows} → nested list (imshow); hist must keep bare list-of-lists as lists
   if (a && typeof a === 'object' && '$array' in a) return decode((a as { $array: unknown }).$array);
+  // {"$tuple": items} → an array (a Python tuple such as a dash linestyle (offset, [on, off]))
+  if (a && typeof a === 'object' && '$tuple' in a) return decode((a as { $tuple: unknown }).$tuple);
   // {"$uint8rgb": rows} passes through for Axes.imshow to build a uint8 buffer
   return a;
 };

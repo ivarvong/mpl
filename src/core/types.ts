@@ -114,9 +114,14 @@ export type MarkerName = 'o' | 's' | '^' | 'v' | '<' | '>' | 'D' | 'd' | 'x' | '
   /** matplotlib.lines.CARET{LEFT,RIGHT,UP,DOWN}BASE (marker codes 8..11): errorbar's limit arrows */
   | 'caretleftbase' | 'caretrightbase' | 'caretupbase' | 'caretdownbase';
 export type LineStyleName = 'solid' | 'dashed' | 'dashdot' | 'dotted';
+/**
+ * A linestyle: a named one, or an (offset, on-off sequence) dash tuple in pt before lines.scale_dashes. `onoff`
+ * none is a None or empty sequence: drawn solid, though Line2D still counts it dashed (dash cap and join).
+ */
+export type LineStyle = LineStyleName | { readonly kind: 'dashes'; readonly offset: number; readonly onoff: Option<readonly number[]> };
 export type Label = { readonly kind: 'none' } | { readonly kind: 'text'; readonly text: string };
 
-export type LineStroke = { readonly kind: 'none' } | { readonly kind: 'on'; readonly color: Rgb; readonly widthPt: number; readonly style: LineStyleName };
+export type LineStroke = { readonly kind: 'none' } | { readonly kind: 'on'; readonly color: Rgb; readonly widthPt: number; readonly style: LineStyle };
 export type LineMarkers =
   | { readonly kind: 'none' }
   | { readonly kind: 'on'; readonly shape: MarkerName; readonly sizePt: number; readonly edgeWidthPt: number; readonly face: Paint; readonly edge: Paint };
@@ -155,7 +160,7 @@ export type AxLineArtist = {
  *  over the segments; `zorder` is 2 (LineCollection's default). */
 export type SegmentsArtist = {
   readonly kind: 'segments'; readonly x0: Float64Array; readonly y0: Float64Array; readonly x1: Float64Array; readonly y1: Float64Array;
-  readonly colors: readonly Rgb[]; readonly widthPt: number; readonly styles: readonly LineStyleName[];
+  readonly colors: readonly Rgb[]; readonly widthPt: number; readonly styles: readonly LineStyle[];
   readonly label: Label; readonly clip: boolean; readonly zorder: number;
 };
 /** A Polygon patch (hist's step and stepfilled outlines): closed or open, filled or not.
@@ -171,7 +176,7 @@ export type PolygonArtist = {
  *  lines, and the first cap line's marker style (absent without caps or limit markers). */
 export type ErrorbarHandle = {
   readonly line: Option<{ readonly stroke: LineStroke; readonly markers: LineMarkers }>;
-  readonly bar: { readonly color: Rgb; readonly widthPt: number; readonly style: LineStyleName };
+  readonly bar: { readonly color: Rgb; readonly widthPt: number; readonly style: LineStyle };
   readonly caps: Option<{ readonly sizePt: number; readonly edgeWidthPt: number; readonly edge: Paint; readonly face: Paint }>;
   readonly hasX: boolean; readonly hasY: boolean;
 };
@@ -307,7 +312,7 @@ export type Handle =
   | { readonly kind: 'errorbar'; readonly errorbar: ErrorbarHandle }
   /** HandlerLineCollection: a 2-point Line2D given the collection's dash tuple, so it counts as dashed
    *  (dash cap and join) even when solid */
-  | { readonly kind: 'collection'; readonly color: Rgb; readonly widthPt: number; readonly style: LineStyleName }
+  | { readonly kind: 'collection'; readonly color: Rgb; readonly widthPt: number; readonly style: LineStyle }
   /** HandlerPathCollection: a scatter's marker path, sizes and colours, drawn as a small collection of its own */
   | { readonly kind: 'scatter'; readonly shape: MarkerName; readonly collection: ScatterCollection; readonly edgeWidthPt: number };
 export type LegendEntry = { readonly label: string; readonly handle: Handle };
@@ -375,7 +380,7 @@ export type TickLabelStyles = readonly (readonly [number, TickLabelStyle])[];
 export type GridSpec = { readonly kind: 'off' } | { readonly kind: 'on'; readonly which: GridWhich };
 /** One family of gridlines (Line2D properties). `style` none is linestyle 'none': nothing drawn.
  *  `alpha` replaces the colour's alpha, as Line2D.set_alpha does (grid.alpha is passed as alpha). */
-export type GridLines = { readonly color: Rgb; readonly widthPt: number; readonly style: Option<LineStyleName>; readonly alpha: number };
+export type GridLines = { readonly color: Rgb; readonly widthPt: number; readonly style: Option<LineStyle>; readonly alpha: number };
 /** Axis.grid state for one tick family: shown or not, and the line properties it keeps either way. */
 export type TickGrid = { readonly on: boolean; readonly lines: GridLines };
 export type AxisGrid = { readonly major: TickGrid; readonly minor: TickGrid };
@@ -470,7 +475,7 @@ export type Theme = {
     readonly cycle: readonly Rgb[];
   };
   readonly lines: {
-    readonly widthPt: number; readonly style: Option<LineStyleName>; readonly marker: Option<MarkerName>;
+    readonly widthPt: number; readonly style: Option<LineStyle>; readonly marker: Option<MarkerName>;
     readonly markerSizePt: number; readonly markerEdgeWidthPt: number;
     /** lines.markeredgecolor / markerfacecolor; none = 'auto' (follow the line colour) */
     readonly markerEdge: Option<Paint>; readonly markerFace: Option<Paint>;
@@ -482,7 +487,7 @@ export type Theme = {
   };
   readonly simplify: Simplify;
   readonly patch: { readonly linewidthPt: number; readonly edge: Rgb; readonly forceEdge: boolean };
-  readonly grid: { readonly color: Rgb; readonly style: LineStyleName; readonly widthPt: number; readonly alpha: number };
+  readonly grid: { readonly color: Rgb; readonly style: LineStyle; readonly widthPt: number; readonly alpha: number };
   readonly xtick: TickTheme;
   readonly ytick: TickTheme;
   readonly legend: {
@@ -520,13 +525,13 @@ export type Theme = {
 /** boxplot.whiskers: a float (IQR multiple) or a percentile pair. */
 export type WhisRc = { readonly kind: 'iqr'; readonly coef: number } | { readonly kind: 'percentiles'; readonly lo: number; readonly hi: number };
 export type BoxplotLineRc = {
-  readonly color: Rgb; readonly linewidthPt: number; readonly style: LineStyleName;
+  readonly color: Rgb; readonly linewidthPt: number; readonly style: LineStyle;
 };
 export type BoxplotMeanRc = BoxplotLineRc & {
   readonly marker: MarkerName; readonly markerFace: Rgb; readonly markerEdge: Rgb; readonly markerSizePt: number;
 };
 export type BoxplotFlierRc = {
-  readonly color: Rgb; readonly linewidthPt: number; readonly style: Option<LineStyleName>;
+  readonly color: Rgb; readonly linewidthPt: number; readonly style: Option<LineStyle>;
   readonly marker: MarkerName; readonly markerFace: Paint; readonly markerEdge: Rgb;
   readonly markerEdgeWidthPt: number; readonly markerSizePt: number;
 };

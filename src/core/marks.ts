@@ -2,26 +2,30 @@
 import { strokePx } from './text.ts';
 import { MARKERS } from './data/markers.ts';
 import { inkOf, snapOffset } from './scene.ts';
-import type { Cap, Dash, Join, LineMarkers, LineStyleName, MarkerName, Node, Option, Rgb, Seg, Stroke, Theme } from './types.ts';
+import type { Cap, Dash, Join, LineMarkers, LineStyle, MarkerName, Node, Option, Rgb, Seg, Stroke, Theme } from './types.ts';
 import { assertNever, none, some } from './types.ts';
 
 /** lines._get_dash_pattern + _scale_dashes, in px. */
-export function dashFor(theme: Theme, style: LineStyleName, widthPt: number, k: number): Dash {
+export function dashFor(theme: Theme, style: LineStyle, widthPt: number, k: number): Dash {
   const scale = theme.lines.scaleDashes ? widthPt : 1;
-  const pattern = (p: readonly number[]): Dash => ({ kind: 'dashed', pattern: p.map((d) => d * scale * k), offset: 0 });
+  const pattern = (p: readonly number[], offset: number): Dash => ({ kind: 'dashed', pattern: p.map((d) => d * scale * k), offset: offset * scale * k });
+  if (typeof style !== 'string') return style.onoff.kind === 'some' ? pattern(style.onoff.value, style.offset) : { kind: 'solid' };
   switch (style) {
     case 'solid': return { kind: 'solid' };
-    case 'dashed': return pattern(theme.lines.patterns.dashed);
-    case 'dashdot': return pattern(theme.lines.patterns.dashdot);
-    case 'dotted': return pattern(theme.lines.patterns.dotted);
+    case 'dashed': return pattern(theme.lines.patterns.dashed, 0);
+    case 'dashdot': return pattern(theme.lines.patterns.dashdot, 0);
+    case 'dotted': return pattern(theme.lines.patterns.dotted, 0);
     default: return assertNever(style);
   }
 }
 
+/** Line2D.is_dashed: every linestyle but '-' (a dash tuple counts, even one drawn solid). */
+export const isDashedStyle = (style: LineStyle): boolean => style !== 'solid';
+
 /** Line2D stroke: solid lines use the solid cap/join, dashed ones the dash cap/join. */
-export function lineStroke(theme: Theme, color: Rgb, widthPt: number, style: LineStyleName, k: number, capOverride: Option<Cap> = none): Stroke {
+export function lineStroke(theme: Theme, color: Rgb, widthPt: number, style: LineStyle, k: number, capOverride: Option<Cap> = none): Stroke {
   const dash = dashFor(theme, style, widthPt, k);
-  const solid = dash.kind === 'solid';
+  const solid = !isDashedStyle(style);
   const cap: Cap = capOverride.kind === 'some' ? capOverride.value : (solid ? theme.lines.solidCap : theme.lines.dashCap);
   const join: Join = solid ? theme.lines.solidJoin : theme.lines.dashJoin;
   return { color, width: strokePx(widthPt, k), cap, join, dash };

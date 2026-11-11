@@ -6,7 +6,7 @@ import { parseWeight } from './fonts.ts';
 import { parseLinestyle, parseMarker } from './fmt.ts';
 import type { RcLayer, RcValue } from './rc.ts';
 import { lookup } from './std.ts';
-import type { AnchorCode, AxisBelow, Cap, GridWhich, HAlign, Join, LegendLoc, LineStyleName, Option, Paint, Result, Rgb, Theme, TitleColor, TickDirection, TickTheme, WhisRc, BoxplotLineRc, BoxplotMeanRc, BoxplotFlierRc } from './types.ts';
+import type { AnchorCode, AxisBelow, Cap, GridWhich, HAlign, Join, LegendLoc, LineStyle, Option, Paint, Result, Rgb, Theme, TitleColor, TickDirection, TickTheme, WhisRc, BoxplotLineRc, BoxplotMeanRc, BoxplotFlierRc } from './types.ts';
 import { err, none, ok, some } from './types.ts';
 
 const FONT_SCALES: ReadonlyMap<string, number> = new Map([
@@ -109,7 +109,7 @@ class Reader {
     switch (this.oneOf(key, ['butt', 'round', 'projecting'])) { case 'butt': return 'butt'; case 'round': return 'round'; case 'projecting': return 'square'; }
   }
   join(key: string): Join { return this.oneOf(key, ['miter', 'round', 'bevel']); }
-  solidStyle(key: string): LineStyleName {
+  solidStyle(key: string): LineStyle {
     const r = parseLinestyle(this.raw(key));
     if (!r.ok) return this.fail(key, r.error, 'solid');
     return r.value.kind === 'some' ? r.value.value : this.fail(key, `'None' is not supported here`, 'solid');
