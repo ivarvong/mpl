@@ -790,7 +790,8 @@ def run_case(name, calls):
                 getattr(ax, fn)(*args, **kwargs)
         fig.canvas.draw()
         recs = [record(a, fig) for a in axes]
-        rec = dict(spec=calls, style=style, rc=rc_layer, **recs[0], axes=recs)
+        # figaxes: every Axes in fig.axes order (colorbar caxes too), so their ticks are pinned, not only their pixels
+        rec = dict(spec=calls, style=style, rc=rc_layer, **recs[0], axes=recs, figaxes=[record(a, fig) for a in fig.axes])
         fig.savefig(os.path.join(OUT, f"{name}.svg"))
         fig.savefig(os.path.join(OUT, f"{name}.png"))
         with open(os.path.join(OUT, f"{name}.json"), "w") as f:
@@ -812,6 +813,16 @@ case("boxplot_meanline", ("boxplot", [[BA, BC]], {"showmeans": True, "meanline":
      "positions": [1, 2], "showfliers": False}))
 # Mixed float positions: tick labels must be str(np.float64) ('0.5','2.0','4.5'), not JS String() ('0.5','2','4.5')
 case("boxplot_positions_float", ("boxplot", [[BA, BB, BC]], {"positions": [0.5, 2.0, 4.5], "widths": [0.3, 0.8, 1.2]}))
+
+# Issue #65: a colorbar under LogNorm takes the norm's log scale (bands at norm.inverse of a uniform grid, LogLocator ticks)
+LOGIM = {"$array": [[10, 100, 1000, 10000]]}
+case("colorbar_lognorm", ("imshow", [LOGIM], {"cmap": "viridis", "norm": "log", "vmin": 10, "vmax": 10000}), ("fig.colorbar", []))
+LOGIM2 = {"$array": [[3 * 1.7 ** (i + 4 * j) for i in range(4)] for j in range(4)]}
+case("colorbar_lognorm_extend", ("imshow", [LOGIM2], {"cmap": "plasma", "norm": "log", "interpolation": "nearest"}), ("fig.colorbar", [], {"extend": "both", "label": "rate"}))
+# autoscale skips non-positive values (LogNorm.autoscale_None); they draw as the cmap's bad colour
+case("colorbar_lognorm_nonpositive", ("imshow", [{"$array": [[0, 2, 40], [-5, 800, 16000]]}], {"cmap": "magma", "norm": "log", "interpolation": "nearest"}), ("fig.colorbar", []))
+case("colorbar_lognorm_scatter_horizontal", ("scatter", [lin(16, 0, 15), lin(16, 0, 3)], {"c": [0.02 * 2.1 ** i for i in range(16)], "cmap": "coolwarm", "norm": "log", "s": 40}),
+     ("fig.colorbar", [], {"orientation": "horizontal"}))
 
 def main():
     check_no_literal_newlines(CASES)

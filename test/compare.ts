@@ -52,8 +52,9 @@ for (const name of names) {
   for (const k of ['xlim', 'ylim', 'xticks', 'yticks']) if (!arrEq(got[k], fx[k])) problems.push(`${k}: got ${JSON.stringify(got[k])} want ${JSON.stringify(fx[k])}`);
   for (const k of ['xticklabels', 'yticklabels']) if (!arrEq(got[k], fx[k], (a: string, b: string) => a === b)) problems.push(`${k}: got ${JSON.stringify(got[k])} want ${JSON.stringify(fx[k])}`);
   for (const k of ['xoffset', 'yoffset']) if (got[k] !== fx[k]) problems.push(`${k}: got ${JSON.stringify(got[k])} want ${JSON.stringify(fx[k])}`);
-  // every axes (twins too), including minor ticks and labels
-  (fx.axes || []).forEach((want: Got, i: number) => {
+  // every axes (twins too), including minor ticks and labels; `figaxes` (newer fixtures) lists fig.axes, colorbar caxes included
+  const figAxes: boolean = Array.isArray(fx.figaxes);
+  ((figAxes ? fx.figaxes : fx.axes) || []).forEach((want: Got, i: number) => {
     const g = got.axes[i];
     if (!g) { problems.push(`axes[${i}] missing`); return; }
     for (const a of ['x', 'y']) {

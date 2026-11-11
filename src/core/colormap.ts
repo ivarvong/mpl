@@ -280,6 +280,23 @@ export function autoscaleNorm(n: Norm, data: ArrayLike<number>): Norm {
   }
 }
 
+/** The norm's vmin/vmax with any missing (NaN) one taken from the data (Normalize/LogNorm.autoscale_None):
+ *  finite values, and for LogNorm only positive ones. A LogNorm with no positive data throws. */
+export function normLimits(n: Norm, data: ArrayLike<number>): readonly [number, number] {
+  const filled = autoscaleNorm(n, data);
+  switch (filled.kind) {
+    case 'linear': return [filled.vmin, filled.vmax];
+    case 'log': {
+      if (!(filled.vmin > 0) || !(filled.vmax > 0)) {
+        throw new RangeError(`LogNorm: vmin and vmax must be positive (data has no positive values or a limit is <= 0), got vmin=${filled.vmin}, vmax=${filled.vmax}`);
+      }
+      return [filled.vmin, filled.vmax];
+    }
+    case 'twoslope': return [filled.vmin, filled.vmax];
+    default: return assertNever(filled);
+  }
+}
+
 export function applyNorm(n: Norm, xs: ArrayLike<number>, out: Float64Array): Float64Array {
   const len = xs.length;
   switch (n.kind) {
@@ -355,10 +372,8 @@ export function parseNormKw(opts: {
   if (opts.norm.kind === 'none') return ok(normalize(vmin, vmax, false));
   const n = opts.norm.value;
   if (n === 'linear') return ok(normalize(vmin, vmax, false));
-  if (n === 'log') {
-    if (!Number.isFinite(vmin) || !Number.isFinite(vmax)) return err('LogNorm requires vmin and vmax');
-    return ok(logNorm(vmin, vmax, false));
-  }
+  // a missing vmin/vmax is NaN here and autoscales from the data's positive values (LogNorm.autoscale_None)
+  if (n === 'log') return ok(logNorm(vmin, vmax, false));
   if (isPlainObject(n)) {
     const kindO = prop(n, 'kind');
     const kind = kindO.kind === 'some' ? kindO.value : 'linear';
@@ -371,9 +386,7 @@ export function parseNormKw(opts: {
     const lo = numProp('vmin'); const hi = numProp('vmax');
     if (kind === 'linear') return ok(normalize(lo.kind === 'some' ? lo.value : vmin, hi.kind === 'some' ? hi.value : vmax, clip));
     if (kind === 'log') {
-      const a = lo.kind === 'some' ? lo.value : vmin, b = hi.kind === 'some' ? hi.value : vmax;
-      if (!Number.isFinite(a) || !Number.isFinite(b)) return err('LogNorm requires vmin and vmax');
-      return ok(logNorm(a, b, clip));
+      return ok(logNorm(lo.kind === 'some' ? lo.value : vmin, hi.kind === 'some' ? hi.value : vmax, clip));
     }
     if (kind === 'twoslope') {
       const vc = numProp('vcenter');
