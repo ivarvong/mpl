@@ -1,0 +1,544 @@
+{
+ "spec": [
+  [
+   "set_xlim",
+   [
+    0,
+    1
+   ],
+   {}
+  ],
+  [
+   "set_ylim",
+   [
+    0,
+    1
+   ],
+   {}
+  ],
+  [
+   "annotate",
+   [
+    "-",
+    [
+     0.62,
+     0.9285714285714286
+    ]
+   ],
+   {
+    "xycoords": "axes fraction",
+    "xytext": [
+     0.32,
+     0.9285714285714286
+    ],
+    "textcoords": "axes fraction",
+    "va": "center",
+    "ha": "right",
+    "fontsize": 9,
+    "arrowprops": {
+     "arrowstyle": "-"
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "->",
+    [
+     0.62,
+     0.7857142857142857
+    ]
+   ],
+   {
+    "xycoords": "axes fraction",
+    "xytext": [
+     0.32,
+     0.7857142857142857
+    ],
+    "textcoords": "axes fraction",
+    "va": "center",
+    "ha": "right",
+    "fontsize": 9,
+    "arrowprops": {
+     "arrowstyle": "->"
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "-|>",
+    [
+     0.62,
+     0.6428571428571428
+    ]
+   ],
+   {
+    "xycoords": "axes fraction",
+    "xytext": [
+     0.32,
+     0.6428571428571428
+    ],
+    "textcoords": "axes fraction",
+    "va": "center",
+    "ha": "right",
+    "fontsize": 9,
+    "arrowprops": {
+     "arrowstyle": "-|>"
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "<-",
+    [
+     0.62,
+     0.5
+    ]
+   ],
+   {
+    "xycoords": "axes fraction",
+    "xytext": [
+     0.32,
+     0.5
+    ],
+    "textcoords": "axes fraction",
+    "va": "center",
+    "ha": "right",
+    "fontsize": 9,
+    "arrowprops": {
+     "arrowstyle": "<-"
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "<->",
+    [
+     0.62,
+     0.3571428571428571
+    ]
+   ],
+   {
+    "xycoords": "axes fraction",
+    "xytext": [
+     0.32,
+     0.3571428571428571
+    ],
+    "textcoords": "axes fraction",
+    "va": "center",
+    "ha": "right",
+    "fontsize": 9,
+    "arrowprops": {
+     "arrowstyle": "<->"
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "<|-",
+    [
+     0.62,
+     0.2142857142857143
+    ]
+   ],
+   {
+    "xycoords": "axes fraction",
+    "xytext": [
+     0.32,
+     0.2142857142857143
+    ],
+    "textcoords": "axes fraction",
+    "va": "center",
+    "ha": "right",
+    "fontsize": 9,
+    "arrowprops": {
+     "arrowstyle": "<|-"
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "<|-|>",
+    [
+     0.62,
+     0.0714285714285714
+    ]
+   ],
+   {
+    "xycoords": "axes fraction",
+    "xytext": [
+     0.32,
+     0.0714285714285714
+    ],
+    "textcoords": "axes fraction",
+    "va": "center",
+    "ha": "right",
+    "fontsize": 9,
+    "arrowprops": {
+     "arrowstyle": "<|-|>"
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "diag ->",
+    [
+     0.95,
+     0.9
+    ]
+   ],
+   {
+    "xycoords": "axes fraction",
+    "xytext": [
+     0.72,
+     0.55
+    ],
+    "textcoords": "axes fraction",
+    "arrowprops": {
+     "arrowstyle": "->",
+     "color": "C3",
+     "lw": 2
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "diag <|-|>",
+    [
+     0.96,
+     0.08
+    ]
+   ],
+   {
+    "xycoords": "axes fraction",
+    "xytext": [
+     0.7,
+     0.3
+    ],
+    "textcoords": "axes fraction",
+    "arrowprops": {
+     "arrowstyle": "<|-|>"
+    }
+   }
+  ],
+  [
+   "annotate",
+   [
+    "params",
+    [
+     0.98,
+     0.45
+    ]
+   ],
+   {
+    "xycoords": "axes fraction",
+    "xytext": [
+     0.7,
+     0.75
+    ],
+    "textcoords": "axes fraction",
+    "arrowprops": {
+     "arrowstyle": "-|>,head_length=0.8,head_width=0.4",
+     "fc": "C2",
+     "ec": "C1"
+    }
+   }
+  ]
+ ],
+ "style": null,
+ "rc": {},
+ "xlim": [
+  0.0,
+  1.0
+ ],
+ "ylim": [
+  0.0,
+  1.0
+ ],
+ "xticks": [
+  0.0,
+  0.2,
+  0.4,
+  0.6000000000000001,
+  0.8,
+  1.0
+ ],
+ "yticks": [
+  0.0,
+  0.2,
+  0.4,
+  0.6000000000000001,
+  0.8,
+  1.0
+ ],
+ "xticklabels": [
+  "0.0",
+  "0.2",
+  "0.4",
+  "0.6",
+  "0.8",
+  "1.0"
+ ],
+ "yticklabels": [
+  "0.0",
+  "0.2",
+  "0.4",
+  "0.6",
+  "0.8",
+  "1.0"
+ ],
+ "xoffset": "",
+ "yoffset": "",
+ "legend": null,
+ "x": {
+  "lim": [
+   0.0,
+   1.0
+  ],
+  "ticks": [
+   0.0,
+   0.2,
+   0.4,
+   0.6000000000000001,
+   0.8,
+   1.0
+  ],
+  "labels": [
+   "0.0",
+   "0.2",
+   "0.4",
+   "0.6",
+   "0.8",
+   "1.0"
+  ],
+  "minor": [],
+  "minorlabels": [],
+  "offset": ""
+ },
+ "y": {
+  "lim": [
+   0.0,
+   1.0
+  ],
+  "ticks": [
+   0.0,
+   0.2,
+   0.4,
+   0.6000000000000001,
+   0.8,
+   1.0
+  ],
+  "labels": [
+   "0.0",
+   "0.2",
+   "0.4",
+   "0.6",
+   "0.8",
+   "1.0"
+  ],
+  "minor": [],
+  "minorlabels": [],
+  "offset": ""
+ },
+ "axes": [
+  {
+   "xlim": [
+    0.0,
+    1.0
+   ],
+   "ylim": [
+    0.0,
+    1.0
+   ],
+   "xticks": [
+    0.0,
+    0.2,
+    0.4,
+    0.6000000000000001,
+    0.8,
+    1.0
+   ],
+   "yticks": [
+    0.0,
+    0.2,
+    0.4,
+    0.6000000000000001,
+    0.8,
+    1.0
+   ],
+   "xticklabels": [
+    "0.0",
+    "0.2",
+    "0.4",
+    "0.6",
+    "0.8",
+    "1.0"
+   ],
+   "yticklabels": [
+    "0.0",
+    "0.2",
+    "0.4",
+    "0.6",
+    "0.8",
+    "1.0"
+   ],
+   "xoffset": "",
+   "yoffset": "",
+   "legend": null,
+   "x": {
+    "lim": [
+     0.0,
+     1.0
+    ],
+    "ticks": [
+     0.0,
+     0.2,
+     0.4,
+     0.6000000000000001,
+     0.8,
+     1.0
+    ],
+    "labels": [
+     "0.0",
+     "0.2",
+     "0.4",
+     "0.6",
+     "0.8",
+     "1.0"
+    ],
+    "minor": [],
+    "minorlabels": [],
+    "offset": ""
+   },
+   "y": {
+    "lim": [
+     0.0,
+     1.0
+    ],
+    "ticks": [
+     0.0,
+     0.2,
+     0.4,
+     0.6000000000000001,
+     0.8,
+     1.0
+    ],
+    "labels": [
+     "0.0",
+     "0.2",
+     "0.4",
+     "0.6",
+     "0.8",
+     "1.0"
+    ],
+    "minor": [],
+    "minorlabels": [],
+    "offset": ""
+   }
+  }
+ ],
+ "figaxes": [
+  {
+   "xlim": [
+    0.0,
+    1.0
+   ],
+   "ylim": [
+    0.0,
+    1.0
+   ],
+   "xticks": [
+    0.0,
+    0.2,
+    0.4,
+    0.6000000000000001,
+    0.8,
+    1.0
+   ],
+   "yticks": [
+    0.0,
+    0.2,
+    0.4,
+    0.6000000000000001,
+    0.8,
+    1.0
+   ],
+   "xticklabels": [
+    "0.0",
+    "0.2",
+    "0.4",
+    "0.6",
+    "0.8",
+    "1.0"
+   ],
+   "yticklabels": [
+    "0.0",
+    "0.2",
+    "0.4",
+    "0.6",
+    "0.8",
+    "1.0"
+   ],
+   "xoffset": "",
+   "yoffset": "",
+   "legend": null,
+   "x": {
+    "lim": [
+     0.0,
+     1.0
+    ],
+    "ticks": [
+     0.0,
+     0.2,
+     0.4,
+     0.6000000000000001,
+     0.8,
+     1.0
+    ],
+    "labels": [
+     "0.0",
+     "0.2",
+     "0.4",
+     "0.6",
+     "0.8",
+     "1.0"
+    ],
+    "minor": [],
+    "minorlabels": [],
+    "offset": ""
+   },
+   "y": {
+    "lim": [
+     0.0,
+     1.0
+    ],
+    "ticks": [
+     0.0,
+     0.2,
+     0.4,
+     0.6000000000000001,
+     0.8,
+     1.0
+    ],
+    "labels": [
+     "0.0",
+     "0.2",
+     "0.4",
+     "0.6",
+     "0.8",
+     "1.0"
+    ],
+    "minor": [],
+    "minorlabels": [],
+    "offset": ""
+   }
+  }
+ ]
+}

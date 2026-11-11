@@ -16,6 +16,7 @@ export { iolistToStream, iolistToString } from './render/iolist.ts';
 export { renderTree, Tracer, tracer } from './trace.ts';
 export { FACE_LOADS, FontNotLoadedError, registerFonts, registeredFonts } from './core/fonts.ts';
 export { FACE_CATALOG } from './core/fontcodec.ts';
+export { ARROW_STYLES, UnsupportedArrowStyleError } from './core/arrow.ts';
 export type { BakedFace, FaceId } from './core/fontcodec.ts';
 export type { FaceLoad } from './core/fonts.ts';
 export type { AttrValue, FinishedSpan, SpanHandle } from './trace.ts';

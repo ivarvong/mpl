@@ -2,6 +2,7 @@
 // `unknown` until parsed here into the typed model (parse, don't validate);
 // unknown keyword arguments are errors, as in matplotlib.
 import { parsePaint, parseRgb } from './core/colors.ts';
+import { parseArrowStyle, parseConnectionStyle } from './core/arrow.ts';
 import { colorbarAxesToData, colorbarBands } from './core/colorbar.ts';
 import { isNumericColorArray, mapPaints, normLimits, parseColormap, parseNormKw, requireColormap, scalarToPaints } from './core/colormap.ts';
 import { date2num, fromEpochMs } from './core/dates.ts';
@@ -30,6 +31,7 @@ import type { StyleSpec } from './core/style.ts';
 import { composeStyles } from './core/style.ts';
 import { parseFontSize, parseLegendLoc, parseTheme, scatterPointsOf } from './core/theme.ts';
 import type {
+  AnnotationArrow,
   Artist, Aspect, AxesMeta, AxesTitle, AxesTitles, DateLocatorSpec, SpinePosition, AxesRole, AxesSpec, AxisSpec, BarArtist, FillArtist, HAlign, TextArtist, TextCoords, VAlign, BarEdge, FigureSpec, AxesGrid, AxisGrid, GridLines, GridWhich, Label, LabelSpec, LegendSpec, Limits,
   AxLineArtist, AxLineThrough, Decimate, DrawStyle, ErrorbarArtist, ErrorbarHandle, LineCoords, PolygonArtist, SegmentsArtist, StickyArtist,
   Cap, LineArtist, LineMarkers, LineStroke, LineStyleName, MarkerName, Option, Orientation, Paint, Position, TightBox, Result, Rgb, Scale, Scene, Theme, TickSpec, TickGrid, TickLabelStyle, TickLabelStyles, ScatterArtist, ImageArtist, SpanArtist, TickTheme, AnnotationArtist, AnnotationCoords, AnnotationCoordPair,
@@ -1500,30 +1502,66 @@ export class Axes {
     return t;
   }
 
-  /** annotate(text, xy, { xytext, xycoords, textcoords, arrowprops, ha, va, color, fontsize, fontweight, clip_on }) — coords are 'data' or '<figure|axes> <fraction|points|pixels|fontsize>', and textcoords may also be 'offset <points|pixels|fontsize>' from xy; either may be an [x, y] pair of systems, one per axis. In 'data' coordinates a value may be a Date or a category name. */
+  /**
+   * Annotation's arrowprops: without 'arrowstyle' the YAArrow keys (width, headwidth, headlength, shrink); with one a
+   * FancyArrowPatch's (arrowstyle, connectionstyle, relpos, shrinkA, shrinkB, mutation_scale). Either way the Patch
+   * colours: patch.facecolor (C0) and patch.edgecolor, which 'color' overrides and the fc / ec aliases override in
+   * turn (Patch.__init__ then Artist.set), with alpha replacing both colours' alpha; linewidth / lw in pt.
+   */
+  private arrowOf(v: Readonly<Record<string, unknown>>): AnnotationArrow {
+    const styled = prop(v, 'arrowstyle').kind === 'some';
+    const common = ['color', 'facecolor', 'fc', 'edgecolor', 'ec', 'linewidth', 'lw'];
+    const own = styled ? ['arrowstyle', 'connectionstyle', 'relpos', 'shrinkA', 'shrinkB', 'mutation_scale', 'alpha'] : ['width', 'headwidth', 'headlength', 'shrink'];
+    const known = new Set([...common, ...own]);
+    const extra = Object.keys(v).filter((key) => !known.has(key));
+    if (extra.length > 0) {
+      throw new TypeError(styled ? `annotate: arrowprops with an arrowstyle does not take '${extra[0]}' (supported: ${[...own, ...common].join(', ')})`
+        : `unsupported arrowprops: ${extra.join(', ')}`);
+    }
+    const numOr = (key: string, d: number): number => { const p = prop(v, key); return p.kind === 'some' ? unwrap(num(key)(p.value)) : d; };
+    const paintOpt = (key: string): Option<Paint> => { const p = prop(v, key); return p.kind === 'some' ? some(unwrap(parsePaint(p.value, this.theme.axes.cycle))) : none; };
+    const color = paintOpt('color');
+    const face0 = firstPaint(paintOpt('fc'), color, paintOpt('facecolor'));
+    const edge0 = firstPaint(paintOpt('ec'), color, paintOpt('edgecolor'));
+    // to_rgba(c, alpha): alpha replaces a colour's own; 'none' stays transparent
+    const alpha = prop(v, 'alpha').kind === 'some' ? some(numOr('alpha', 1)) : none;
+    const withAlpha = (c: Paint): Paint => (alpha.kind === 'some' && c.kind === 'solid' ? { kind: 'solid', color: { hex: c.color.hex, alpha: alpha.value } } : c);
+    const face = withAlpha(face0.kind === 'some' ? face0.value : { kind: 'solid', color: this.theme.axes.cycle[0] });
+    const edge = withAlpha(edge0.kind === 'some' ? edge0.value : { kind: 'solid', color: unwrap(parseRgb('black', this.theme.axes.cycle)) });
+    const linewidthPt = numOr(prop(v, 'lw').kind === 'some' ? 'lw' : 'linewidth', 1);
+    if (!styled) {
+      // Annotation.update_positions: width 4, headwidth 12, headlength 12, shrink 0 (all pt but shrink)
+      return { kind: 'yaarrow', face, edge, linewidthPt, widthPt: numOr('width', 4), headLengthPt: numOr('headlength', 12),
+               headWidthPt: numOr('headwidth', 12), shrink: numOr('shrink', 0) };
+    }
+    const strOf = (key: string, d: string): string => {
+      const p = prop(v, key);
+      if (p.kind === 'none') return d;
+      if (typeof p.value !== 'string') throw new TypeError(`annotate: arrowprops.${key} must be a style string such as ${JSON.stringify(d)}`);
+      return p.value;
+    };
+    const relposP = prop(v, 'relpos');
+    const relpos = ((): readonly [number, number] => {
+      if (relposP.kind === 'none') return [0.5, 0.5];   // Annotation.__init__: arrowprops.pop("relpos", (0.5, 0.5))
+      const r = relposP.value;
+      if (!Array.isArray(r) || r.length !== 2 || typeof r[0] !== 'number' || typeof r[1] !== 'number') throw new TypeError('annotate: arrowprops.relpos must be [x, y] fractions of the text box');
+      return [r[0], r[1]];
+    })();
+    const ms = prop(v, 'mutation_scale').kind === 'some' ? some(numOr('mutation_scale', 1)) : none;
+    return {
+      kind: 'styled', face, edge, linewidthPt, style: parseArrowStyle(strOf('arrowstyle', '-')), rad: parseConnectionStyle(strOf('connectionstyle', 'arc3')),
+      relpos, shrinkAPt: numOr('shrinkA', 2), shrinkBPt: numOr('shrinkB', 2), mutationPt: ms,
+    };
+  }
+
+  /** annotate(text, xy, { xytext, xycoords, textcoords, arrowprops, ha, va, color, fontsize, fontweight, clip_on }) — coords are 'data' or '<figure|axes> <fraction|points|pixels|fontsize>', and textcoords may also be 'offset <points|pixels|fontsize>' from xy; either may be an [x, y] pair of systems, one per axis. In 'data' coordinates a value may be a Date or a category name. arrowprops without 'arrowstyle' take width, headwidth, headlength, shrink; with one ('-', '->', '-|>', '<-', '<->', '<|-', '<|-|>', ']-', '-[', ']-[', '|-|', ']->', '<-[', 'simple', 'fancy', 'wedge', each optionally ',key=value,...') they take connectionstyle ('arc3[,rad=r]'), relpos, shrinkA, shrinkB, mutation_scale and alpha; both take color, facecolor/fc, edgecolor/ec, linewidth/lw. */
   annotate(text: unknown, xy: unknown, kwargs: Kwargs = {}): AnnotationArtist {
     const kw = new KwReader(kwargs, 'annotate');
     const xytextV = kw.get(['xytext']);
     const xycoords = kw.read(['xycoords'], (v) => parseAnnotationCoords(v, 'xycoords'), (): AnnotationCoordPair => ({ x: { kind: 'data' }, y: { kind: 'data' }, pair: false }));
     const textcoords = kw.read(['textcoords'], (v) => parseAnnotationCoords(v, 'textcoords'), () => xycoords);
     type Arrow = AnnotationArtist['arrow'];
-    const arrow = kw.read(['arrowprops'], (v): Result<Arrow> => {
-      if (!isPlainObject(v)) return err('arrowprops must be an object');
-      const known = new Set(['color', 'facecolor', 'edgecolor', 'linewidth', 'lw', 'width', 'headwidth', 'headlength', 'shrink']);
-      const extra = Object.keys(v).filter((key) => !known.has(key));
-      if (extra.length > 0) return err(`unsupported arrowprops: ${extra.join(', ')}`);
-      const numOr = (key: string, d: number): number => { const p = prop(v, key); return p.kind === 'some' ? unwrap(num(key)(p.value)) : d; };
-      const rgbOr = (key: string, d: Rgb): Rgb => { const p = prop(v, key); return p.kind === 'some' ? unwrap(parseRgb(p.value, this.theme.axes.cycle)) : d; };
-      // FancyArrowPatch defaults: patch.facecolor (C0) and patch.edgecolor; 'color' sets both
-      const color = prop(v, 'color');
-      const base = color.kind === 'some' ? some(unwrap(parseRgb(color.value, this.theme.axes.cycle))) : none;
-      const face = rgbOr('facecolor', base.kind === 'some' ? base.value : this.theme.axes.cycle[0]);
-      const edge = rgbOr('edgecolor', base.kind === 'some' ? base.value : unwrap(parseRgb('black', this.theme.axes.cycle)));
-      const lwKey = prop(v, 'lw').kind === 'some' ? 'lw' : 'linewidth';
-      // Annotation.update_positions: width 4, headwidth 12, headlength 12, shrink 0 (all pt but shrink)
-      return ok(some({ face, edge, linewidthPt: numOr(lwKey, 1), widthPt: numOr('width', 4), headLengthPt: numOr('headlength', 12),
-                       headWidthPt: numOr('headwidth', 12), shrink: numOr('shrink', 0) }));
-    }, (): Arrow => none);
+    const arrow = kw.read(['arrowprops'], (v): Result<Arrow> => (isPlainObject(v) ? ok(some(this.arrowOf(v))) : err('arrowprops must be an object')), (): Arrow => none);
     const color = kw.read(['color', 'c'], (v) => parseRgb(v, this.theme.axes.cycle), () => this.theme.text.color);
     const sizePt = kw.read(['fontsize', 'size'], (v) => parseFontSize(v, this.theme.font.sizePt), () => this.theme.font.sizePt);
     const weight = kw.read(['fontweight', 'weight'], weightOf, () => this.theme.font.weight);
@@ -2805,6 +2843,9 @@ function saveDpiOf(v: unknown, what: string): number {
   if (v > MAX_SAVE_DPI) throw new RangeError(`${what} must be ≤ ${MAX_SAVE_DPI}, got ${v}`);
   return v;
 }
+/** The first set colour of several, in precedence order. */
+const firstPaint = (...xs: readonly Option<Paint>[]): Option<Paint> => xs.reduce((acc, x) => (acc.kind === 'some' ? acc : x), none);
+
 /** One annotate() coordinate in its axis' system: 'data' through the axis converter, anything else a plain number. */
 function annotationValue(v: unknown, c: AnnotationCoords, axis: Axis, what: string): number {
   switch (c.kind) {
