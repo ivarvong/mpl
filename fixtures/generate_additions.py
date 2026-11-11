@@ -805,6 +805,49 @@ case("font_inter_math", ("$rc", [], {"font.family": ["Inter"]}),
 case("font_inter_math_fallback", ("$rc", [], {"font.family": ["Inter", "DejaVu Sans"]}),
      ("plot", [[0, 1], [0, 1]]), ("set_title", ["Inter ≥ ≤ ∞ ≈ ≠, DejaVu ∀ ∈ ∇"]), ("set_xlabel", ["x≥∀y≈∈z"]))
 
+# Issue #70: fig.colorbar(ax=[...]) takes make_axes over the parents' union bbox and moves every parent into the rest
+HEAT = {"$array": [[(i * 7 + j * 3) % 11 for j in range(12)] for i in range(8)]}
+JOINT = ("$subplots", [2, 2], {"gridspec_kw": {"height_ratios": [1, 3], "width_ratios": [3, 1]}})
+case("colorbar_ax_list_joint", JOINT,
+     ("sca", [0]), ("plot", [list(range(12)), [3, 5, 4, 6, 8, 7, 5, 6, 9, 8, 6, 7]]), ("set_xlim", [-0.5, 11.5]),
+     ("sca", [3]), ("plot", [[2, 4, 3, 5, 6, 4, 3, 2], list(range(8))]),
+     ("sca", [1]), ("text", [0.5, 0.5, "joint"], {"ha": "center"}),
+     ("sca", [2]), ("imshow", [HEAT], {"cmap": "viridis", "aspect": "auto", "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"ax": {"$axes": [2, 0]}, "label": "count"}))
+# a location on one Axes (make_axes_gridspec) also ticks and labels the long axis on that side (Colorbar ticklocation)
+case("colorbar_location_top", ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}), ("fig.colorbar", [], {"location": "top", "label": "top label"}))
+case("colorbar_location_left", ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}), ("fig.colorbar", [], {"location": "left", "label": "left label"}))
+case("colorbar_location_top_log", ("imshow", [{"$array": [[1, 10], [100, 100000]]}], {"cmap": "plasma", "norm": "log", "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"location": "top", "extend": "max"}))
+case("colorbar_ax_list_joint_dpi", ("$rc", [], {"figure.dpi": 150}), JOINT,
+     ("sca", [0]), ("plot", [list(range(12)), [3, 5, 4, 6, 8, 7, 5, 6, 9, 8, 6, 7]]), ("set_xlim", [-0.5, 11.5]),
+     ("sca", [2]), ("imshow", [HEAT], {"cmap": "viridis", "aspect": "auto", "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"ax": {"$axes": [2, 0]}, "label": "count", "pad": 0.02, "shrink": 0.8}))
+case("colorbar_ax_list_bottom", ("$subplots", [1, 3]),
+     ("sca", [0]), ("imshow", [IM], {"cmap": "magma", "interpolation": "nearest"}),
+     ("sca", [1]), ("imshow", [IM], {"cmap": "magma", "interpolation": "nearest"}),
+     ("sca", [2]), ("imshow", [IM], {"cmap": "magma", "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"ax": {"$axes": [0, 1, 2]}, "location": "bottom", "shrink": 0.6, "aspect": 30}))
+case("colorbar_ax_list_left_extend", ("$subplots", [2, 1]),
+     ("sca", [0]), ("plot", [[0, 1, 2], [1, 0, 2]]),
+     ("sca", [1]), ("scatter", [lin(12, 0, 2), lin(12, 0, 1)], {"c": lin(12, 0, 5), "cmap": "plasma"}),
+     ("fig.colorbar", [], {"ax": {"$axes": [1, 0]}, "location": "left", "extend": "both", "fraction": 0.1, "pad": 0.08}))
+case("colorbar_ax_list_one", ("$subplots", [1, 2]),
+     ("sca", [1]), ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"ax": {"$axes": [1]}, "location": "top"}))
+case("colorbar_ax_list_twice", ("$subplots", [2, 2]),
+     ("sca", [0]), ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"ax": {"$axes": [0, 1]}}),
+     ("sca", [3]), ("imshow", [IM], {"cmap": "cividis", "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"ax": {"$axes": [0, 2, 3]}, "location": "bottom"}))
+case("colorbar_ax_list_adjust", ("$subplots", [1, 2]),
+     ("sca", [0]), ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"ax": {"$axes": [0, 1]}}), ("fig.subplots_adjust", [], {"left": 0.05, "wspace": 0.3}))
+case("colorbar_ax_list_twinx", ("$subplots", [1, 2]),
+     ("sca", [0]), ("plot", [[0, 1, 2], [0, 1, 0]]), ("twinx", []), ("plot", [[0, 1, 2], [5, 3, 4]], {"color": "C1"}),
+     ("sca", [1]), ("imshow", [IM], {"cmap": "viridis", "interpolation": "nearest"}),
+     ("fig.colorbar", [], {"ax": {"$axes": [0, 1]}, "location": "top", "shrink": 0.5}))
+
 def run_case(name, calls):
     style = STYLES.get(name)
     rc_layer = {}
@@ -852,7 +895,10 @@ def run_case(name, calls):
                     mappable = ax.images[-1] if ax.images else (ax.collections[-1] if ax.collections else None)
                     if mappable is None:
                         raise RuntimeError("fig.colorbar: no mappable on current Axes")
-                    fig.colorbar(mappable, ax=ax, **kwargs); continue
+                    # {"$axes": [i, ...]}: a list of Axes by index (make_axes over their union)
+                    cb_ax = [axes[i] for i in kwargs["ax"]["$axes"]] if isinstance(kwargs.get("ax"), dict) else ax
+                    kwargs = {k: v for k, v in kwargs.items() if k != "ax"}
+                    fig.colorbar(mappable, ax=cb_ax, **kwargs); continue
                 getattr(fig, method)(*args, **kwargs); continue
             if fn == "$rc":
                 rc_layer.update(kwargs)
