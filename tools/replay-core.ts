@@ -19,11 +19,20 @@ export type Fixture = any;
 /** The subplots() of whichever mpl build is under test. */
 export type Subplots = typeof SubplotsFn;
 type Dyn = Record<string, (...args: unknown[]) => unknown>;
+/** A naive ISO date as ECMAScript's own date-time format, UTC: a date alone gets 'T00:00', a fraction is cut to milliseconds (a Date
+ *  holds no more), then 'Z'. `s + 'Z'` is accepted by V8 but not by JavaScriptCore for a date alone: Date.parse('2025-01-01Z') is
+ *  NaN in Safari (measured in Mobile Safari 18.6, 2026-11-12), so a date-only fixture replayed in WebKit got Invalid Date. */
+export const utcIso = (s: string): string => {
+  const [date, time] = s.split('T') as [string, string | undefined];
+  if (time === undefined) return `${date}T00:00Z`;
+  const [hms, frac] = time.split('.') as [string, string | undefined];
+  return `${date}T${hms}${frac === undefined ? '' : `.${frac.slice(0, 3).padEnd(3, '0')}`}Z`;
+};
 /** JSON args to mpl args, at any depth: {"$dates": [...]} becomes Date[], {"$date": s} one Date (UTC, as numpy's naive datetime64). */
 export const decode = (a: unknown): unknown => {
   if (Array.isArray(a)) return a.map(decode);
-  if (a && typeof a === 'object' && '$dates' in a) return (a.$dates as string[]).map((s) => new Date(s + 'Z'));
-  if (a && typeof a === 'object' && '$date' in a) return new Date((a.$date as string) + 'Z');
+  if (a && typeof a === 'object' && '$dates' in a) return (a.$dates as string[]).map((s) => new Date(utcIso(s)));
+  if (a && typeof a === 'object' && '$date' in a) return new Date(utcIso(a.$date as string));
   if (a && typeof a === 'object' && '$float' in a) {
     const s = String((a as { $float: string }).$float);
     if (s === 'nan') return NaN;
