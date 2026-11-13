@@ -131,6 +131,12 @@ case("api_tight_layout", ("plot", [x, sx]), ("set_title", ["tight"]), ("set_xlab
 case("api_tight_layout_pad_suptitle", ("plot", [x, sx]), ("set_xlabel", ["x"]), ("fig.suptitle", ["Overall"]), ("fig.supylabel", ["side"]), ("fig.tight_layout", [], {"pad": 0.4}))
 case("api_tight_layout_twinx", ("plot", [x, sx]), ("set_ylabel", ["left"]), ("twinx", []), ("plot", [x, L(np.array(cx) * 1000)], {"color": "C1"}), ("set_ylabel", ["right"]), ("fig.tight_layout", []))
 case("api_tight_layout_rect", ("plot", [x, sx]), ("set_title", ["rect"]), ("set_xlabel", ["x"]), ("fig.tight_layout", [], {"rect": [0, 0, 1, 0.9]}))
+# tight_layout makes room for rotated x tick labels (autofmt_xdate, set_xticklabels(rotation=)): their extent is the rotated box
+_mo = [f"2025-{m:02d}" for m in range(1, 13)]
+case("api_tight_layout_autofmt_rotated", ("bar", [list(range(12)), [3 + (i % 5) for i in range(12)]]), ("set_xticks", [list(range(12))]),
+     ("set_xticklabels", [_mo]), ("fig.autofmt_xdate", [], {"rotation": 45}), ("set_title", ["rotated"]), ("fig.tight_layout", []))
+case("api_tight_layout_ticklabels_rot90", ("bar", [list(range(12)), [3 + (i % 5) for i in range(12)]]), ("set_xticks", [list(range(12))]),
+     ("set_xticklabels", [[m + " total" for m in _mo]], {"rotation": 90}), ("fig.tight_layout", []))
 case("api_ticklabels_styled", ("plot", [[0, 1, 2], [2, 0, 1]]), ("set_yticks", [[0, 1, 2]]),
      ("set_yticklabels", [["low", "mid", "high"]], {"fontweight": "bold", "color": "C3", "fontsize": 12}),
      ("set_xticks", [[0, 1, 2]]), ("set_xticklabels", [["a", "b", "c"]], {"size": "small", "c": "0.4"}))
