@@ -127,7 +127,8 @@ export function drawAxis(
               ? { kind: 'horizontal' as const, ha, va: 'top' as const }
               : { kind: 'angled' as const, deg: rot, ha, va: 'top' as const };
             const b = placeLayout(lay, d, bases.yBottomUp.kind === 'some' ? f.H - (bases.yBottomUp.value - out) : bases.yBottom + out, place); nearBoxes.push(b); labels.push(...labelNodes(b, k, lcolor));
-            nearUp.push(bases.yBottom === f.box.yBot ? upOf(windowExtent(lay, d, f.box.b + (-1 * padPts / 72) * dpi, ha, 'top')) : flipped(f.H, b));
+            // a rotated label's extent is its rotated box (Text.get_window_extent rotates the layout); the unrotated window extent is exact only at 0 degrees
+            nearUp.push(bases.yBottom === f.box.yBot && rot === 0 ? upOf(windowExtent(lay, d, f.box.b + (-1 * padPts / 72) * dpi, ha, 'top')) : flipped(f.H, b));
           }
         }
         if (sides.labels === 'far') {
