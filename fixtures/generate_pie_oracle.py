@@ -163,11 +163,27 @@ LABEL_ERRORS = [
     label_error("positional", [1, 2], "{}"), label_error("int_precision", [1, 2], "{absval:.2d}"),
 ]
 
+# pie_label's strings by numpy dtype: JS has no 10.0 literal, so mpl reads a plain array of whole numbers as int64 and a
+# Float64Array as float64 (test/pie.test.ts passes x as a Float64Array when dtype is "float64"). Strings only: no trig, so
+# any platform's numpy gives the same answer.
+def label_strings(x, dtype, labels, **pie_kw):
+    fig, ax = plt.subplots()
+    pc = ax.pie(np.asarray(x, dtype=dtype), **pie_kw)
+    try:
+        out = {"out": [t.get_text() for t in ax.pie_label(pc, labels)]}
+    except Exception as e:
+        out = {"error": {"type": type(e).__name__, "message": str(e)}}
+    plt.close(fig)
+    return {"x": x, "dtype": dtype, "labels": labels, "pie": pie_kw, **out}
+
+LABEL_STRINGS = [label_strings(x, d, l, **kw) for x, kw in [([10, 20, 30], {}), ([0, 1], {"normalize": False})]
+                 for d in ["int64", "float64"] for l in ["{absval}", "{frac}", "{absval:d}", "{absval} ({frac:.0%})"]]
+
 rec = {"matplotlib": matplotlib.__version__, "numpy": np.__version__,
        "arcs": [{"theta1": a, "theta2": b, **path_rec(Path.arc(a, b))} for a, b in ARCS],
        "wedges": [{**w, **path_rec(Wedge(tuple(w["center"]), w["r"], w["theta1"], w["theta2"], width=w.get("width")).get_path())} for w in WEDGES],
        "formats": formats, "pies": PIES, "errors": ERRORS,
-       "strformats": strformats, "pie_labels": PIE_LABELS, "label_errors": LABEL_ERRORS}
+       "strformats": strformats, "pie_labels": PIE_LABELS, "label_errors": LABEL_ERRORS, "label_strings": LABEL_STRINGS}
 with open(OUT, "w") as f:
     json.dump(rec, f, indent=1)
 print(f"wrote {OUT}")

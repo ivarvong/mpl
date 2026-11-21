@@ -14438,5 +14438,246 @@
     "message": "Precision not allowed in integer format specifier"
    }
   }
+ ],
+ "label_strings": [
+  {
+   "x": [
+    10,
+    20,
+    30
+   ],
+   "dtype": "int64",
+   "labels": "{absval}",
+   "pie": {},
+   "out": [
+    "10",
+    "20",
+    "30"
+   ]
+  },
+  {
+   "x": [
+    10,
+    20,
+    30
+   ],
+   "dtype": "int64",
+   "labels": "{frac}",
+   "pie": {},
+   "out": [
+    "0.16666666666666666",
+    "0.3333333333333333",
+    "0.5"
+   ]
+  },
+  {
+   "x": [
+    10,
+    20,
+    30
+   ],
+   "dtype": "int64",
+   "labels": "{absval:d}",
+   "pie": {},
+   "out": [
+    "10",
+    "20",
+    "30"
+   ]
+  },
+  {
+   "x": [
+    10,
+    20,
+    30
+   ],
+   "dtype": "int64",
+   "labels": "{absval} ({frac:.0%})",
+   "pie": {},
+   "out": [
+    "10 (17%)",
+    "20 (33%)",
+    "30 (50%)"
+   ]
+  },
+  {
+   "x": [
+    10,
+    20,
+    30
+   ],
+   "dtype": "float64",
+   "labels": "{absval}",
+   "pie": {},
+   "out": [
+    "10.0",
+    "20.0",
+    "30.0"
+   ]
+  },
+  {
+   "x": [
+    10,
+    20,
+    30
+   ],
+   "dtype": "float64",
+   "labels": "{frac}",
+   "pie": {},
+   "out": [
+    "0.16666666666666666",
+    "0.3333333333333333",
+    "0.5"
+   ]
+  },
+  {
+   "x": [
+    10,
+    20,
+    30
+   ],
+   "dtype": "float64",
+   "labels": "{absval:d}",
+   "pie": {},
+   "error": {
+    "type": "ValueError",
+    "message": "Unknown format code 'd' for object of type 'float'"
+   }
+  },
+  {
+   "x": [
+    10,
+    20,
+    30
+   ],
+   "dtype": "float64",
+   "labels": "{absval} ({frac:.0%})",
+   "pie": {},
+   "out": [
+    "10.0 (17%)",
+    "20.0 (33%)",
+    "30.0 (50%)"
+   ]
+  },
+  {
+   "x": [
+    0,
+    1
+   ],
+   "dtype": "int64",
+   "labels": "{absval}",
+   "pie": {
+    "normalize": false
+   },
+   "out": [
+    "0",
+    "1"
+   ]
+  },
+  {
+   "x": [
+    0,
+    1
+   ],
+   "dtype": "int64",
+   "labels": "{frac}",
+   "pie": {
+    "normalize": false
+   },
+   "out": [
+    "0",
+    "1"
+   ]
+  },
+  {
+   "x": [
+    0,
+    1
+   ],
+   "dtype": "int64",
+   "labels": "{absval:d}",
+   "pie": {
+    "normalize": false
+   },
+   "out": [
+    "0",
+    "1"
+   ]
+  },
+  {
+   "x": [
+    0,
+    1
+   ],
+   "dtype": "int64",
+   "labels": "{absval} ({frac:.0%})",
+   "pie": {
+    "normalize": false
+   },
+   "out": [
+    "0 (0%)",
+    "1 (100%)"
+   ]
+  },
+  {
+   "x": [
+    0,
+    1
+   ],
+   "dtype": "float64",
+   "labels": "{absval}",
+   "pie": {
+    "normalize": false
+   },
+   "out": [
+    "0.0",
+    "1.0"
+   ]
+  },
+  {
+   "x": [
+    0,
+    1
+   ],
+   "dtype": "float64",
+   "labels": "{frac}",
+   "pie": {
+    "normalize": false
+   },
+   "out": [
+    "0.0",
+    "1.0"
+   ]
+  },
+  {
+   "x": [
+    0,
+    1
+   ],
+   "dtype": "float64",
+   "labels": "{absval:d}",
+   "pie": {
+    "normalize": false
+   },
+   "error": {
+    "type": "ValueError",
+    "message": "Unknown format code 'd' for object of type 'float'"
+   }
+  },
+  {
+   "x": [
+    0,
+    1
+   ],
+   "dtype": "float64",
+   "labels": "{absval} ({frac:.0%})",
+   "pie": {
+    "normalize": false
+   },
+   "out": [
+    "0.0 (0%)",
+    "1.0 (100%)"
+   ]
+  }
  ]
 }

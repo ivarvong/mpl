@@ -372,7 +372,8 @@ export type BoxplotResult = {
 export type PieResult = {
   readonly wedges: readonly WedgeArtist[]; readonly texts: readonly TextArtist[]; readonly autotexts: readonly TextArtist[];
   readonly values: Float64Array; readonly fracs: Float64Array;
-  /** numpy's dtype of np.asarray(x): integer input formats as int64 in pie_label's {absval} (and {frac} when normalize=false). */
+  /** numpy's dtype of np.asarray(x): a plain array of whole numbers (or an integer typed array) is 'int', so pie_label's {absval}
+   * (and {frac} when normalize=false) formats as int64; a Float64Array is always 'float'. */
   readonly dtype: 'int' | 'float'; readonly normalize: boolean;
 };
 /** pie_label's Text.set(**textprops): the keys mpl supports, each absent unless given. */
@@ -1551,7 +1552,10 @@ export class Axes {
    * fields, such as '{absval:d} ({frac:.0%})'. alignment 'outer' aligns each text away from the centre, 'center' centres it,
    * 'auto' (the default) is 'outer' when distance > 1; rotate turns each text to its wedge's angle. textprops
    * { fontsize|size, color|c, fontweight|weight } style the new texts only, so labels outside and percentages inside a
-   * pie can differ. Returns the new texts (the container's texts and autotexts are unchanged).
+   * pie can differ. {absval} formats as numpy would for pie's x: a plain array of whole numbers is int64 ('10', and
+   * '{absval:d}' works), because JS has no 10.0 literal; pass x as a Float64Array for float64 ('10.0', and '{absval:d}'
+   * throws, as Python does). Returns the new texts. Unlike matplotlib's PieContainer.add_texts, the container's texts
+   * and autotexts are unchanged.
    */
   pie_label(container: PieResult, labels: unknown, kwargs: Kwargs = {}): readonly TextArtist[] {
     const kw = new KwReader(kwargs, 'pie_label');

@@ -31,6 +31,7 @@ type Oracle = {
   strformats: ({ fmt: string; dtype: 'int' | 'float'; value: number | string } & ({ out: string } | { error: { type: string; message: string } }))[];
   pie_labels: { name: string; x: number[]; pie: Record<string, unknown>; calls: { labels: string | string[]; kw: Record<string, unknown> }[]; texts: TextRec[][] }[];
   label_errors: { name: string; x: number[]; labels: string | string[]; kw: Record<string, unknown>; error: { type: string; message: string } }[];
+  label_strings: ({ x: number[]; dtype: 'int64' | 'float64'; labels: string; pie: Record<string, unknown> } & ({ out: string[] } | { error: { type: string; message: string } }))[];
 };
 const oracle: Oracle = JSON.parse(readFileSync(new URL('../fixtures/pie_oracle.json', import.meta.url), 'utf8'));
 assert.equal(oracle.matplotlib, '3.11.2');
@@ -200,4 +201,14 @@ for (const e of oracle.label_errors) {
   assert.deepEqual(res.autotexts.map((t) => t.text), ['25 pct', '75 pct']);
 }
 
-console.log(`pie: ${checks} checks ok against matplotlib ${oracle.matplotlib} (${oracle.arcs.length} arcs, ${oracle.wedges.length} wedge paths, ${oracle.formats.length} autopct formats, ${oracle.pies.length} pies, ${oracle.errors.length} errors, ${oracle.strformats.length} str.format labels, ${oracle.pie_labels.length} pie_label cases, ${oracle.label_errors.length} pie_label errors)`);
+// pie_label's strings by dtype: a plain array of whole numbers is numpy int64 (JS has no 10.0), a Float64Array is float64
+for (const c of oracle.label_strings) {
+  const [, ax] = subplots();
+  const pc = ax.pie(c.dtype === 'float64' ? Float64Array.from(c.x) : c.x, c.pie);
+  const what = `pie(${c.dtype} ${JSON.stringify(c.x)}, ${JSON.stringify(c.pie)}) ${JSON.stringify(c.labels)}`;
+  if ('out' in c) assert.deepEqual(ax.pie_label(pc, c.labels).map((t) => t.text), c.out, what);
+  else assert.throws(() => ax.pie_label(pc, c.labels), (err: unknown) => err instanceof Error && err.message === c.error.message, what);
+  checks++;
+}
+
+console.log(`pie: ${checks} checks ok against matplotlib ${oracle.matplotlib} (${oracle.arcs.length} arcs, ${oracle.wedges.length} wedge paths, ${oracle.formats.length} autopct formats, ${oracle.pies.length} pies, ${oracle.errors.length} errors, ${oracle.strformats.length} str.format labels, ${oracle.pie_labels.length} pie_label cases, ${oracle.label_errors.length} pie_label errors, ${oracle.label_strings.length} pie_label dtype cases)`);
