@@ -1,11 +1,12 @@
 // Bundle budget: dist/browser minified + gzipped (scripts/bundle_size.ts) must stay within 2% of
 // size-budget.json. After an intended change, `node scripts/bundle_size.ts --update` and commit the budget.
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BUDGET_FILE, ENTRIES, kib, measure, report, type Size } from '../scripts/bundle_size.ts';
 
-const ROOT = new URL('../', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
 execFileSync(process.execPath, [join(ROOT, 'scripts/build_package.ts')], { stdio: 'pipe' });
 const budget = JSON.parse(readFileSync(BUDGET_FILE, 'utf8')) as { tolerance: number } & Record<string, Size>;
 

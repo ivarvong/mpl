@@ -1,4 +1,5 @@
 // Replay a fixture spec (the same calls matplotlib ran) against mpl from src/.
+import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { AutoDateLocator, ConciseDateFormatter, DateFormatter, DayLocator, HourLocator, MinuteLocator, MonthLocator, SecondLocator, YearLocator, registerColormapRgba, registerColormaps, registerFonts, subplots } from '../src/index.ts';
 import { allFonts } from '../src/fonts/all.ts';
@@ -11,7 +12,7 @@ export { decode, type Fixture } from './replay-core.ts';
 registerFonts(...allFonts);
 registerColormaps(...allColormaps);
 registerColormapRgba(...allColormapRgba);
-const REF = new URL('../fixtures/ref/', import.meta.url).pathname;
+const REF = fileURLToPath(new URL('../fixtures/ref/', import.meta.url));
 
 export const fixtureNames = (): string[] => JSON.parse(readFileSync(REF + '_index.json', 'utf8'));
 export const loadFixture = (name: string): Fixture => JSON.parse(readFileSync(REF + name + '.json', 'utf8'));

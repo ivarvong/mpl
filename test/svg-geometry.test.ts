@@ -10,10 +10,11 @@
 // and figure dpi. The legend box is sized from its labels' extents, so matplotlib's SVG legend is 0.0156 px wider and
 // 0.0031 px taller than its Agg one in svg_nosnap; every handle moves with it. mpl lays out text as Agg does.
 const LEGEND_TOL = 0.02;
+import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { build, loadFixture } from '../tools/replay.ts';
 
-const REF = new URL('../fixtures/ref/', import.meta.url).pathname;
+const REF = fileURLToPath(new URL('../fixtures/ref/', import.meta.url));
 type Cmd = readonly [string, ...number[]];
 const parse = (d: string): Cmd[] => [...d.matchAll(/([MLQCZz])([^MLQCZz]*)/g)]
   .map((m) => [m[1].toUpperCase(), ...m[2].trim().split(/[\s,]+/).filter(Boolean).map(Number)] as Cmd);

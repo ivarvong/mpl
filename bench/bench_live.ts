@@ -7,6 +7,7 @@
 //    frames: how much of the renderer main thread's rendering work falls inside our span.
 // Serves tools/live itself (node:http), so it needs nothing running.
 // oxlint-disable no-await-in-loop -- a benchmark drives the browser one step at a time on purpose
+import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
@@ -19,7 +20,7 @@ const arg = (k, d) => { const i = process.argv.indexOf(k); return i > 0 ? proces
 const FLAGS = arg('--flags', '--disable-gpu').split(' ').filter(Boolean);
 const RTT = Number(arg('--rtt', '0'));             // emulated round-trip latency per request (CDP), ms
 const RUNS = Number(arg('--runs', '15')), OUT = arg('--out', ''), PHASE = arg('--phase', 'all'), STEPS = Number(arg('--steps', '40'));
-const ROOT = new URL('../tools/live/', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../tools/live/', import.meta.url));
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
 const server = createServer((req, res) => {
   const p = normalize(join(ROOT, decodeURIComponent(new URL(req.url, 'http://x').pathname)));

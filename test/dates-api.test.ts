@@ -1,4 +1,5 @@
 // Public ConciseDateFormatter kwargs: matplotlib-shaped optionals, 6-tuple formats, Option internal.
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { AutoDateLocator, ConciseDateFormatter, registerFonts, subplots } from '../src/index.ts';
@@ -10,7 +11,7 @@ import { compare, readPNG } from './png-oracle.ts';
 
 registerFonts(...allFonts);
 
-const REF = new URL('../fixtures/ref/', import.meta.url).pathname;
+const REF = fileURLToPath(new URL('../fixtures/ref/', import.meta.url));
 
 // 1. { show_offset: false } alone matches the concise_show_offset_false oracle fixture.
 {

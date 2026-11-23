@@ -1,6 +1,7 @@
 // dist/browser (the published ES modules, unbundled) in real headless Chromium via Playwright: each runtime
 // case renders toSVG() and toPNGSync() in the page, and both must equal mpl-on-Node byte for byte and
 // match matplotlib's Agg PNG pixel for pixel. `npm run test:browser` (needs `npx playwright install chromium-headless-shell`).
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -10,7 +11,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { chromium } from 'playwright';
 import { check, fixtures, PALETTE, type RuntimeOutput } from './runtime/common.ts';
 
-const ROOT = new URL('../', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
 execFileSync(process.execPath, [join(ROOT, 'scripts/build_package.ts')], { stdio: 'pipe' });
 const DIST = join(ROOT, 'dist/browser');
 const replayJs = stripTypeScriptTypes(readFileSync(join(ROOT, 'tools/replay-core.ts'), 'utf8'), { mode: 'strip' });

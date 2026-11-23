@@ -1,5 +1,6 @@
 // Shared by the runtime tests (browser, Workers): the cases every runtime renders, and the check that a
 // runtime's output is exactly mpl-on-Node's and pixel-exact against matplotlib's Agg PNG.
+import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { build, loadFixture } from '../../tools/replay.ts';
 import { compare, readPNG } from '../png-oracle.ts';
@@ -15,7 +16,7 @@ export const fixtures = (): Record<string, unknown> => Object.fromEntries(RUNTIM
 /** png: toPNGSync(); palette: toPNGSync(PALETTE), whose quantizer (floating-point k-means) and lazy deflate must agree too. */
 export type RuntimeOutput = { readonly name: string; readonly svg: string; readonly png: Uint8Array; readonly palette: Uint8Array; readonly ms: number };
 export const PALETTE = { colors: 64, level: 9 } as const;
-const REF = new URL('../../fixtures/ref/', import.meta.url).pathname;
+const REF = fileURLToPath(new URL('../../fixtures/ref/', import.meta.url));
 
 /** One line per case; returns the number of failures. */
 export function check(runtime: string, outs: readonly RuntimeOutput[]): number {

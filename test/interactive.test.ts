@@ -4,13 +4,14 @@
 // several viewport widths. `npm run test:interactive` (needs `npx playwright install chromium-headless-shell`).
 // SHOTS=dir also writes light and dark screenshots while hovering.
 /* oxlint-disable no-await-in-loop -- one browser page, driven step by step */
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Page } from 'playwright';
 import { dashboard } from '../examples/_zoom-charts.ts';
 
-const ROOT = new URL('../', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
 execFileSync(process.execPath, [join(ROOT, 'examples/interactive.ts')], { stdio: 'pipe' });
 // the example page, with attach()'s argument taken from the test (window.mplAttach, set before the page loads)
 const html = readFileSync(join(ROOT, 'examples/out/interactive.html'), 'utf8')

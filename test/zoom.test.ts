@@ -6,6 +6,7 @@
 // to parsing it; canvas frames: the same RGBA bytes as Node's toRGBA at that scale). `npm run test:zoom`
 // (needs `npx playwright install chromium-headless-shell`). SHOTS=dir writes zoomed screenshots, light and dark.
 /* oxlint-disable no-await-in-loop, unicorn/consistent-function-scoping, promise/always-return -- one browser page driven step by step; helpers inside page.evaluate run in the page and cannot be hoisted */
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -14,7 +15,7 @@ import { chromium, type Browser, type Page } from 'playwright';
 import { build, CHARTS } from '../examples/_zoom-charts.ts';
 import type { Figure } from '../src/index.ts';
 
-const ROOT = new URL('../', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
 execFileSync(process.execPath, [join(ROOT, 'examples/zoom.ts')], { stdio: 'pipe' });
 const html = readFileSync(join(ROOT, 'examples/out/zoom.html'), 'utf8');
 const URL0 = 'http://localhost/zoom.html';   // localhost: a secure context (crypto.subtle)

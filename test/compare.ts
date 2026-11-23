@@ -2,6 +2,7 @@
 //  1. exact: xlim/ylim, tick locations, tick label strings, offset text, legend box
 //  2. pixels: our own Agg/FreeType rasterization vs matplotlib's Agg PNG, byte for byte.
 //     No residual allowed: every case must be pixel-exact (log scales use correctly rounded log10/exp, src/core/libm.ts).
+import { fileURLToPath } from 'node:url';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { renderRGBA } from '../src/render/agg.ts';
 import type { Scene } from '../src/index.ts';
@@ -11,8 +12,8 @@ import { Tracer } from '../src/trace.ts';
 import { build, loadFixture, type Fixture } from '../tools/replay.ts';
 import { compare, readPNG } from './png-oracle.ts';
 
-const REF = new URL('../fixtures/ref/', import.meta.url).pathname;
-const OUT = new URL('../fixtures/out/', import.meta.url).pathname;
+const REF = fileURLToPath(new URL('../fixtures/ref/', import.meta.url));
+const OUT = fileURLToPath(new URL('../fixtures/out/', import.meta.url));
 mkdirSync(OUT, { recursive: true });
 
 const names: string[] = JSON.parse(readFileSync(REF + '_index.json', 'utf8'));

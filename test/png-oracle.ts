@@ -1,6 +1,7 @@
 // PNG oracle: rasterize every fixture with mpl's own Agg/FreeType port and compare
 // byte-for-byte with matplotlib's Agg PNG. Reports exact-pixel % and RMS (0..255).
 //   node test/png-oracle.ts [name] [--strict]
+import { fileURLToPath } from 'node:url';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
 import { build, fixtureNames, loadFixture } from '../tools/replay.ts';
@@ -9,8 +10,8 @@ import { canvasOf } from '../src/render/agg/canvas.ts';
 import { encodePNGSync } from '../src/render/png.ts';
 import { Tracer } from '../src/trace.ts';
 
-const REF = new URL('../fixtures/ref/', import.meta.url).pathname;
-const OUT = new URL('../fixtures/out/', import.meta.url).pathname;
+const REF = fileURLToPath(new URL('../fixtures/ref/', import.meta.url));
+const OUT = fileURLToPath(new URL('../fixtures/out/', import.meta.url));
 mkdirSync(OUT, { recursive: true });
 
 /** Minimal PNG reader for the 8-bit RGBA, non-interlaced files Agg writes (node:zlib is test-only). */

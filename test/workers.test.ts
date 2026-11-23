@@ -4,6 +4,7 @@
 //   2. `cf dev`    — serves it in workerd; GET /render
 //   3. the cf build output itself is served in workerd (vite preview, cf's delegate) and rendered again
 // Both outputs must equal mpl-on-Node byte for byte and match Agg pixel for pixel. `npm run test:workers`.
+import { fileURLToPath } from 'node:url';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
@@ -11,7 +12,7 @@ import { createServer } from 'node:net';
 import { join } from 'node:path';
 import { check, fixtures, type RuntimeOutput } from './runtime/common.ts';
 
-const ROOT = new URL('../', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const W = join(ROOT, 'test/workers');
 const run = (cmd: string, args: string[], env: NodeJS.ProcessEnv = process.env): string =>
   execFileSync(cmd, args, { cwd: W, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });

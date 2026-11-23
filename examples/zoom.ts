@@ -5,6 +5,7 @@
 //   window.mplZoomConfig (set before load) overrides zoom() options for every chart, e.g. { renderer: 'svg' };
 //   window.mplZoom[id] is each chart's controller; window.mplZoomFrame(id, frame, svg), if set, sees every frame.
 //   node examples/zoom.ts [out.html id…] writes another set of charts (ids as _zoom-charts.ts build() takes them).
+import { fileURLToPath } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { build as esbuild } from 'esbuild';
 import { build, CHARTS } from './_zoom-charts.ts';
@@ -18,7 +19,7 @@ const inline = (id: string): string =>
 
 const bundle = async (contents: string, name: string): Promise<string> => {
   const r = await esbuild({
-    stdin: { contents, resolveDir: new URL('.', import.meta.url).pathname, sourcefile: name, loader: 'ts' },
+    stdin: { contents, resolveDir: fileURLToPath(new URL('.', import.meta.url)), sourcefile: name, loader: 'ts' },
     bundle: true, format: 'esm', platform: 'browser', minify: true, write: false, target: 'es2022', legalComments: 'none', external: ['node:*'],
   });
   const js = r.outputFiles[0].text;
