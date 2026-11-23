@@ -2,12 +2,13 @@
 // erasable-syntax TypeScript) turns each src/**/*.ts into an ES module, and '.ts' import specifiers
 // become '.js'. Browsers load the result as native modules.
 //   node scripts/build_browser.ts [outdir]       (default dist/browser)
+import { fileURLToPath } from 'node:url';
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { stripTypeScriptTypes } from 'node:module';
 
-const SRC = new URL('../src/', import.meta.url).pathname;
-const OUT = process.argv[2] || new URL('../dist/browser/', import.meta.url).pathname;
+const SRC = fileURLToPath(new URL('../src/', import.meta.url));
+const OUT = process.argv[2] || fileURLToPath(new URL('../dist/browser/', import.meta.url));
 const files: string[] = [];
 const walk = (d: string): void => { for (const e of readdirSync(d)) { const p = join(d, e); if (statSync(p).isDirectory()) walk(p); else if (p.endsWith('.ts')) files.push(p); } };
 walk(SRC);

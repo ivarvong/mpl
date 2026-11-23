@@ -2,10 +2,11 @@
 //   no undefined / null / ?. / ?? / optional fields `x?:` / any / casts (except `as const`) / non-null `!`
 //   every `default:` branch is assertNever(...), return err(...), or throw
 // src/core/std.ts is the quarantine where stdlib undefined is lifted into Option; generated data is exempt.
+import { fileURLToPath } from 'node:url';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 
-const ROOT = new URL('../src/', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../src/', import.meta.url));
 const EXEMPT = new Set(['core/std.ts']);
 const walk = (d: string): string[] => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : [join(d, f)]));
 
@@ -54,7 +55,8 @@ const RULES: [RegExp, string][] = [
 
 let failures = 0;
 for (const file of walk(ROOT).filter((f: string) => f.endsWith('.ts'))) {
-  const rel = relative(ROOT, file);
+  // POSIX-form so the exemption list reads the same on every platform.
+  const rel = relative(ROOT, file).split(sep).join('/');
   if (EXEMPT.has(rel) || rel.startsWith('core/data/')) continue;
   const lines = codeOnly(readFileSync(file, 'utf8')).split('\n');
   lines.forEach((line, i) => {

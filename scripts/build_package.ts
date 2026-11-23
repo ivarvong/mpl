@@ -1,14 +1,15 @@
 // Build the publishable package into dist/browser: plain ES modules (types stripped by Node itself)
 // plus .d.ts declarations. Run by `npm run build`.
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const ROOT = new URL('../', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const OUT = join(ROOT, 'dist/browser');
 rmSync(OUT, { recursive: true, force: true });
 execFileSync(process.execPath, [join(ROOT, 'scripts/build_browser.ts'), OUT + '/'], { stdio: 'inherit' });
-execFileSync(join(ROOT, 'node_modules/.bin/tsc'), ['-p', join(ROOT, 'tsconfig.build.json')], { stdio: 'inherit', cwd: ROOT });
+execFileSync(process.execPath, [join(ROOT, 'node_modules/typescript/bin/tsc'), '-p', join(ROOT, 'tsconfig.build.json')], { stdio: 'inherit', cwd: ROOT });
 
 // tsc keeps '.ts' specifiers in declarations; point them at the emitted '.js' so consumers resolve them.
 let n = 0;

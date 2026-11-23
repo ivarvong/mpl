@@ -1,6 +1,7 @@
 // Encode baked faces (the FaceData JSON that scripts/gen_fonts.py writes) into the compact modules
 // src/fonts/<name>.ts, and check each one decodes back to exactly the same JSON.
 //   node scripts/encode_fonts.ts <dir with <name>.json>   (scripts/gen_fonts.py runs it on build/fonts)
+import { fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { decodeFace, FACE_CATALOG, VLQ_ALPHABET, type BakedFace, type CatalogEntry } from '../src/core/fontcodec.ts';
@@ -71,7 +72,7 @@ export const ${entry.binding}: BakedFace = {
 if (import.meta.main) {
   const dir = process.argv[2] || '';
   if (dir === '') { console.error('usage: node scripts/encode_fonts.ts <dir of baked .json>'); process.exit(2); }
-  const out = new URL('../src/fonts/', import.meta.url).pathname;
+  const out = fileURLToPath(new URL('../src/fonts/', import.meta.url));
   for (const entry of FACE_CATALOG) {
     if (!existsSync(join(dir, `${entry.module}.json`))) { console.log(`${entry.module.padEnd(18)} not baked, left as is`); continue; }
     const json = readFileSync(join(dir, `${entry.module}.json`), 'utf8');

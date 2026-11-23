@@ -1,12 +1,13 @@
 // Minified + gzipped size of dist/browser as a bundler sees it (esbuild, ESM, browser platform), for a
 // few scenarios (ENTRIES), plus what the bytes are made of. `node scripts/bundle_size.ts` prints; `--update` rewrites size-budget.json.
 // test/size.test.ts fails when a bundle grows more than 2% past its budget.
+import { fileURLToPath } from 'node:url';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { build, type Metafile } from 'esbuild';
 
-const ROOT = new URL('../', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const DIST = join(ROOT, 'dist/browser');
 export const BUDGET_FILE = join(ROOT, 'size-budget.json');
 
